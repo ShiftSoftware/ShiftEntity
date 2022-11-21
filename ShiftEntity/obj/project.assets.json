@@ -186,7 +186,7 @@
     "version": "1.0.0",
     "restore": {
       "projectUniqueName": "D:\\Projects\\ShiftEntity\\ShiftEntity\\ShiftEntity.csproj",
-      "projectName": "ShiftSoftware.ShiftGrid.Core",
+      "projectName": "ShiftSoftware.ShiftEntity",
       "projectPath": "D:\\Projects\\ShiftEntity\\ShiftEntity\\ShiftEntity.csproj",
       "packagesPath": "C:\\Users\\sarma\\.nuget\\packages\\",
       "outputPath": "D:\\Projects\\ShiftEntity\\ShiftEntity\\obj\\",
