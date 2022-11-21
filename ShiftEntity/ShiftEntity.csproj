@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+	<RootNamespace>ShiftSoftware.ShiftEntity.Core</RootNamespace>
+	<Authors>Shift Software</Authors>
+	<Product>ShiftEntity Core</Product>
+	<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+	<Version>1.0.0</Version>
+	<AssemblyName>ShiftSoftware.ShiftGrid.Core</AssemblyName>
+
+	<PackageId>ShiftSoftware.ShiftGrid.Core</PackageId>
+	<Authors>aza.asim,ShiftSoftware</Authors>
+	<Description>Data Grid adapter for Entity Framework and Entity Framework Core with support for Pagination, Sorting, Filtering, and Data Exporting.</Description>
+	<Copyright>Copyright (c) Shift Software 2022</Copyright>
+	<PackageProjectUrl>https://shiftsoftware.github.io/ShiftGrid/</PackageProjectUrl>
+	<PackageIcon>icon.png</PackageIcon>
+	<RepositoryUrl>https://github.com/ShiftSoftware/ShiftGrid</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageTags>linq entity-framework netcore data-grid entity-framework-core datagrid netframework dynamic-linq pagination sorting filtering exporting</PackageTags>
+	<Title>ShiftGrid</Title>
+	<PackageReleaseNotes>
+		Changes from 1.0.1
+	</PackageReleaseNotes>
+	<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>
