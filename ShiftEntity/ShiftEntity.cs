@@ -7,9 +7,8 @@ public interface IShiftEntity
 
 }
 
-public abstract class ShiftEntity<EntityType, CrudDTOType> : IShiftEntity
+public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
-    where CrudDTOType : ICrudDTO
 {
     public Guid ID { get; private set; }
     public DateTime CreateDate { get; private set; }
@@ -17,8 +16,8 @@ public abstract class ShiftEntity<EntityType, CrudDTOType> : IShiftEntity
     public Guid? CreatedByUserID { get; private set; }
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
-    public abstract EntityType Create(CrudDTOType crudDto, Guid? userId = null);
-    public abstract EntityType Update(CrudDTOType crudDto, Guid? userId = null);
+    public abstract EntityType Create<CreateDTOType>(CreateDTOType crudDto, Guid? userId = null) where CreateDTOType : ICrudDTO;
+    public abstract EntityType Update<UpdateDTOType>(UpdateDTOType crudDto, Guid? userId = null) where UpdateDTOType : ICrudDTO;
     public abstract EntityType Delete(Guid? userId = null);
 
     protected EntityType CreateShiftEntity(Guid? userId = null)
