@@ -19,7 +19,7 @@ The Core package ```ShiftSoftware.ShiftEntity``` is available on [nuget.org](htt
 
 ### Usage (Import)
 
-**Shift Grid** provides extension methods to ```IQueryable```. You need to import it via the ```using``` statement to access the extension methods.
+The **Shift Entity** class Ehnhances Data Model to  a **Rich Domain Model**.
 ``` C#
 using ShiftSoftware.ShiftEntity;
 ```

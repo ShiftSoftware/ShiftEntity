@@ -1,94 +1,66 @@
-﻿### ToShiftGridAsync | ToShiftGrid
-The ``Grid`` can be initialized by calling the ``ToShiftGridAsync`` or ``ToShiftGrid`` extension methods on an ``IQueryable``
+﻿### Create
+The ``Create`` method is an ``abstract`` method that will be used for initialization of the properties of the model that inherits from ``ShiftEntity`` class and the initilization of the base class properties
 
 ``` C#
-var shiftGridAsync = await db.Employees.ToShiftGridAsync("ID");
-```
-or
-``` C#
-var shiftGrid = db.Employees.ToShiftGrid("ID");
+public override TestItem Create(TestItemCrudDTO crudDto, Guid? userId = null)
+        {
+            this.CreateShiftEntity(userId);
+
+            this.Name = crudDto.Name;
+
+            return this;
+        }
 ```
 
 Parameters:
 
 | Parameter                  | Description                                                                                          |
 | ----------------------     | ---------------------------------------------------------------------------------------------------- |
-| `stableSortField`          | `String` <br/> The unique field in the dataset for sorting the result.<br/> [More about Stable Sorting](/philosophy/#stable-sort)   |
-| `stableSortDirection`      | [`SortDirection`](/reference/#gridsort) <br/> The sort direction for the Stable Sorting. <br/> Defaults to `Ascending` |
-| `gridConfig`               | [`GridConfig`](/reference/#gridconfig) <br/> This is how the grid is controlled. Page Size, Page Index, Filters, Sorting ...etc |
+| `crudDto`          | `CrudDTOType` <br/> the `crudDto` is an object of the Data transfer object(DTO) model that will be used only for data transfer purpose, it will be used to set the private fields of the main model |
+| `userId`      | `Guid?` <br/> the ID of the user who created the object <br/> default: `null`|
 
-#### GridConfig | GridFilter
-GridConfig accepts a list of [`GridFilter`](/reference/#gridfilter) where you can specify 4 paramters for each [`GridFilter`](/reference/#gridfilter) item which are `Field`, `Operator`, `Value` and `Or`.
+### Update
+The ``Update`` method is an ``abstract`` method that will be used for the modificatio of the properties of the model that inherits from ``ShiftEntity`` class
+
 ``` C#
-[HttpPost("filters")]
-        public async Task<ActionResult> Filters()
+public override TestItem Update(TestItemCrudDTO crudDto, Guid? userId = null)
         {
-            var db = new DB();
+            this.UpdateShiftEntity(userId);
 
-            var DbF = Microsoft.EntityFrameworkCore.EF.Functions;
+            this.Name = crudDto.Name;
 
-            var shiftGrid =
-                await db
-                .Employees
-                .Select(x => new
-                {
-                    x.ID,
-                    x.FirstName,
-                    x.LastName,
-                    x.Birthdate,
-                    Department = x.Department.Name
-                })
-                .ToShiftGridAsync("ID", SortDirection.Ascending, new GridConfig
-                {
-                    Filters = new List<GridFilter> {
-                       new GridFilter
-                       {
-                           Field = nameof(Employee.FirstName),
-                           Operator = GridFilterOperator.StartsWith,
-                           Value = "First Name (1"
-                       }
-                   }
-                });
-
-            //It's better to use nameof. When targetting fields in Filters and Columns.
-            return Ok(shiftGrid);
+            return this;
         }
 ```
 
+Parameters:
 
-### SelectAggregate
-Used for Aggregating data.  
-The Aggregation works on the entire data set (Not the paginated Data.). And all the aggregation is performed from the Database side.
+| Parameter                  | Description                                                                                          |
+| ----------------------     | ---------------------------------------------------------------------------------------------------- |
+| `crudDto`          | `CrudDTOType` <br/> the `crudDto` is an object of the Data transfer object(DTO) model that will be used only for data transfer purpose, it will be used to set the private fields of the main model |
+| `userId`      | `Guid?` <br/> the ID of the user who modified the object <br/> default: `null`|
+
+
+### Delete
+The ``Delete`` method is an ``abstract`` method that will be used to remove the properties of the model that inherits from ``ShiftEntity`` class
 
 ``` C#
-[HttpPost("aggregate")]
-public async Task<ActionResult> Aggregate([FromBody] GridConfig gridConfig)
-{
-    var db = new DB();
-
-    var DbF = Microsoft.EntityFrameworkCore.EF.Functions;
-
-    var shiftGrid =
-        await db
-        .Employees
-        .Select(x => new
+public override TestItem Update(TestItemCrudDTO crudDto, Guid? userId = null)
         {
-            x.ID,
-            x.FirstName,
-            x.Birthdate
-        })
-        .SelectAggregate(x => new
-        {
-            Count = x.Count(),
-            OldestEmployeeBirthdate = x.Min(y => y.Birthdate),
-            YoungestEmployeeBirthdate = x.Max(y => y.Birthdate),
-            NumberOfEmployeesBetween30And40 = x.Count(y => DbF.DateDiffYear(y.Birthdate, DateTime.Now) >= 30 && DbF.DateDiffYear(y.Birthdate, DateTime.Now) <= 40)
-        })
-        .ToShiftGridAsync("ID", SortDirection.Ascending, gridConfig);
+            this.UpdateShiftEntity(userId);
 
-    return Ok(shiftGrid);
-}
+            this.Name = crudDto.Name;
+
+            return this;
+        }
 ```
+
+Parameters:
+
+| Parameter                  | Description                                                                                          |
+| ----------------------     | ---------------------------------------------------------------------------------------------------- |
+| `crudDto`          | `CrudDTOType` <br/> the `crudDto` is an object of the Data transfer object(DTO) model that will be used only for data transfer purpose, it will be used to set the private fields of the main model |
+| `userId`      | `Guid?` <br/> the ID of the user who modified the object <br/> default: `null`|
 
 !!! tip
     

@@ -1,25 +1,19 @@
 ﻿The Shift Grid fetches data and prepares it in a format that can be easily integrated into a Data Table.
 
-### Grid
+### ShiftEntity
 
-The ``Grid`` (``ShiftSoftware.ShiftGrid.Core.Grid``) can be initialized by calling the [ToShiftGridAsync](/methods/#toshiftgridasync-toshiftgrid) or [ToShiftGrid](/methods/#toshiftgridasync-toshiftgrid) extension methods on an ``IQueryable``.  
+The ``ShiftEntity`` (``ShiftSoftware.ShiftEntity.Core.ShiftEntity``) can be used on **Data Models** by inheriting from it to enhance the Model to a **Rich Domain Model**.  
      
-The ``Grid`` contains below properties.
+The ``ShiftEntity`` contains below properties.
 
 | Property                   | Description                                                                                          |
 | ----------------------     | ---------------------------------------------------------------------------------------------------- |
-| `DataPageIndex`            | `int` <br/> The current page index of the paginated data. |
-| `DataPageSize`             | `int` <br/> The Number of Items (Or number of rows) per Page. |
-| `DataCount`                | `int` <br/> The total count of the data (The Unpaginated Count). |
-| `Data`                     | `List<T>` <br/> This is the actual data that's fetched from Database.<br/>  |
-| `Aggregate`                | `T2` <br/> Aggregated Data. This is available if [SelectAggregate](/methods/#selectaggregate) extension method is used. |
-| `Sort`                     | `List<GridSort>` <br/> The list of Fields that the Data is sorted by.<br/>  |
-| `StableSort`               | `GridSort` <br/> The mandatory Stable Sort that the data is sorted by.<br/> [Learn more about Stable Sorting](/philosophy/#stable-sort) |
-| `Filters`                  | `List<GridFilter>` <br/> The list of filters that the data is filtered by. |
-| `Columns`                  | `List<GridColumn>` <br/> The column defnition of the Dataset that contains below:<br/> `HeaderText`, `Field`, `Visible`, and `Order`.  |
-| `Pagination`               | `GridPagination` <br/> Information about the pagination area.  |
-| `BeforeLoadingData`        | `DateTime` (UTC) <br/> The timestamp just before making the database call(s)  |
-| `AfterLoadingData`        | `DateTime` (UTC) <br/> The timestamp just after the data is finished loading from database  |
+| `ID`            | `Guid` <br/> The Identity of the model |
+| `CreateDate`             | `DateTime` <br/> The timestamp of the object creation. |
+| `LastSaveDate`                | `int` <br/> The timestamp of the last save or modification being done on the object. |
+| `CreatedByUserID`                     | `Guid` <br/> The ID of the user who created the object.<br/>  |
+| `LastSavedByUserID`                | `Guid` <br/> The ID of the user who made the latest change to the object. |
+| `IsDeleted`                     | `bool` <br/> A flag to show soft delete status.<br/>  |
 
 ### GridConfig
 The ``ToShiftGridAsync`` and ``ToShiftGrid`` extension methods accept a `GridConfig`.
