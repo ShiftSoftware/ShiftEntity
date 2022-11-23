@@ -4,8 +4,9 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 public interface IShiftEntity
 {
-
+    public bool IsDeleted { get; }
 }
+
 
 public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
