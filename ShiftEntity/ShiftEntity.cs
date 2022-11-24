@@ -11,10 +11,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
     public Guid? CreatedByUserID { get; private set; }
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
-    public abstract EntityType Create<CreateDTOType>(CreateDTOType crudDto, Guid? userId = null) where CreateDTOType : ICrudDTO;
-    public abstract EntityType Update<UpdateDTOType>(UpdateDTOType crudDto, Guid? userId = null) where UpdateDTOType : ICrudDTO;
-    public abstract EntityType Delete(Guid? userId = null);
-
+    
     protected EntityType CreateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
