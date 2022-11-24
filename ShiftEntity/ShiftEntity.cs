@@ -2,12 +2,6 @@
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftEntity
-{
-    public bool IsDeleted { get; }
-}
-
-
 public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
 {
@@ -54,14 +48,4 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
 
         return this as EntityType;
     }
-}
-
-public interface ICrudDTO
-{
-
-}
-
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class TemporalShiftEntity : Attribute
-{
 }
