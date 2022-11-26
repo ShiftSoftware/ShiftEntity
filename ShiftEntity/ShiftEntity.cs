@@ -2,14 +2,8 @@
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftEntity
-{
-
-}
-
-public abstract class ShiftEntity<EntityType, CrudDTOType> : IShiftEntity
+public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
-    where CrudDTOType : ICrudDTO
 {
     public Guid ID { get; private set; }
     public DateTime CreateDate { get; private set; }
@@ -17,10 +11,7 @@ public abstract class ShiftEntity<EntityType, CrudDTOType> : IShiftEntity
     public Guid? CreatedByUserID { get; private set; }
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
-    public abstract EntityType Create(CrudDTOType crudDto, Guid? userId = null);
-    public abstract EntityType Update(CrudDTOType crudDto, Guid? userId = null);
-    public abstract EntityType Delete(Guid? userId = null);
-
+    
     protected EntityType CreateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
@@ -54,14 +45,4 @@ public abstract class ShiftEntity<EntityType, CrudDTOType> : IShiftEntity
 
         return this as EntityType;
     }
-}
-
-public interface ICrudDTO
-{
-
-}
-
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class TemporalShiftEntity : Attribute
-{
 }
