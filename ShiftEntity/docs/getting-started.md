@@ -14,7 +14,7 @@ The Core package ```ShiftSoftware.ShiftEntity``` is available on [nuget.org](htt
         * **Right Click** on the Solution Name In Visual Studio
         * Click **Manage NuGet Packages**
         * Click **Browse**
-        * Find ```ShiftSoftware.ShiftEntity``` and Install it.
+        * Find ```ShiftSoftware.ShiftEntity.Core``` and Install it.
 
 
 ### Usage (Import)
@@ -26,22 +26,24 @@ using ShiftSoftware.ShiftEntity;
 
 ### Basic Example
 
-This example shows the Shift Grid being used in a Web API.
+This example shows the Shift Entity being used in a Web API.
 
 !!! info ""
     === "C# / Endpoint"
         ``` C#
-        [HttpPost("basic")]
-        public async Task<ActionResult> Basic([FromBody] GridConfig gridConfig)
+         [HttpGet("")]
+        public async Task<ActionResult> TestEndpoint(DB db)
         {
-            var db = new DB();
 
-            var shiftGrid =
-                await db
-                .Employees
-                .ToShiftGridAsync("ID", SortDirection.Ascending, gridConfig);
+            var testItem = new TestItem();
 
-            return Ok(shiftGrid);
+            testItem.Create(new Shared.DTOs.TestItemCrudDTO { Name = "Test Item 1" });
+
+            db.TestItems.Add(testItem);
+
+            await db.SaveChangesAsync();
+
+            return Ok(db.TestItems.FirstOrDefault(x => x.Name == "Test Item 1")?.Name);
         }
         ```
         &nbsp;
