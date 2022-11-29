@@ -12,7 +12,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
     
-    protected EntityType CreateShiftEntity(Guid? userId = null)
+    public EntityType CreateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
 
@@ -27,7 +27,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return this as EntityType;
     }
 
-    protected EntityType UpdateShiftEntity(Guid? userId = null)
+    public EntityType UpdateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
 
@@ -37,7 +37,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return this as EntityType;
     }
 
-    protected EntityType DeleteShiftEntity(Guid? userId = null)
+    public EntityType DeleteShiftEntity(Guid? userId = null)
     {
         UpdateShiftEntity(userId);
 
