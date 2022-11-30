@@ -15,7 +15,7 @@ The ``ShiftEntity`` contains below properties.
 | `LastSavedByUserID`                | `Guid` <br/> The ID of the user who made the latest change to the object. |
 | `IsDeleted`                     | `bool` <br/> A flag to show soft delete status.<br/>  |
 
-### GridConfig
+### ShiftDbContext
 The ``ToShiftGridAsync`` and ``ToShiftGrid`` extension methods accept a `GridConfig`.
 This is used to control the Grid. Like setting the page size, index, sorting, filters ...etc. Below are the properties.<br/>
 

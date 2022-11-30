@@ -23,22 +23,17 @@ Parameters:
 | Parameter                  | Description                                                                                          |
 | ----------------------     | ---------------------------------------------------------------------------------------------------- |
 | `userId`      | `Guid?` <br/> the ID of the user who created the object <br/> default: `null`|
-### CreateShiftEntity
-The ``CreateShiftEntity`` method is used to intilize the properties of the ``ShiftEntity`` class.
+
+### UpdateShiftEntity
+The ``UpdateShiftEntity`` method is used to update the ``LastSaveDate`` and ``LastSavedByUserID`` of the ``ShiftEntity`` class.
 
 ``` C#
-
-protected EntityType CreateShiftEntity(Guid? userId = null)
+protected EntityType UpdateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
 
         LastSaveDate = now;
-        CreateDate = now;
-
-        CreatedByUserID = userId;
         LastSavedByUserID = userId;
-
-        IsDeleted = false;
 
         return this as EntityType;
     }
@@ -48,7 +43,27 @@ Parameters:
 
 | Parameter                  | Description                                                                                          |
 | ----------------------     | ---------------------------------------------------------------------------------------------------- |
-| `userId`      | `Guid?` <br/> the ID of the user who created the object <br/> default: `null`|
+| `userId`      | `Guid?` <br/> the ID of the user who edited the object <br/> default: `null`|
+
+### DeleteShiftEntity
+The ``DeleteShiftEntity`` method is used to update the ``LastSaveDate`` and ``LastSavedByUserID`` plus turnig the IsDeleted Property to true of the ``ShiftEntity`` class to mark the object as deleted.
+
+``` C#
+protected EntityType DeleteShiftEntity(Guid? userId = null)
+    {
+        UpdateShiftEntity(userId);
+
+        IsDeleted = true;
+
+        return this as EntityType;
+    }
+```
+
+Parameters:
+
+| Parameter                  | Description                                                                                          |
+| ----------------------     | ---------------------------------------------------------------------------------------------------- |
+| `userId`      | `Guid?` <br/> the ID of the user who deleted the object <br/> default: `null`|
 
 ### Create
 The ``Create`` method is an ``abstract`` method that will be used for initialization of the properties of the model that inherits from ``ShiftEntity`` class and the initilization of the base class properties
