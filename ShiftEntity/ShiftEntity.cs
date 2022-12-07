@@ -67,4 +67,16 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
 
         return items;
     }
+
+    public async Task<T> FindAsync<T>(DbSet<T> dbSet, Guid id, DateTime? asOf) where T : ShiftEntity<T>
+    {
+        T? item;
+
+        if (asOf == null)
+            item = await dbSet.FindAsync(id);
+        else
+            item = await dbSet.TemporalAsOf(asOf.Value).FirstOrDefaultAsync(x => x.ID == id);
+
+        return item;
+    }
 }
