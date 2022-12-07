@@ -1,4 +1,9 @@
-﻿using System;
+﻿using Microsoft.EntityFrameworkCore;
+using ShiftSoftware.ShiftEntity.Core.Dtos;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
@@ -44,5 +49,22 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         IsDeleted = true;
 
         return this as EntityType;
+    }
+
+    public async Task<List<RevisionDTO>> GetRevisionsAsync<T>(DbSet<T> dbSet, Guid id) where T : ShiftEntity<T>
+    {
+        var items = await dbSet
+                .TemporalAll()
+                .Where(x => x.ID == id)
+                .Select(x => new RevisionDTO
+                {
+                    ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
+                    ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
+                    SavedByUserID = x.LastSavedByUserID,
+                })
+                .OrderByDescending(x => x.ValidTo)
+                .ToListAsync();
+
+        return items;
     }
 }
