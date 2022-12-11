@@ -51,16 +51,16 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return this as EntityType;
     }
 
-    public async Task<List<RevisionDTO>> GetRevisionsAsync<T>(DbSet<T> dbSet, Guid id) where T : ShiftEntity<T>
+    public async Task<List<RevisionDTO>> GetRevisionsAsync(DbSet<EntityType> dbSet, Guid id)
     {
         var items = await dbSet
                 .TemporalAll()
-                .Where(x => x.ID == id)
+                .Where(x => EF.Property<Guid>(x, nameof(ID)) == id)
                 .Select(x => new RevisionDTO
                 {
                     ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
                     ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
-                    SavedByUserID = x.LastSavedByUserID,
+                    SavedByUserID = EF.Property<Guid?>(x, nameof(LastSavedByUserID)),
                 })
                 .OrderByDescending(x => x.ValidTo)
                 .ToListAsync();
@@ -68,14 +68,14 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return items;
     }
 
-    public async Task<T> FindAsync<T>(DbSet<T> dbSet, Guid id, DateTime? asOf) where T : ShiftEntity<T>
+    public async Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null)
     {
-        T? item;
+        EntityType item;
 
         if (asOf == null)
             item = await dbSet.FindAsync(id);
         else
-            item = await dbSet.TemporalAsOf(asOf.Value).FirstOrDefaultAsync(x => x.ID == id);
+            item = await dbSet.TemporalAsOf(asOf.Value).FirstOrDefaultAsync(x => EF.Property<Guid>(x, nameof(ID)) == id);
 
         return item;
     }
