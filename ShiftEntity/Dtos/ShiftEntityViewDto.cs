@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Core.Dtos;
 
-public class ShiftEntityDto
+public class ShiftEntityViewDto
 {
     public Guid ID { get; set; }
 
