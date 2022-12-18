@@ -16,7 +16,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
     public Guid? CreatedByUserID { get; private set; }
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
-    
+
     public EntityType CreateShiftEntity(Guid? userId = null)
     {
         var now = DateTime.UtcNow;
@@ -68,14 +68,24 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return items;
     }
 
-    public async Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null)
+    public async Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null)
     {
         EntityType item;
 
+        IQueryable<EntityType> newDbSet;
+
         if (asOf == null)
-            item = await dbSet.FindAsync(id);
+            newDbSet = dbSet;
         else
-            item = await dbSet.TemporalAsOf(asOf.Value).FirstOrDefaultAsync(x => EF.Property<Guid>(x, nameof(ID)) == id);
+            newDbSet = dbSet.TemporalAsOf(asOf.Value);
+
+        if (includes != null)
+        {
+            foreach (var include in includes)
+                newDbSet = newDbSet.Include(include);
+        }
+
+        item = await newDbSet.FirstOrDefaultAsync(x => EF.Property<Guid>(x, nameof(ID)) == id);
 
         return item;
     }

@@ -10,6 +10,6 @@ namespace ShiftSoftware.ShiftEntity.Core
     public interface IShiftFind<T> where T : ShiftEntity<T>
     {
         public Task<List<RevisionDTO>> GetRevisionsAsync(DbSet<T> dbSet, Guid id);
-        public Task<T> FindAsync(DbSet<T> dbSet, Guid id, DateTime? asOf = null);
+        public Task<T> FindAsync(DbSet<T> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null);
     }
 }
