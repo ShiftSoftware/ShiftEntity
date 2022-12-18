@@ -1,9 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.ShiftEntity.Core.Dtos;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
@@ -49,44 +44,5 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         IsDeleted = true;
 
         return this as EntityType;
-    }
-
-    public async Task<List<RevisionDTO>> GetRevisionsAsync(DbSet<EntityType> dbSet, Guid id)
-    {
-        var items = await dbSet
-                .TemporalAll()
-                .Where(x => EF.Property<Guid>(x, nameof(ID)) == id)
-                .Select(x => new RevisionDTO
-                {
-                    ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
-                    ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
-                    SavedByUserID = EF.Property<Guid?>(x, nameof(LastSavedByUserID)),
-                })
-                .OrderByDescending(x => x.ValidTo)
-                .ToListAsync();
-
-        return items;
-    }
-
-    public async Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null)
-    {
-        EntityType item;
-
-        IQueryable<EntityType> newDbSet;
-
-        if (asOf == null)
-            newDbSet = dbSet;
-        else
-            newDbSet = dbSet.TemporalAsOf(asOf.Value);
-
-        if (includes != null)
-        {
-            foreach (var include in includes)
-                newDbSet = newDbSet.Include(include);
-        }
-
-        item = await newDbSet.FirstOrDefaultAsync(x => EF.Property<Guid>(x, nameof(ID)) == id);
-
-        return item;
     }
 }
