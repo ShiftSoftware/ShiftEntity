@@ -2,15 +2,15 @@
 
 namespace ShiftSoftware.ShiftEntity.Core
 {
-    public interface IShiftEntityView<EntityType, ViewDTOType>
+    public interface IShiftEntityView<EntityType, DTOType>
         where EntityType: class
     {
-        public ViewDTOType View(EntityType entity);
+        public DTOType View(EntityType entity);
     }
 
-    public interface IShiftEntityViewAsync<EntityType, ViewDTOType>
+    public interface IShiftEntityViewAsync<EntityType, DTOType>
         where EntityType : class
     {
-        public Task<ViewDTOType> ViewAsync(EntityType entity);
+        public Task<DTOType> ViewAsync(EntityType entity);
     }
 }

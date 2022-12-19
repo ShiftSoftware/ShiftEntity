@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Core.Dtos;
 
-public class ShiftEntityViewDto
+public class ShiftEntityDTO
 {
     [Key]
     public Guid ID { get; set; }

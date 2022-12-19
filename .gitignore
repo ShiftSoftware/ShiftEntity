@@ -8,4 +8,5 @@
 /ShiftEntity/obj
 /$tf
 /ShiftEntityWeb/obj
-/ShiftEntityWeb/bin/Release
+/ShiftEntityWeb/bin
+/ShiftEntity/bin

@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Core.Dtos
 {
-    public class ShiftEntityListDto
+    public class ShiftEntityListDTO
     {
         [Key]
         public Guid ID { get; set; }

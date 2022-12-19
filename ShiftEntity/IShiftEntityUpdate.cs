@@ -3,15 +3,15 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core
 {
-    public interface IShiftEntityUpdate<EntityType,UpdateDTOType>
+    public interface IShiftEntityUpdate<EntityType,DTOType>
         where EntityType: class
     {
-        public EntityType Update(EntityType entity, UpdateDTOType updateDto, Guid? userId = null);
+        public EntityType Update(EntityType entity, DTOType dto, Guid? userId = null);
     }
 
-    public interface IShiftEntityUpdateAsync<EntityType, UpdateDTOType>
+    public interface IShiftEntityUpdateAsync<EntityType, DTOType>
         where EntityType : class
     {
-        public Task<EntityType> UpdateAsync(EntityType entity, UpdateDTOType updateDto, Guid? userId = null);
+        public Task<EntityType> UpdateAsync(EntityType entity, DTOType dto, Guid? userId = null);
     }
 }

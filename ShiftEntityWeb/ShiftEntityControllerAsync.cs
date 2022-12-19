@@ -7,9 +7,9 @@ using System;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
-    public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewDTO, CrudDTO> :
+    public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
         ControllerBase
-        where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, CrudDTO>
+        where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>
     {
         private DbContext db { get; set; }
@@ -49,7 +49,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpPost]
         [ODataIgnored]
-        public async Task<IActionResult> Post([FromBody] CrudDTO dto)
+        public async Task<IActionResult> Post([FromBody] DTO dto)
         {
             Entity newItem;
 
@@ -59,7 +59,7 @@ namespace ShiftSoftware.ShiftEntity.Web
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<ViewDTO>
+                return BadRequest(new ShiftEntityResponse<DTO>
                 {
                     Message = ex.Message
                 });
@@ -69,12 +69,12 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             await db.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<ViewDTO>(await repository.ViewAsync(newItem)));
+            return Ok(new ShiftEntityResponse<DTO>(await repository.ViewAsync(newItem)));
         }
 
         [HttpPut("{key}")]
         [ODataIgnored]
-        public async Task<IActionResult> Put(Guid key, [FromBody] CrudDTO dto)
+        public async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
             var item = await repository.FindAsync(dbSet, key);
 
@@ -87,7 +87,7 @@ namespace ShiftSoftware.ShiftEntity.Web
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<ViewDTO>
+                return BadRequest(new ShiftEntityResponse<DTO>
                 {
                     Message = ex.Message
                 });
@@ -95,7 +95,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             db.SaveChanges();
 
-            return Ok(new ShiftEntityResponse<ViewDTO>(await repository.ViewAsync(item)));
+            return Ok(new ShiftEntityResponse<DTO>(await repository.ViewAsync(item)));
         }
 
         [HttpDelete("{key}")]
