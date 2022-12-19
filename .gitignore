@@ -9,3 +9,6 @@
 /$tf
 /ShiftEntityWeb/obj
 /ShiftEntityWeb/bin/Release
+/ShiftEntity/bin/Release
+/ShiftEntity/bin/Release/net7.0/ShiftSoftware.ShiftEntity.pdb
+/ShiftEntity/bin/Release/net7.0/ShiftSoftware.ShiftEntity.dll
