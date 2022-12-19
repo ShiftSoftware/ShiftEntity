@@ -33,7 +33,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         [ODataIgnored]
         public async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
         {
-            var item = await repository.FindAsync(dbSet, key, asOf);
+            var item = await repository.FindAsync(key, asOf);
 
             if (item == null)
                 return NotFound();
@@ -76,7 +76,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         [ODataIgnored]
         public async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
-            var item = await repository.FindAsync(dbSet, key);
+            var item = await repository.FindAsync(key);
 
             if (item == null)
                 return NotFound();
@@ -102,7 +102,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         [ODataIgnored]
         public async Task<IActionResult> Delete(Guid key)
         {
-            var item = await repository.FindAsync(dbSet, key);
+            var item = await repository.FindAsync(key);
 
             if (item == null)
                 return NotFound();

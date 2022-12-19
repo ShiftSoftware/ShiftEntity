@@ -8,8 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Core
 {
     public interface IShiftEntityFind<EntityType> where EntityType : ShiftEntity<EntityType>
     {
-        public EntityType Find(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null);
-        public Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null);
+        public Task<EntityType> FindAsync(Guid id, DateTime? asOf = null);
         public Task<List<RevisionDTO>> GetRevisionsAsync(DbSet<EntityType> dbSet, Guid id);
     }
 }
