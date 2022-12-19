@@ -7,7 +7,8 @@ using System;
 
 namespace ShiftSoftware.ShiftEntity.Core
 {
-    public class ShiftRepository<EntityType> where EntityType : ShiftEntity<EntityType>
+    public class ShiftRepository<EntityType> where EntityType : 
+        ShiftEntity<EntityType>
     {
         public EntityType Find(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null)
         {

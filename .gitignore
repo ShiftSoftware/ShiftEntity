@@ -7,3 +7,5 @@
 /ShiftEntity/bin/Debug
 /ShiftEntity/obj
 /$tf
+/ShiftEntityWeb/obj
+/ShiftEntityWeb/bin/Release
