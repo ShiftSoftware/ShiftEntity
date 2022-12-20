@@ -2,13 +2,9 @@
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
-/ShiftEntity/obj/Debug/netstandard2.0
 /.vs
-/ShiftEntity/bin/Debug
+/ShiftEntity/bin
 /ShiftEntity/obj
 /$tf
 /ShiftEntityWeb/obj
-/ShiftEntityWeb/bin/Release
-/ShiftEntity/bin/Release
-/ShiftEntity/bin/Release/net7.0/ShiftSoftware.ShiftEntity.pdb
-/ShiftEntity/bin/Release/net7.0/ShiftSoftware.ShiftEntity.dll
+/ShiftEntityWeb/bin

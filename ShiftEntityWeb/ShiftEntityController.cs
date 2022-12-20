@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 namespace ShiftEntityWeb
 {
     //[EnableQuery]
-    public class ShiftEntityController<Repository, Entity, ListDTO, ViewDTO, CrudDTO> :
+    public class ShiftEntityController<Repository, Entity, ListDTO, DTO> :
         ControllerBase
-        where Repository : IShiftRepository<Entity, ListDTO, ViewDTO, CrudDTO>
+        where Repository : IShiftRepository<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>
     {
         private DbContext db { get; set; }
@@ -34,7 +34,7 @@ namespace ShiftEntityWeb
         [ODataIgnored]
         public async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
         {
-            var item = await repository.FindAsync(dbSet, key, asOf);
+            var item = await repository.FindAsync(key, asOf);
 
             if (item == null)
                 return NotFound();
@@ -50,7 +50,7 @@ namespace ShiftEntityWeb
 
         [HttpPost]
         [ODataIgnored]
-        public async Task<IActionResult> Post([FromBody] CrudDTO dto)
+        public async Task<IActionResult> Post([FromBody] DTO dto)
         {
             Entity newItem;
 
@@ -60,7 +60,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<ViewDTO>
+                return BadRequest(new ShiftEntityResponse<DTO>
                 {
                     Message = ex.Message
                 });
@@ -70,14 +70,14 @@ namespace ShiftEntityWeb
 
             await db.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<ViewDTO>(repository.View(newItem)));
+            return Ok(new ShiftEntityResponse<DTO>(repository.View(newItem)));
         }
 
         [HttpPut("{key}")]
         [ODataIgnored]
-        public async Task<IActionResult> Put(Guid key, [FromBody] CrudDTO dto)
+        public async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
-            var item = await repository.FindAsync(dbSet, key);
+            var item = await repository.FindAsync(key);
 
             if (item == null)
                 return NotFound();
@@ -88,7 +88,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<ViewDTO>
+                return BadRequest(new ShiftEntityResponse<DTO>
                 {
                     Message = ex.Message
                 });
@@ -96,14 +96,14 @@ namespace ShiftEntityWeb
 
             db.SaveChanges();
 
-            return Ok(new ShiftEntityResponse<ViewDTO>(repository.View(item)));
+            return Ok(new ShiftEntityResponse<DTO>(repository.View(item)));
         }
 
         [HttpDelete("{key}")]
         [ODataIgnored]
         public async Task<IActionResult> Delete(Guid key)
         {
-            var item = await repository.FindAsync(dbSet, key);
+            var item = await repository.FindAsync(key);
 
             if (item == null)
                 return NotFound();
