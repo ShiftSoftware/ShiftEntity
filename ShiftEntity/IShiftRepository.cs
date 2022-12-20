@@ -1,4 +1,6 @@
-﻿namespace ShiftSoftware.ShiftEntity.Core
+﻿using System.Threading.Tasks;
+
+namespace ShiftSoftware.ShiftEntity.Core
 {
     public interface IShiftRepository<Entity, ListDTO, DTO> :
         IShiftOdataList<ListDTO>,
@@ -9,5 +11,7 @@
         IShiftEntityDelete<Entity>
         where Entity : ShiftEntity<Entity>
     {
+        void Add(Entity entity);
+        Task SaveChangesAsync();
     }
 }

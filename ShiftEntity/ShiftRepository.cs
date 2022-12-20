@@ -10,23 +10,32 @@ namespace ShiftSoftware.ShiftEntity.Core
     public class ShiftRepository<EntityType> where EntityType : 
         ShiftEntity<EntityType>
     {
-        public EntityType Find(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null)
+        DbSet<EntityType> dbSet;
+        DbContext db;
+
+        public ShiftRepository(DbContext db, DbSet<EntityType> dbSet)
         {
-            return GetIQueryable(dbSet, asOf, includes)
+            this.db = db;
+            this.dbSet = dbSet;
+        }
+
+        public EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
+        {
+            return GetIQueryable(asOf, includes)
                 .FirstOrDefault(x =>
                     EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
         }
 
-        public async Task<EntityType> FindAsync(DbSet<EntityType> dbSet, Guid id, DateTime? asOf = null, List<string> includes = null)
+        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
-            return await GetIQueryable(dbSet, asOf, includes)
+            return await GetIQueryable(asOf, includes)
                 .FirstOrDefaultAsync(x =>
                     EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
         }
 
-        private IQueryable<EntityType> GetIQueryable(DbSet<EntityType> dbSet, DateTime? asOf, List<string> includes)
+        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
         {
             IQueryable<EntityType> iQueryable;
 
@@ -44,7 +53,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             return iQueryable;
         }
 
-        public async Task<List<RevisionDTO>> GetRevisionsAsync(DbSet<EntityType> dbSet, Guid id)
+        public async Task<List<RevisionDTO>> GetRevisionsAsync(Guid id)
         {
             var items = await dbSet
                     .TemporalAll()
@@ -59,6 +68,16 @@ namespace ShiftSoftware.ShiftEntity.Core
                     .ToListAsync();
 
             return items;
+        }
+
+        public void Add(EntityType entity)
+        {
+            dbSet.Add(entity);
+        }
+
+        public async Task SaveChangesAsync()
+        {
+            await db.SaveChangesAsync();
         }
     }
 }

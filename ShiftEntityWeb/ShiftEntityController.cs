@@ -13,14 +13,10 @@ namespace ShiftEntityWeb
         where Repository : IShiftRepository<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>
     {
-        private DbContext db { get; set; }
-        private DbSet<Entity> dbSet { get; set; }
         public Repository repository { get; set; }
 
-        public ShiftEntityController(DbContext db, Repository repository, DbSet<Entity> dbSet)
+        public ShiftEntityController(Repository repository)
         {
-            this.db = db;
-            this.dbSet = dbSet;
             this.repository = repository;
         }
 
@@ -45,7 +41,7 @@ namespace ShiftEntityWeb
         [HttpGet]
         public async Task<IActionResult> GetRevisions(Guid key)
         {
-            return Ok(await repository.GetRevisionsAsync(dbSet, key));
+            return Ok(await repository.GetRevisionsAsync(key));
         }
 
         [HttpPost]
@@ -66,9 +62,9 @@ namespace ShiftEntityWeb
                 });
             }
 
-            dbSet.Add(newItem);
+            repository.Add(newItem);
 
-            await db.SaveChangesAsync();
+            await repository.SaveChangesAsync();
 
             return Ok(new ShiftEntityResponse<DTO>(repository.View(newItem)));
         }
@@ -94,7 +90,7 @@ namespace ShiftEntityWeb
                 });
             }
 
-            db.SaveChanges();
+            await repository.SaveChangesAsync();
 
             return Ok(new ShiftEntityResponse<DTO>(repository.View(item)));
         }
@@ -110,7 +106,7 @@ namespace ShiftEntityWeb
 
             repository.Delete(item);
 
-            db.SaveChanges();
+            await repository.SaveChangesAsync();
 
             return Ok(repository.View(item));
         }
