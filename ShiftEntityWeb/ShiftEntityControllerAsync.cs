@@ -1,9 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OData.Routing.Attributes;
-using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using System.Threading.Tasks;
 using System;
+using Microsoft.AspNetCore.OData.Query;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -20,13 +19,13 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpGet]
+        [EnableQuery]
         public IActionResult Get()
         {
             return Ok(repository.OdataList());
         }
 
         [HttpGet("{key}")]
-        [ODataIgnored]
         public async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
         {
             var item = await repository.FindAsync(key, asOf);
@@ -38,13 +37,13 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpGet]
+        [EnableQuery]
         public async Task<IActionResult> GetRevisions(Guid key)
         {
             return Ok(await repository.GetRevisionsAsync(key));
         }
 
         [HttpPost]
-        [ODataIgnored]
         public async Task<IActionResult> Post([FromBody] DTO dto)
         {
             Entity newItem;
@@ -69,7 +68,6 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpPut("{key}")]
-        [ODataIgnored]
         public async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
             var item = await repository.FindAsync(key);
@@ -95,7 +93,6 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpDelete("{key}")]
-        [ODataIgnored]
         public async Task<IActionResult> Delete(Guid key)
         {
             var item = await repository.FindAsync(key);
