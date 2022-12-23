@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ShiftEntityWeb
@@ -106,6 +108,20 @@ namespace ShiftEntityWeb
             await repository.SaveChangesAsync();
 
             return Ok(repository.View(item));
+        }
+
+        [NonAction]
+        public async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
+        {
+            var list = repository.OdataList();
+
+            if (oDataQueryOptions.Filter != null)
+                list = oDataQueryOptions.Filter.ApplyTo(list, new()) as IQueryable<ListDTO>;
+
+            if (list != null)
+                return await list.ToListAsync();
+
+            return new List<ListDTO>();
         }
     }
 }
