@@ -6,14 +6,14 @@
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>1.1.21</Version>
+		<Version>1.1.21-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
 		<Authors>aza.asim,ShiftSoftware</Authors>
 		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
-		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftGrid/</PackageProjectUrl>
+		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
@@ -26,7 +26,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<Folder Include="docs\" />
 		<None Include="images\icon.png" Pack="true" PackagePath="" />
 	</ItemGroup>
 
