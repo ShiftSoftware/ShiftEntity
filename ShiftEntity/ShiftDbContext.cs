@@ -24,4 +24,11 @@ public abstract class ShiftDbContext : DbContext
 
         modelBuilder.ConfigureShiftEntity();
     }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.AddDelegateDecompiler();
+
+        base.OnConfiguring(optionsBuilder);
+    }
 }

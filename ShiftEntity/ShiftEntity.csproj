@@ -6,7 +6,7 @@
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>1.1.21-alpha</Version>
+		<Version>1.1.22-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
@@ -32,6 +32,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="7.0.0" />
+		<PackageReference Include="DelegateDecompiler" Version="0.32.0" />
 	</ItemGroup>
 
 </Project>
