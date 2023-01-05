@@ -27,12 +27,40 @@ namespace ShiftSoftware.ShiftEntity.Core
                 );
         }
 
+        public EntityType Find(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        {
+            List<string> includes = new();
+
+            foreach (var i in includeOperations)
+            {
+                IncludeOperations<EntityType> operation = new();
+                i.Invoke(operation);
+                includes.Add(operation.Includes);
+            }
+
+            return Find(id, asOf, includes);
+        }
+
         public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return await GetIQueryable(asOf, includes)
                 .FirstOrDefaultAsync(x =>
                     EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
+        }
+
+        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        {
+            List<string> includes = new();
+
+            foreach (var i in includeOperations)
+            {
+                IncludeOperations<EntityType> operation = new();
+                i.Invoke(operation);
+                includes.Add(operation.Includes);
+            }
+
+            return await FindAsync(id, asOf, includes);
         }
 
         private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
@@ -51,6 +79,20 @@ namespace ShiftSoftware.ShiftEntity.Core
             }
 
             return iQueryable;
+        }
+
+        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        {
+            List<string> includes = new();
+
+            foreach (var i in includeOperations)
+            {
+                IncludeOperations<EntityType> operation = new();
+                i.Invoke(operation);
+                includes.Add(operation.Includes);
+            };
+
+            return GetIQueryable(asOf, includes);
         }
 
         public async Task<List<RevisionDTO>> GetRevisionsAsync(Guid id)
