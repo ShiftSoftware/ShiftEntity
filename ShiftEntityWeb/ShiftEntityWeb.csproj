@@ -6,7 +6,7 @@
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>1.0.13-alpha</Version>
+		<Version>1.0.14-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
@@ -29,7 +29,7 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
-		<PackageReference Include="ShiftSoftware.ShiftEntity" Version="1.1.22-alpha" />
+		<PackageReference Include="ShiftSoftware.ShiftEntity" Version="1.1.23-alpha" />
 	</ItemGroup>
 
 	<!--<ItemGroup>
