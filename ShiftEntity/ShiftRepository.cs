@@ -19,7 +19,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             this.dbSet = dbSet;
         }
 
-        public EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
+        private EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return GetIQueryable(asOf, includes)
                 .FirstOrDefault(x =>
@@ -41,7 +41,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             return Find(id, asOf, includes);
         }
 
-        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
+        private async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return await GetIQueryable(asOf, includes)
                 .FirstOrDefaultAsync(x =>
