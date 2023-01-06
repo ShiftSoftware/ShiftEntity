@@ -1,4 +1,4 @@
-﻿trigger:
+trigger:
 - master
 
 pool:
@@ -8,3 +8,10 @@ steps:
 
  - script: dotnet pack --configuration release --output $(Build.ArtifactStagingDirectory)
    displayName: 'dotnet pack'
+
+ - task: NuGetCommand@2
+   inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'NuGet.org'
