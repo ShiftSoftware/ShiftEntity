@@ -1,0 +1,10 @@
+﻿trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+
+ - script: dotnet pack --configuration release --output $(Build.ArtifactStagingDirectory)
+   displayName: 'dotnet pack'
