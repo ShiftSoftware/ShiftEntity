@@ -1,10 +1,13 @@
 trigger:
-- master
+- main
 
 pool:
   vmImage: ubuntu-latest
 
 steps:
+
+ - script: dotnet build --configuration release
+   displayName: 'dotnet build'
 
  - script: dotnet pack ShiftEntity --configuration release --output $(Build.ArtifactStagingDirectory)
    displayName: 'dotnet pack'
