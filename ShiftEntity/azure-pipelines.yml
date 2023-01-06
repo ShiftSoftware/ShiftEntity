@@ -6,7 +6,7 @@ pool:
 
 steps:
 
- - script: dotnet pack --configuration release --output $(Build.ArtifactStagingDirectory)
+ - script: dotnet pack ShiftEntity --configuration release --output $(Build.ArtifactStagingDirectory)
    displayName: 'dotnet pack'
 
  - task: NuGetCommand@2
