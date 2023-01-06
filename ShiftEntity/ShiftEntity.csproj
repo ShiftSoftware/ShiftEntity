@@ -5,9 +5,9 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Core</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
-		<Version>1.1.25-alpha</Version>
+		<Version>1.1.26-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
-
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
 		<Authors>aza.asim,ShiftSoftware</Authors>
 		<Description></Description>
