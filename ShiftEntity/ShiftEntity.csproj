@@ -5,7 +5,6 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Core</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Version>1.1.25-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 
@@ -26,7 +25,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<None Include="images\icon.png" Pack="true" PackagePath="" />
+		<None Include="Images\icon.png" Pack="true" PackagePath="" />
 	</ItemGroup>
 
 	<ItemGroup>
