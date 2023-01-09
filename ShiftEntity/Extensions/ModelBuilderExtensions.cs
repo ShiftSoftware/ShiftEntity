@@ -43,7 +43,15 @@ public static class ModelBuilderExtensions
                 entityType.SetQueryFilter(lambdaExpression);
             }
         }
-        
+
+        ///// Disable Cascade Delete
+        var cascadeFKs = modelBuilder.Model.GetEntityTypes()
+                .SelectMany(t => t.GetForeignKeys())
+                .Where(fk => !fk.IsOwnership && fk.DeleteBehavior == DeleteBehavior.Cascade);
+
+        foreach (var fk in cascadeFKs)
+            fk.DeleteBehavior = DeleteBehavior.Restrict;
+
         return modelBuilder;
     }
 
