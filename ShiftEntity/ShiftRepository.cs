@@ -41,7 +41,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             return Find(id, asOf, includes);
         }
 
-        private async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
+        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return await GetIQueryable(asOf, includes)
                 .FirstOrDefaultAsync(x =>
