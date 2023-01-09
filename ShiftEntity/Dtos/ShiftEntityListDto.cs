@@ -4,10 +4,8 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Core.Dtos
 {
-    public class ShiftEntityListDTO
+    public class ShiftEntityListDTO : ShiftEntityDTOBase
     {
-        [Key]
-        public Guid ID { get; set; }
         public ICollection<RevisionDTO>? Revisions { get; set; }
     }
 }
