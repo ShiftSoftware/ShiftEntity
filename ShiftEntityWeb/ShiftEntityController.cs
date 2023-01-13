@@ -49,6 +49,9 @@ namespace ShiftEntityWeb
         [HttpPost]
         public virtual async Task<IActionResult> Post([FromBody] DTO dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             Entity newItem;
 
             try
@@ -73,6 +76,9 @@ namespace ShiftEntityWeb
         [HttpPut("{key}")]
         public virtual async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var item = await repository.FindAsync(key);
 
             if (item == null)
