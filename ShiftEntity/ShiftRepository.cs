@@ -19,7 +19,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             this.dbSet = dbSet;
         }
 
-        private EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
+        public virtual EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return GetIQueryable(asOf, includes)
                 .FirstOrDefault(x =>
@@ -27,7 +27,7 @@ namespace ShiftSoftware.ShiftEntity.Core
                 );
         }
 
-        public EntityType Find(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        public virtual EntityType Find(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -41,7 +41,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             return Find(id, asOf, includes);
         }
 
-        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
+        public virtual async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, List<string> includes = null)
         {
             return await GetIQueryable(asOf, includes)
                 .FirstOrDefaultAsync(x =>
@@ -49,7 +49,7 @@ namespace ShiftSoftware.ShiftEntity.Core
                 );
         }
 
-        public async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        public virtual async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -95,7 +95,7 @@ namespace ShiftSoftware.ShiftEntity.Core
             return GetIQueryable(asOf, includes);
         }
 
-        public async Task<List<RevisionDTO>> GetRevisionsAsync(Guid id)
+        public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(Guid id)
         {
             var items = await dbSet
                     .TemporalAll()
@@ -112,12 +112,12 @@ namespace ShiftSoftware.ShiftEntity.Core
             return items;
         }
 
-        public void Add(EntityType entity)
+        public virtual void Add(EntityType entity)
         {
             dbSet.Add(entity);
         }
 
-        public async Task SaveChangesAsync()
+        public virtual async Task SaveChangesAsync()
         {
             await db.SaveChangesAsync();
         }

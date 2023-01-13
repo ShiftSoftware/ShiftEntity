@@ -23,13 +23,13 @@ namespace ShiftEntityWeb
 
         [HttpGet]
         [EnableQuery]
-        public IActionResult Get()
+        public virtual IActionResult Get()
         {
             return Ok(repository.OdataList());
         }
 
         [HttpGet("{key}")]
-        public async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
+        public virtual async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
         {
             var item = await repository.FindAsync(key, asOf);
 
@@ -41,13 +41,13 @@ namespace ShiftEntityWeb
 
         [HttpGet]
         [EnableQuery]
-        public async Task<IActionResult> GetRevisions(Guid key)
+        public virtual async Task<IActionResult> GetRevisions(Guid key)
         {
             return Ok(await repository.GetRevisionsAsync(key));
         }
 
         [HttpPost]
-        public async Task<IActionResult> Post([FromBody] DTO dto)
+        public virtual async Task<IActionResult> Post([FromBody] DTO dto)
         {
             Entity newItem;
 
@@ -71,7 +71,7 @@ namespace ShiftEntityWeb
         }
 
         [HttpPut("{key}")]
-        public async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
+        public virtual async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
         {
             var item = await repository.FindAsync(key);
 
@@ -96,7 +96,7 @@ namespace ShiftEntityWeb
         }
 
         [HttpDelete("{key}")]
-        public async Task<IActionResult> Delete(Guid key)
+        public virtual async Task<IActionResult> Delete(Guid key)
         {
             var item = await repository.FindAsync(key);
 
@@ -111,7 +111,7 @@ namespace ShiftEntityWeb
         }
 
         [NonAction]
-        public async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
+        public virtual async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
         {
             var list = repository.OdataList();
 
