@@ -31,6 +31,10 @@
 		<PackageReference Include="ShiftSoftware.ShiftEntity" Version="1.1.30-alpha" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
+	</ItemGroup>
+
 	<!--<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
 	</ItemGroup>-->

@@ -10,8 +10,18 @@ using System.Linq;
 namespace ShiftSoftware.ShiftEntity.Web
 {
     public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
-        ControllerBase
+        ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
+        where Entity : ShiftEntity<Entity>
+    {
+        public ShiftEntityControllerAsync(Repository repository) : base(repository)
+        {
+        }
+    }
+
+    public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
+        ControllerBase
+        where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
     {
         public Repository repository { get; set; }
@@ -27,7 +37,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         {
             return Ok(repository.OdataList());
         }
-        
+
         [HttpGet("{key}")]
         public virtual async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
         {
@@ -47,7 +57,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpPost]
-        public virtual async Task<IActionResult> Post([FromBody] DTO dto)
+        public virtual async Task<IActionResult> Post([FromBody] CreateDTO dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -74,7 +84,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpPut("{key}")]
-        public virtual async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
+        public virtual async Task<IActionResult> Put(Guid key, [FromBody] UpdateDTO dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);

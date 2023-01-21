@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
@@ -10,8 +11,18 @@ using System.Threading.Tasks;
 namespace ShiftEntityWeb
 {
     public class ShiftEntityController<Repository, Entity, ListDTO, DTO> :
-        ControllerBase
+        ShiftEntityController<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepository<Entity, ListDTO, DTO>
+        where Entity : ShiftEntity<Entity>
+    {
+        public ShiftEntityController(Repository repository) : base(repository)
+        {
+        }
+    }
+
+    public class ShiftEntityController<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
+        ControllerBase
+        where Repository : IShiftRepository<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
     {
         public Repository repository { get; set; }
@@ -47,7 +58,7 @@ namespace ShiftEntityWeb
         }
 
         [HttpPost]
-        public virtual async Task<IActionResult> Post([FromBody] DTO dto)
+        public virtual async Task<IActionResult> Post([FromBody] CreateDTO dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -60,7 +71,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<DTO>
+                return BadRequest(new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message
                 });
@@ -70,11 +81,11 @@ namespace ShiftEntityWeb
 
             await repository.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<DTO>(repository.View(newItem)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(repository.View(newItem)));
         }
 
         [HttpPut("{key}")]
-        public virtual async Task<IActionResult> Put(Guid key, [FromBody] DTO dto)
+        public virtual async Task<IActionResult> Put(Guid key, [FromBody] UpdateDTO dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -90,7 +101,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<DTO>
+                return BadRequest(new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message
                 });
@@ -98,7 +109,7 @@ namespace ShiftEntityWeb
 
             await repository.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<DTO>(repository.View(item)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(repository.View(item)));
         }
 
         [HttpDelete("{key}")]
