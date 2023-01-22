@@ -71,7 +71,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<SelectDTO>
+                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message
                 });
@@ -101,7 +101,7 @@ namespace ShiftEntityWeb
             }
             catch (ShiftEntityException ex)
             {
-                return BadRequest(new ShiftEntityResponse<SelectDTO>
+                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message
                 });
@@ -120,7 +120,17 @@ namespace ShiftEntityWeb
             if (item == null)
                 return NotFound();
 
-            repository.Delete(item);
+            try
+            {
+                repository.Delete(item);
+            }
+            catch (ShiftEntityException ex)
+            {
+                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
+                {
+                    Message = ex.Message
+                });
+            }
 
             await repository.SaveChangesAsync();
 
