@@ -53,6 +53,15 @@ public static class IncludeOperationsExtensions
     }
 
     public static IncludeOperations<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>
+        (this IncludeOperations<TEntity, ICollection<TPreviousProperty>> source,
+        Expression<Func<TPreviousProperty, TProperty>> navigartionProperyPath)
+        where TEntity : class
+    {
+        source.Parent.Includes += "." + navigartionProperyPath.GetMemberAccess().Name;
+        return new IncludeOperations<TEntity, TProperty>(source.Parent);
+    }
+
+    public static IncludeOperations<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>
         (this IncludeOperations<TEntity, TPreviousProperty> source,
         Expression<Func<TPreviousProperty, TProperty>> navigartionProperyPath)
         where TEntity : class
