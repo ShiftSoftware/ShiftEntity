@@ -5,15 +5,16 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.1.36-alpha</Version>
+		<Version>1.1.37-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
+		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
 		<Authors>aza.asim,ShiftSoftware</Authors>
 		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
-		<!--<PackageIcon>icon.png</PackageIcon>-->
+		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
@@ -34,4 +35,9 @@
 		<ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<None Include="images\icon.png" Pack="true" PackagePath="\" />
+		<Folder Include="images\" />
+	</ItemGroup>
+	
 </Project>
