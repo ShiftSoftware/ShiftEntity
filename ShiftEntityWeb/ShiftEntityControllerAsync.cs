@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
+using ShiftSoftware.ShiftEntity.Core.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -44,16 +45,23 @@ namespace ShiftSoftware.ShiftEntity.Web
             var item = await repository.FindAsync(key, asOf);
 
             if (item == null)
-                return NotFound();
+                return NotFound(new ShiftEntityResponse<SelectDTO>
+                {
+                    Message = new Message
+                    {
+                        Title = "Not Found",
+                        Body = $"Can't find entity with ID '{key}'"
+                    }
+                });
 
-            return Ok(await repository.ViewAsync(item));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item)));
         }
 
         [HttpGet]
         [EnableQuery]
         public virtual async Task<IActionResult> GetRevisions(Guid key)
         {
-            return Ok(await repository.GetRevisionsAsync(key));
+            return Ok(new ShiftEntityResponse<List<RevisionDTO>>(await repository.GetRevisionsAsync(key)));
         }
 
         [HttpPost]
