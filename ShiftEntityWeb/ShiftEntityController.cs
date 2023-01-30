@@ -134,7 +134,7 @@ namespace ShiftEntityWeb
 
             await repository.SaveChangesAsync();
 
-            return Ok(repository.View(item));
+            return Ok(new ShiftEntityResponse<SelectDTO>(repository.View(item)));
         }
 
         [NonAction]

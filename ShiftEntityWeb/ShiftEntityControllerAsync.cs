@@ -133,7 +133,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             await repository.SaveChangesAsync();
 
-            return Ok(await repository.ViewAsync(item));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item)));
         }
 
         [NonAction]
