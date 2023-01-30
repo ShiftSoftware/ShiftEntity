@@ -10,7 +10,7 @@
 		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
-		<Authors>aza.asim,ShiftSoftware</Authors>
+		<Authors>aza.asim,ShiftSoftware,Nahro</Authors>
 		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>

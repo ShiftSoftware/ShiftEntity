@@ -8,7 +8,7 @@
 		<Version>1.1.37-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
-		<Authors>aza.asim,ShiftSoftware</Authors>
+		<Authors>aza.asim,ShiftSoftware,Nahro</Authors>
 		<Description></Description>
 		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
