@@ -5,7 +5,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.2.0-alpha</Version>
+		<Version>1.2.1-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 

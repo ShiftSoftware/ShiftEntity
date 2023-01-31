@@ -68,7 +68,15 @@ namespace ShiftSoftware.ShiftEntity.Web
         public virtual async Task<IActionResult> Post([FromBody] CreateDTO dto)
         {
             if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            {
+                var errors = ModelState.Select(x => new { x.Key, x.Value?.Errors })
+                .ToDictionary(x => x.Key, x => x.Errors);
+                var response = new ShiftEntityResponse<SelectDTO>
+                {
+                    Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                };
+                return BadRequest(response);
+            }
 
             Entity newItem;
 
@@ -95,7 +103,15 @@ namespace ShiftSoftware.ShiftEntity.Web
         public virtual async Task<IActionResult> Put(Guid key, [FromBody] UpdateDTO dto)
         {
             if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            {
+                var errors = ModelState.Select(x => new { x.Key, x.Value?.Errors })
+                .ToDictionary(x => x.Key, x => x.Errors);
+                var response = new ShiftEntityResponse<SelectDTO>
+                {
+                    Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                };
+                return BadRequest(response);
+            }
 
             var item = await repository.FindAsync(key);
 
