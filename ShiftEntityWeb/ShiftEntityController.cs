@@ -62,7 +62,7 @@ namespace ShiftEntityWeb
         [EnableQuery]
         public virtual async Task<IActionResult> GetRevisions(Guid key)
         {
-            return Ok(new ShiftEntityResponse<List<RevisionDTO>>(await repository.GetRevisionsAsync(key)));
+            return Ok(await repository.GetRevisionsAsync(key));
         }
 
         [HttpPost]
