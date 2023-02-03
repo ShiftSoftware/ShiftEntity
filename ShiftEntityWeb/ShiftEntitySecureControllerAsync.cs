@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
@@ -10,6 +11,17 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
+
+public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> :
+    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
+    where Entity : ShiftEntity<Entity>
+{
+    public ShiftEntitySecureControllerAsync(Repository repository, TypeAuthService typeAuthService, ReadWriteDeleteAction action) :
+        base(repository, typeAuthService, action)
+    {
+    }
+}
 
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
         ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
