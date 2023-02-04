@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Dtos;
+using ShiftSoftware.ShiftEntity.Web.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,11 +80,12 @@ namespace ShiftEntityWeb
                 return BadRequest(response);
             }
 
+
             Entity newItem;
 
             try
             {
-                newItem = repository.Create(dto);
+                newItem = repository.Create(dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
@@ -121,7 +123,7 @@ namespace ShiftEntityWeb
 
             try
             {
-                repository.Update(item, dto);
+                repository.Update(item, dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
@@ -146,7 +148,7 @@ namespace ShiftEntityWeb
 
             try
             {
-                repository.Delete(item);
+                repository.Delete(item, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {

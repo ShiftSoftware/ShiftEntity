@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
 using ShiftSoftware.ShiftEntity.Core.Dtos;
+using ShiftSoftware.ShiftEntity.Web.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -82,7 +83,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
-                newItem = await repository.CreateAsync(dto);
+                newItem = await repository.CreateAsync(dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
@@ -120,7 +121,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
-                await repository.UpdateAsync(item, dto);
+                await repository.UpdateAsync(item, dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
@@ -145,7 +146,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
-                await repository.DeleteAsync(item);
+                await repository.DeleteAsync(item, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
