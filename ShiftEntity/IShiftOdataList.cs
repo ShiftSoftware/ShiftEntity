@@ -4,6 +4,6 @@ namespace ShiftSoftware.ShiftEntity.Core
 {
     public interface IShiftOdataList<ListDTO>
     {
-        public IQueryable<ListDTO> OdataList();
+        public IQueryable<ListDTO> OdataList(bool ignoreGlobalFilters = false);
     }
 }

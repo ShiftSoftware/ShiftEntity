@@ -41,12 +41,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override IActionResult Get()
+    public override IActionResult Get([FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return base.Get();
+        return base.Get(ignoreGlobalFilters);
     }
 
     [Authorize]

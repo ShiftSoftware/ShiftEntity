@@ -36,9 +36,9 @@ namespace ShiftEntityWeb
 
         [HttpGet]
         [EnableQuery]
-        public virtual IActionResult Get()
+        public virtual IActionResult Get([FromQuery] bool ignoreGlobalFilters = false)
         {
-            return Ok(repository.OdataList());
+            return Ok(repository.OdataList(ignoreGlobalFilters));
         }
 
         [HttpGet("{key}")]
