@@ -99,6 +99,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         {
             var items = await dbSet
                     .TemporalAll()
+                    .AsNoTracking()
                     .Where(x => EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
                     .Select(x => new RevisionDTO
                     {
