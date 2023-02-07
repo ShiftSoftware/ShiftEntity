@@ -12,8 +12,11 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
 
-    public EntityType CreateShiftEntity(Guid? userId = null)
+    public EntityType CreateShiftEntity(Guid? userId = null, Guid? id = null)
     {
+        if (id is not null)
+            this.ID = id.Value;
+
         var now = DateTime.UtcNow;
 
         LastSaveDate = now;
