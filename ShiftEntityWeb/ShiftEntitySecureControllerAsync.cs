@@ -50,12 +50,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
+    public override async Task<IActionResult> GetSingle
+        (Guid key, [FromHeader] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return await base.GetSingle(key, asOf);
+        return await base.GetSingle(key, asOf, ignoreGlobalFilters);
     }
 
     [Authorize]

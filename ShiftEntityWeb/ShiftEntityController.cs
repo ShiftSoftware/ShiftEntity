@@ -42,9 +42,10 @@ namespace ShiftEntityWeb
         }
 
         [HttpGet("{key}")]
-        public virtual async Task<IActionResult> GetSingle(Guid key, [FromHeader] DateTime? asOf)
+        public virtual async Task<IActionResult> GetSingle
+            (Guid key, [FromHeader] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
-            var item = await repository.FindAsync(key, asOf);
+            var item = await repository.FindAsync(key, asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
