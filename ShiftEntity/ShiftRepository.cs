@@ -42,7 +42,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         }
 
         public virtual async Task<EntityType> FindAsync
-            (Guid id, DateTime? asOf = null, List<string> includes = null, bool ignoreGlobalFilters = false)
+            (Guid id, DateTime? asOf = null, bool ignoreGlobalFilters = false, List<string> includes = null)
         {
             var q = GetIQueryable(asOf, includes);
 
@@ -54,7 +54,8 @@ namespace ShiftSoftware.ShiftEntity.Core
                 );
         }
 
-        public virtual async Task<EntityType> FindAsync(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        public virtual async Task<EntityType> FindAsync
+            (Guid id, DateTime? asOf = null, bool ignoreGlobalFilters = false, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -65,7 +66,7 @@ namespace ShiftSoftware.ShiftEntity.Core
                 includes.Add(operation.Includes);
             }
 
-            return await FindAsync(id, asOf, includes);
+            return await FindAsync(id, asOf, ignoreGlobalFilters, includes);
         }
 
         private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
