@@ -5,12 +5,12 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.3.3-alpha</Version>
+		<Version>1.3.4-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
-		<Authors>aza.asim,ShiftSoftware,Nahro</Authors>
+		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
@@ -29,7 +29,7 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.0.8-alpha" />
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.0.11-alpha" />
 	</ItemGroup>
 
 	<ItemGroup>
