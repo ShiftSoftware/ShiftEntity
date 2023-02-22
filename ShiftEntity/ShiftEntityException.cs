@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Collections.Generic;
+using System.Net;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
@@ -14,22 +15,22 @@ public class ShiftEntityException : System.Exception
     public ShiftEntityException(
         string messageTitle,
         string messageBody,
-        int httpStatusCode)
+        int httpStatusCode, List<Message> subMessage)
     {
-        this.Message = new Message { Title = messageTitle, Body = messageBody };
+        this.Message = new Message { Title = messageTitle, Body = messageBody, SubMessages = subMessage };
         this.HttpStatusCode = httpStatusCode;
     }
 
     public ShiftEntityException(
         string messageTitle,
         string messageBody,
-        HttpStatusCode httpStatusCode) :
-        this(messageTitle, messageBody, (int) httpStatusCode)
+        HttpStatusCode httpStatusCode, List<Message> subMessage) :
+        this(messageTitle, messageBody, (int) httpStatusCode, subMessage)
     { }
 
     public ShiftEntityException(
         string messageTitle,
-        string messageBody) :
-        this(messageTitle, messageBody, System.Net.HttpStatusCode.BadRequest)
+        string messageBody, List<Message> subMessage) :
+        this(messageTitle, messageBody, System.Net.HttpStatusCode.BadRequest, subMessage)
     { }
 }
