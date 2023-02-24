@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core
 {
@@ -19,5 +20,8 @@ namespace ShiftSoftware.ShiftEntity.Core
     {
         void Add(Entity entity);
         Task SaveChangesAsync();
+
+        Message ResponseMessage { get; set; }
+        Dictionary<string, object> AdditionalResponseData { get; set; }
     }
 }

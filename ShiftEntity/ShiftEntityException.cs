@@ -1,36 +1,32 @@
 ﻿using System.Collections.Generic;
-using System.Net;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
 public class ShiftEntityException : System.Exception
 {
-    public Message Message { get; set; }
+    /// <summary>
+    /// A Message to describe what went wrong.
+    /// </summary>
+    public new Message Message { get; set; }
+
+    /// <summary>
+    /// The HttpStatusCode to be returned as the Response Status
+    /// </summary>
     public int HttpStatusCode { get; set; }
 
-    public ShiftEntityException() {
-        HttpStatusCode = (int)System.Net.HttpStatusCode.BadRequest;
-    }
+    /// <summary>
+    /// A generic place holder for any additional data related to the error.
+    /// </summary>
+    public Dictionary<string, object> AdditionalData { get; set; }
 
     public ShiftEntityException(
-        string messageTitle,
-        string messageBody,
-        int httpStatusCode, List<Message> subMessage)
+        Message message,
+        int httpStatusCode = (int)System.Net.HttpStatusCode.BadRequest,
+        Dictionary<string, object> additionalData = null
+    )
     {
-        this.Message = new Message { Title = messageTitle, Body = messageBody, SubMessages = subMessage };
+        this.Message = message;
         this.HttpStatusCode = httpStatusCode;
+        this.AdditionalData = additionalData;
     }
-
-    public ShiftEntityException(
-        string messageTitle,
-        string messageBody,
-        HttpStatusCode httpStatusCode, List<Message> subMessage) :
-        this(messageTitle, messageBody, (int) httpStatusCode, subMessage)
-    { }
-
-    public ShiftEntityException(
-        string messageTitle,
-        string messageBody, List<Message> subMessage) :
-        this(messageTitle, messageBody, System.Net.HttpStatusCode.BadRequest, subMessage)
-    { }
 }

@@ -13,6 +13,9 @@ namespace ShiftSoftware.ShiftEntity.Core
         DbSet<EntityType> dbSet;
         DbContext db;
 
+        public Message ResponseMessage { get; set; }
+        public Dictionary<string, object> AdditionalResponseData { get; set; }
+
         public ShiftRepository(DbContext db, DbSet<EntityType> dbSet)
         {
             this.db = db;

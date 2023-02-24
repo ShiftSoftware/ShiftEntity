@@ -53,10 +53,15 @@ namespace ShiftSoftware.ShiftEntity.Web
                     {
                         Title = "Not Found",
                         Body = $"Can't find entity with ID '{key}'"
-                    }
+                    },
+                    Additional = repository.AdditionalResponseData
                 });
 
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+            {
+                Message = repository.ResponseMessage,
+                Additional = repository.AdditionalResponseData
+            });
         }
 
         [HttpGet]
@@ -71,12 +76,23 @@ namespace ShiftSoftware.ShiftEntity.Web
         {
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Select(x => new { x.Key, x.Value?.Errors })
-                .ToDictionary(x => x.Key, x => x.Errors);
                 var response = new ShiftEntityResponse<SelectDTO>
                 {
-                    Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                    Message = new Message
+                    {
+                        Title = "Model Validation Error",
+                        SubMessages = ModelState.Select(x => new Message
+                        {
+                            Title = x.Key,
+                            SubMessages = x.Value.Errors.Select(y => new Message
+                            {
+                                Title = y.ErrorMessage
+                            }).ToList()
+                        }).ToList()
+                    },
+                    Additional = repository.AdditionalResponseData,
                 };
+
                 return BadRequest(response);
             }
 
@@ -90,7 +106,8 @@ namespace ShiftSoftware.ShiftEntity.Web
             {
                 return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
-                    Message = ex.Message
+                    Message = ex.Message,
+                    Additional = ex.AdditionalData,
                 });
             }
 
@@ -98,7 +115,11 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             await repository.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
+            {
+                Message = repository.ResponseMessage,
+                Additional = repository.AdditionalResponseData
+            });
         }
 
         [HttpPut("{key}")]
@@ -106,19 +127,38 @@ namespace ShiftSoftware.ShiftEntity.Web
         {
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Select(x => new { x.Key, x.Value?.Errors })
-                .ToDictionary(x => x.Key, x => x.Errors);
                 var response = new ShiftEntityResponse<SelectDTO>
                 {
-                    Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                    Message = new Message
+                    {
+                        Title = "Model Validation Error",
+                        SubMessages = ModelState.Select(x => new Message
+                        {
+                            Title = x.Key,
+                            SubMessages = x.Value.Errors.Select(y => new Message
+                            {
+                                Title = y.ErrorMessage
+                            }).ToList()
+                        }).ToList()
+                    },
+                    Additional = repository.AdditionalResponseData,
                 };
+
                 return BadRequest(response);
             }
 
             var item = await repository.FindAsync(key);
 
             if (item == null)
-                return NotFound();
+                return NotFound(new ShiftEntityResponse<SelectDTO>
+                {
+                    Message = new Message
+                    {
+                        Title = "Not Found",
+                        Body = $"Can't find entity with ID '{key}'"
+                    },
+                    Additional = repository.AdditionalResponseData
+                });
 
             try
             {
@@ -128,13 +168,18 @@ namespace ShiftSoftware.ShiftEntity.Web
             {
                 return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
-                    Message = ex.Message
+                    Message = ex.Message,
+                    Additional = repository.AdditionalResponseData,
                 });
             }
 
             await repository.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+            {
+                Message = repository.ResponseMessage,
+                Additional = repository.AdditionalResponseData,
+            });
         }
 
         [HttpDelete("{key}")]
@@ -143,7 +188,15 @@ namespace ShiftSoftware.ShiftEntity.Web
             var item = await repository.FindAsync(key);
 
             if (item == null)
-                return NotFound();
+                return NotFound(new ShiftEntityResponse<SelectDTO>
+                {
+                    Message = new Message
+                    {
+                        Title = "Not Found",
+                        Body = $"Can't find entity with ID '{key}'",
+                    },
+                    Additional = repository.AdditionalResponseData,
+                });
 
             try
             {
@@ -153,13 +206,18 @@ namespace ShiftSoftware.ShiftEntity.Web
             {
                 return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
-                    Message = ex.Message
+                    Message = ex.Message,
+                    Additional = repository.AdditionalResponseData,
                 });
             }
 
             await repository.SaveChangesAsync();
 
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item)));
+            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+            {
+                Message = repository.ResponseMessage,
+                Additional = repository.AdditionalResponseData
+            });
         }
 
         [NonAction]
