@@ -22,5 +22,11 @@ namespace ShiftSoftware.ShiftEntity.Core
         public string? Body { get; set; }
 
         public List<Message> SubMessages  { get; set; }
+
+        public Message() { }
+
+        public Message(string title) { this.Title = title; }
+        public Message(string title, string body) { this.Title = title; this.Body = body; }
+        public Message(string title, string body, List<Message> subMessages) { this.Title = title; this.Body = body; this.SubMessages = subMessages; }
     }
 }
