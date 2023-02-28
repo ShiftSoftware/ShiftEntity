@@ -5,12 +5,11 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Core</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
-		<Version>1.3.8-alpha</Version>
+		<Version>1.3.9-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Description></Description>
-		<!--<GeneratePackageOnBuild>True</GeneratePackageOnBuild>-->
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>

@@ -7,5 +7,7 @@ namespace ShiftSoftware.ShiftEntity.Core.Dtos
     {
         [Key]
         public Guid ID { get; set; }
+
+        public long SequentialId { get; set; }
     }
 }

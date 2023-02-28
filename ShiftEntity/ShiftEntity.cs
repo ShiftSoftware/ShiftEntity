@@ -1,16 +1,22 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
 public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
 {
+    [Key]
     public Guid ID { get; private set; }
     public DateTime CreateDate { get; private set; }
     public DateTime LastSaveDate { get; private set; }
     public Guid? CreatedByUserID { get; private set; }
     public Guid? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
+
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long SequentialId { get; set; }
 
     public EntityType CreateShiftEntity(Guid? userId = null, Guid? id = null)
     {
