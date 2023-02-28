@@ -42,7 +42,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet("{key}")]
         public virtual async Task<IActionResult> GetSingle
-            (Guid key, [FromHeader] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
+            (Guid key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
             var item = await repository.FindAsync(key, asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
