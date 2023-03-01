@@ -5,10 +5,10 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 public interface IShiftEntityDelete<EntityType> where EntityType : class
 {
-    public EntityType Delete(EntityType entity, Guid? userId = null);
+    public EntityType Delete(EntityType entity, long? userId = null);
 }
 
 public interface IShiftEntityDeleteAsync<EntityType> where EntityType : class
 {
-    public Task<EntityType> DeleteAsync(EntityType entity, Guid? userId = null);
+    public Task<EntityType> DeleteAsync(EntityType entity, long? userId = null);
 }

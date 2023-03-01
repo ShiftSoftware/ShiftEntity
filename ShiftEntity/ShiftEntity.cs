@@ -7,16 +7,15 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public abstract class ShiftEntity<EntityType> : IShiftEntity
     where EntityType : class
 {
-    public Guid ID { get; private set; }
+    [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long ID { get; private set; }
     public DateTime CreateDate { get; private set; }
     public DateTime LastSaveDate { get; private set; }
-    public Guid? CreatedByUserID { get; private set; }
-    public Guid? LastSavedByUserID { get; private set; }
+    public long? CreatedByUserID { get; private set; }
+    public long? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
 
-    public long SequentialId { get; set; }
-
-    public EntityType CreateShiftEntity(Guid? userId = null, Guid? id = null)
+    public EntityType CreateShiftEntity(long? userId = null, long? id = null)
     {
         if (id is not null)
             this.ID = id.Value;
@@ -34,7 +33,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return this as EntityType;
     }
 
-    public EntityType UpdateShiftEntity(Guid? userId = null)
+    public EntityType UpdateShiftEntity(long? userId = null)
     {
         var now = DateTime.UtcNow;
 
@@ -44,7 +43,7 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
         return this as EntityType;
     }
 
-    public EntityType DeleteShiftEntity(Guid? userId = null)
+    public EntityType DeleteShiftEntity(long? userId = null)
     {
         UpdateShiftEntity(userId);
 

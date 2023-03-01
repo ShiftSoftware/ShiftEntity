@@ -22,15 +22,15 @@ namespace ShiftSoftware.ShiftEntity.Core
             this.dbSet = dbSet;
         }
 
-        public virtual EntityType Find(Guid id, DateTime? asOf = null, List<string> includes = null)
+        public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
         {
             return GetIQueryable(asOf, includes)
                 .FirstOrDefault(x =>
-                    EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
         }
 
-        public virtual EntityType Find(Guid id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -45,7 +45,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         }
 
         public virtual async Task<EntityType> FindAsync
-            (Guid id, DateTime? asOf = null, bool ignoreGlobalFilters = false, List<string> includes = null)
+            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false, List<string> includes = null)
         {
             var q = GetIQueryable(asOf, includes);
 
@@ -53,12 +53,12 @@ namespace ShiftSoftware.ShiftEntity.Core
                 q = q.IgnoreQueryFilters();
 
             return await q.FirstOrDefaultAsync(x =>
-                    EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
         }
 
         public virtual async Task<EntityType> FindAsync
-            (Guid id, DateTime? asOf = null, bool ignoreGlobalFilters = false, params Action<IncludeOperations<EntityType>>[] includeOperations)
+            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -104,17 +104,17 @@ namespace ShiftSoftware.ShiftEntity.Core
             return GetIQueryable(asOf, includes);
         }
 
-        public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(Guid id)
+        public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(long id)
         {
             var items = await dbSet
                     .TemporalAll()
                     .AsNoTracking()
-                    .Where(x => EF.Property<Guid>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
+                    .Where(x => EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
                     .Select(x => new RevisionDTO
                     {
                         ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
                         ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
-                        SavedByUserID = EF.Property<Guid?>(x, nameof(ShiftEntity<EntityType>.LastSavedByUserID)),
+                        SavedByUserID = EF.Property<long?>(x, nameof(ShiftEntity<EntityType>.LastSavedByUserID)),
                     })
                     .OrderByDescending(x => x.ValidTo)
                     .ToListAsync();

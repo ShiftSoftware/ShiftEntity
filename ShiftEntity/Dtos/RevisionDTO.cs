@@ -6,6 +6,6 @@ namespace ShiftSoftware.ShiftEntity.Core.Dtos
     {
         public DateTime? ValidFrom { get; set; }
         public DateTime? ValidTo { get; set; }
-        public Guid? SavedByUserID { get; set; }
+        public long? SavedByUserID { get; set; }
     }
 }

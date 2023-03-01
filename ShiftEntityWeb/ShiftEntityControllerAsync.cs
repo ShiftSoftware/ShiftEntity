@@ -42,7 +42,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet("{key}")]
         public virtual async Task<IActionResult> GetSingle
-            (Guid key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
+            (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
             var item = await repository.FindAsync(key, asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
@@ -66,7 +66,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet]
         [EnableQuery]
-        public virtual async Task<IActionResult> GetRevisions(Guid key)
+        public virtual async Task<IActionResult> GetRevisions(long key)
         {
             return Ok(await repository.GetRevisionsAsync(key));
         }
@@ -123,7 +123,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpPut("{key}")]
-        public virtual async Task<IActionResult> Put(Guid key, [FromBody] UpdateDTO dto)
+        public virtual async Task<IActionResult> Put(long key, [FromBody] UpdateDTO dto)
         {
             if (!ModelState.IsValid)
             {
@@ -183,7 +183,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpDelete("{key}")]
-        public virtual async Task<IActionResult> Delete(Guid key)
+        public virtual async Task<IActionResult> Delete(long key)
         {
             var item = await repository.FindAsync(key);
 

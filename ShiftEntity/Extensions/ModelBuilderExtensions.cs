@@ -34,10 +34,6 @@ public static class ModelBuilderExtensions
                 var body = ReplacingExpressionVisitor.Replace(filterExpr.Parameters.First(), parameter, filterExpr.Body);
                 var lambdaExpression = Expression.Lambda(body, parameter);
                 entityType.SetQueryFilter(lambdaExpression);
-
-                modelBuilder.Entity(entityType.ClrType).HasKey(nameof(ShiftEntity<object>.ID)).IsClustered(false);
-                modelBuilder.Entity(entityType.ClrType).HasIndex(nameof(ShiftEntity<object>.SequentialId)).IsClustered(true);
-                modelBuilder.Entity(entityType.ClrType).Property(nameof(ShiftEntity<object>.SequentialId)).ValueGeneratedOnAdd();
             }
         }
 

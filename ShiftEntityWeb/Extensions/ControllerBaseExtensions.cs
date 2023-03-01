@@ -10,7 +10,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
 internal static class ControllerBaseExtensions
 {
-    internal static Guid? GetUserID(this ControllerBase controller)
+    internal static long? GetUserID(this ControllerBase controller)
     {
         if(!controller.User.Identity.IsAuthenticated)
             return null;
@@ -19,6 +19,6 @@ internal static class ControllerBaseExtensions
         if (id is null)
             return null;
 
-        return new Guid(id);
+        return long.Parse(id);
     }
 }

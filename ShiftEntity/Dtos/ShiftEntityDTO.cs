@@ -11,9 +11,9 @@ public class ShiftEntityDTO : ShiftEntityDTOBase
     [DataType(DataType.DateTime)]
     public DateTime LastSaveDate { get; set; }
 
-    public Guid? CreatedByUserID { get; set; }
+    public long? CreatedByUserID { get; set; }
 
-    public Guid? LastSavedByUserID { get; set; }
+    public long? LastSavedByUserID { get; set; }
 
     public bool IsDeleted { get; set; }
 }
