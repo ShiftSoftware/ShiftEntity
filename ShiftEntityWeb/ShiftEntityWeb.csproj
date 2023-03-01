@@ -34,5 +34,9 @@
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
+	</ItemGroup>
 	
 </Project>
