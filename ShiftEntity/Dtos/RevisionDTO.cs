@@ -2,7 +2,7 @@
 
 namespace ShiftSoftware.ShiftEntity.Core.Dtos
 {
-    public class RevisionDTO
+    public class RevisionDTO : ShiftEntityDTOBase
     {
         public DateTime? ValidFrom { get; set; }
         public DateTime? ValidTo { get; set; }
