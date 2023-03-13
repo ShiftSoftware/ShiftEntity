@@ -6,6 +6,6 @@ namespace ShiftSoftware.ShiftEntity.Core.Dtos
 {
     public class ShiftEntityListDTO : ShiftEntityDTOBase
     {
-        public ICollection<RevisionDTO>? Revisions { get; set; }
+        public List<RevisionDTO> Revisions { get; set; } = new List<RevisionDTO>();
     }
 }

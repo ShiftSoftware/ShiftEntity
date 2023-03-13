@@ -112,6 +112,7 @@ namespace ShiftSoftware.ShiftEntity.Core
                     .Where(x => EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
                     .Select(x => new RevisionDTO
                     {
+                        ID = EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)),
                         ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
                         ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
                         SavedByUserID = EF.Property<long?>(x, nameof(ShiftEntity<EntityType>.LastSavedByUserID)),
