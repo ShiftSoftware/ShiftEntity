@@ -15,6 +15,16 @@ public abstract class ShiftEntity<EntityType> : IShiftEntity
     public long? LastSavedByUserID { get; private set; }
     public bool IsDeleted { get; private set; }
 
+    public ShiftEntity()
+    {
+        
+    }
+
+    public ShiftEntity(long id)
+    {
+        this.ID = id;
+    }
+
     public EntityType CreateShiftEntity(long? userId = null, long? id = null)
     {
         if (id is not null)
