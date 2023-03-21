@@ -12,11 +12,6 @@ using System;
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 public static class TimeZoneService
 {
-    public static DateTime ReceiveDateFromClient(this DateTime dateTime)
-    {
-        return new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
-    }
-
     public static void RegisterTimeZoneConverters(this Microsoft.AspNetCore.Mvc.JsonOptions options)
     {
         options.JsonSerializerOptions.Converters.Add(new JsonDateTimeConverter());
@@ -48,7 +43,11 @@ class JsonDateTimeConverter : JsonConverter<DateTime>
 {
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return reader.GetDateTime();//.ToUniversalTime();
+        var dateTime = reader.GetDateTime();
+
+        dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+
+        return dateTime;
     }
 
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
@@ -61,13 +60,33 @@ class JsonTimeConverter : JsonConverter<TimeSpan>
 {
     public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return TimeSpan.Parse(reader.GetString()!);
+        //Adding or substracting from TimeSpan does not rotate the time of day correctly.
+        //For example substracting 12 from 10:10:00 results in (-01:50:00). Instead of rotating to the previous day's 22:10:00
+
+
+        //So we use a date time instead
+
+        var timeSpan = TimeSpan.Parse(reader.GetString()!);
+
+        var dateTime = new DateTime(2020, 01, 15).Add(timeSpan);
+
+        dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+
+        return dateTime.TimeOfDay;
     }
 
     public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
     {
-        //writer.WriteStringValue(new DateTimeOffset(new DateTime(value.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset()));
-        writer.WriteStringValue(value.Add(TimeZoneService.GetTimeZoneOffset()).ToString("hh\\:mm\\:ss\\.fffffff"));
+        //Adding or substracting from TimeSpan does not rotate the time of day correctly.
+        //For example substracting 12 from 10:10:00 results in (-01:50:00). Instead of rotating to the previous day's 22:10:00
+
+
+        //So we use a date time instead
+        var dateTime = new DateTime(2020, 01, 15).Add(value);
+
+        dateTime = dateTime.Add(TimeZoneService.GetTimeZoneOffset());
+
+        writer.WriteStringValue(dateTime.TimeOfDay.ToString("hh\\:mm\\:ss\\.fffffff"));
     }
 }
 
