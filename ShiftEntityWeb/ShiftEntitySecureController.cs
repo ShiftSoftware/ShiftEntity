@@ -59,9 +59,6 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        if (asOf.HasValue)
-            asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
-
         return await base.GetSingle(key, asOf, ignoreGlobalFilters);
     }
 
