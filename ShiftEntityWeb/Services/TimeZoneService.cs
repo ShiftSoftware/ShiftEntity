@@ -33,9 +33,19 @@ public static class TimeZoneService
         TimeZoneService.httpContextAccessor = httpContextAccessor;
     }
 
-    public static TimeSpan GetTimeZoneOffset()
+    internal static TimeSpan GetTimeZoneOffset()
     {
         return TimeSpan.Parse(TimeZoneService.httpContextAccessor!.HttpContext!.Request!.Headers!["timezone-offset"]!);
+    }
+
+    internal static DateTime ReadOffsettedDate(DateTimeOffset dateTime)
+    {
+        return new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+    }
+
+    internal static DateTime WriteOffsettedDate(DateTimeOffset dateTime)
+    {
+        return new DateTime(dateTime.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified);
     }
 }
 
@@ -49,7 +59,7 @@ class JsonDateTimeConverter : JsonConverter<DateTime>
         //For example if the value is Datetime.Min or Datetime.Max
         try
         {
-            dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+            dateTime = TimeZoneService.ReadOffsettedDate(dateTime);
         }
         catch
         {
@@ -61,13 +71,19 @@ class JsonDateTimeConverter : JsonConverter<DateTime>
 
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
     {
+        if (value == default)
+        {
+            writer.WriteStringValue(DateTime.MinValue);
+            return;
+        }
+
         DateTimeOffset dateTime = value;
 
         //Substracting or adding may result in invalid dates.
         //For example if the value is Datetime.Min or Datetime.Max
         try
         {
-            dateTime = new DateTimeOffset(new DateTime(value.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset());
+            dateTime = new DateTimeOffset(TimeZoneService.WriteOffsettedDate(dateTime), TimeZoneService.GetTimeZoneOffset());
         }
 
         catch
@@ -93,7 +109,7 @@ class JsonTimeConverter : JsonConverter<TimeSpan>
 
         var dateTime = new DateTime(2020, 01, 15).Add(timeSpan);
 
-        dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+        dateTime = TimeZoneService.ReadOffsettedDate(dateTime);
 
         return dateTime.TimeOfDay;
     }
@@ -140,20 +156,23 @@ class ODataDatetimeResourceSerializer : ODataResourceSerializer
 
         if (property?.Value?.GetType() == typeof(DateTimeOffset))
         {
-            var dateValue = (DateTimeOffset)property.Value;
+            var dateTime = (DateTimeOffset)property.Value;
 
-            //Substracting or adding may result in invalid dates.
-            //For example if the value is Datetime.Min or Datetime.Max
-            try
+            if (dateTime != default)
             {
-                dateValue = new DateTimeOffset(new DateTime(dateValue.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset());
-            }
-            catch
-            {
+                //Substracting or adding may result in invalid dates.
+                //For example if the value is Datetime.Min or Datetime.Max
+                try
+                {
+                    dateTime = new DateTimeOffset(TimeZoneService.WriteOffsettedDate(dateTime), TimeZoneService.GetTimeZoneOffset());
+                }
+                catch
+                {
 
-            }
+                }
 
-            property.Value = dateValue;
+                property.Value = dateTime;
+            }
         }
 
         return property;
