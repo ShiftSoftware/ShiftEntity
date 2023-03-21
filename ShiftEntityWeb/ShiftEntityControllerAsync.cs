@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using ShiftSoftware.ShiftEntity.Core.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
+using ShiftSoftware.ShiftEntity.Web.Services;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -44,6 +45,9 @@ namespace ShiftSoftware.ShiftEntity.Web
         public virtual async Task<IActionResult> GetSingle
             (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
+            if (asOf.HasValue)
+                asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
+
             var item = await repository.FindAsync(key, asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
             if (item == null)

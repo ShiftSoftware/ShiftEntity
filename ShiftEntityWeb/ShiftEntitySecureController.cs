@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ShiftEntityWeb;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
@@ -56,6 +57,9 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
+
+        if (asOf.HasValue)
+            asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
 
         return await base.GetSingle(key, asOf, ignoreGlobalFilters);
     }
