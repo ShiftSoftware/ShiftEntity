@@ -45,14 +45,37 @@ class JsonDateTimeConverter : JsonConverter<DateTime>
     {
         var dateTime = reader.GetDateTime();
 
-        dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+        //Substracting or adding may result in invalid dates.
+        //For example if the value is Datetime.Min or Datetime.Max
+        try
+        {
+            dateTime = new DateTime(dateTime.Subtract(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+        }
+        catch
+        {
+
+        }
 
         return dateTime;
     }
 
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
     {
-        writer.WriteStringValue(new DateTimeOffset(new DateTime(value.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset()));
+        DateTimeOffset dateTime = value;
+
+        //Substracting or adding may result in invalid dates.
+        //For example if the value is Datetime.Min or Datetime.Max
+        try
+        {
+            dateTime = new DateTimeOffset(new DateTime(value.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset());
+        }
+
+        catch
+        {
+
+        }
+
+        writer.WriteStringValue(dateTime);
     }
 }
 
@@ -119,7 +142,18 @@ class ODataDatetimeResourceSerializer : ODataResourceSerializer
         {
             var dateValue = (DateTimeOffset)property.Value;
 
-            property.Value = new DateTimeOffset(new DateTime(dateValue.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset());
+            //Substracting or adding may result in invalid dates.
+            //For example if the value is Datetime.Min or Datetime.Max
+            try
+            {
+                dateValue = new DateTimeOffset(new DateTime(dateValue.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset());
+            }
+            catch
+            {
+
+            }
+
+            property.Value = dateValue;
         }
 
         return property;
