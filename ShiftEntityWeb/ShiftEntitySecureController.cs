@@ -52,8 +52,9 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
+    [HttpGet("{key}")]
     public override async Task<IActionResult> GetSingle
-        (long key, [FromHeader] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
+        (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
