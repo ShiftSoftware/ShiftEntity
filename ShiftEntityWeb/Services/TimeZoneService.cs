@@ -67,7 +67,7 @@ class JsonTimeConverter : JsonConverter<TimeSpan>
     public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
     {
         //writer.WriteStringValue(new DateTimeOffset(new DateTime(value.Add(TimeZoneService.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified), TimeZoneService.GetTimeZoneOffset()));
-        writer.WriteStringValue(value.Add(TimeZoneService.GetTimeZoneOffset()).ToString("hh\\:mm\\:ss"));
+        writer.WriteStringValue(value.Add(TimeZoneService.GetTimeZoneOffset()).ToString("hh\\:mm\\:ss\\.fffffff"));
     }
 }
 
