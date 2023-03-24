@@ -5,7 +5,9 @@ VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity", "ShiftEntity\ShiftEntity.csproj", "{54831263-BB89-4B57-9F19-AD7376455420}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntityWeb", "ShiftEntityWeb\ShiftEntityWeb.csproj", "{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntityWeb", "ShiftEntityWeb\ShiftEntityWeb.csproj", "{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.Model", "ShiftEntity.Model\ShiftEntity.Model.csproj", "{F7361EAD-67D4-4BFE-8759-02EE3EB61722}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F7361EAD-67D4-4BFE-8759-02EE3EB61722}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7361EAD-67D4-4BFE-8759-02EE3EB61722}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7361EAD-67D4-4BFE-8759-02EE3EB61722}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F7361EAD-67D4-4BFE-8759-02EE3EB61722}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

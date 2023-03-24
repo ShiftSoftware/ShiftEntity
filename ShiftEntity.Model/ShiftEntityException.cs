@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 
-namespace ShiftSoftware.ShiftEntity.Core;
+namespace ShiftSoftware.ShiftEntity.Model;
 
-public class ShiftEntityException : System.Exception
+public class ShiftEntityException : Exception
 {
     /// <summary>
     /// A Message to describe what went wrong.
@@ -25,8 +25,8 @@ public class ShiftEntityException : System.Exception
         Dictionary<string, object> additionalData = null
     )
     {
-        this.Message = message;
-        this.HttpStatusCode = httpStatusCode;
-        this.AdditionalData = additionalData;
+        Message = message;
+        HttpStatusCode = httpStatusCode;
+        AdditionalData = additionalData;
     }
 }

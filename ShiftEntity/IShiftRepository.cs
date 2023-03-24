@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using ShiftSoftware.ShiftEntity.Model;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core

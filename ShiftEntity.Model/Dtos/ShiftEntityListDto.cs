@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
-namespace ShiftSoftware.ShiftEntity.Core.Dtos
+namespace ShiftSoftware.ShiftEntity.Model.Dtos
 {
     public class ShiftEntityListDTO : ShiftEntityDTOBase
     {

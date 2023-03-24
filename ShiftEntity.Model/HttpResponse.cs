@@ -1,5 +1,5 @@
 ﻿using System.Net;
-namespace ShiftSoftware.ShiftEntity.Core;
+namespace ShiftSoftware.ShiftEntity.Model;
 
 public class HttpResponse<T>
 {

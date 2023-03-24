@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace ShiftSoftware.ShiftEntity.Core.Dtos
+namespace ShiftSoftware.ShiftEntity.Model.Dtos
 {
     public class RevisionDTO : ShiftEntityDTOBase
     {

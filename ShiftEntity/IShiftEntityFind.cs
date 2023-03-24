@@ -1,8 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
+﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using ShiftSoftware.ShiftEntity.Core.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Core
 {

@@ -1,9 +1,8 @@
-﻿using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Dtos;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;

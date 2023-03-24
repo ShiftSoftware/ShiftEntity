@@ -1,14 +1,14 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using ShiftSoftware.ShiftEntity.Core;
-using System.Threading.Tasks;
-using System;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.Linq;
-using ShiftSoftware.ShiftEntity.Core.Dtos;
+using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {

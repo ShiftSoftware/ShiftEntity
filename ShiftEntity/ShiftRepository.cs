@@ -1,9 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.ShiftEntity.Core.Dtos;
+using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System;
 
 namespace ShiftSoftware.ShiftEntity.Core
 {

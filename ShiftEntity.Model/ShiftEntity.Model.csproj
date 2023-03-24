@@ -1,13 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net7.0</TargetFramework>
-		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<RootNamespace>ShiftSoftware.ShiftEntity.Model</RootNamespace>
 		<Authors>Shift Software</Authors>
-		<Product>ShiftEntity.Web</Product>
+		<Product>ShiftEntity.Model</Product>
 		<Version>1.3.22-alpha</Version>
-		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
-		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
+		<AssemblyName>ShiftSoftware.ShiftEntity.Model</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.Model</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
@@ -16,28 +19,16 @@
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
-		<Title>ShiftEntity.Web</Title>
+		<Title>ShiftEntity</Title>
 		<PackageReleaseNotes>
-			
+
 		</PackageReleaseNotes>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
-		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.0.11-alpha" />
-	</ItemGroup>
 
 	<ItemGroup>
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 	</ItemGroup>
-
-	<ItemGroup>
-	  <ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
-	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
-	</ItemGroup>
-	
 </Project>
