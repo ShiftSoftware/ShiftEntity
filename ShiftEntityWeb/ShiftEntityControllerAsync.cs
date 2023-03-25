@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
@@ -36,13 +37,13 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet]
         [EnableQuery]
-        public virtual IActionResult Get([FromQuery] bool ignoreGlobalFilters = false)
+        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
         {
             return Ok(repository.OdataList(ignoreGlobalFilters));
         }
 
         [HttpGet("{key}")]
-        public virtual async Task<IActionResult> GetSingle
+        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
             (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
             if (asOf.HasValue)
@@ -70,13 +71,13 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet]
         [EnableQuery]
-        public virtual async Task<IActionResult> GetRevisions(long key)
+        public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(long key)
         {
             return Ok(await repository.GetRevisionsAsync(key));
         }
 
         [HttpPost]
-        public virtual async Task<IActionResult> Post([FromBody] CreateDTO dto)
+        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
         {
             if (!ModelState.IsValid)
             {
@@ -127,7 +128,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpPut("{key}")]
-        public virtual async Task<IActionResult> Put(long key, [FromBody] UpdateDTO dto)
+        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(long key, [FromBody] UpdateDTO dto)
         {
             if (!ModelState.IsValid)
             {
@@ -187,7 +188,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpDelete("{key}")]
-        public virtual async Task<IActionResult> Delete(long key)
+        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(long key)
         {
             var item = await repository.FindAsync(key);
 

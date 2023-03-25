@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using ShiftEntityWeb;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
 using ShiftSoftware.TypeAuth.Core.Actions;
@@ -43,7 +45,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
-    public override IActionResult Get([FromQuery] bool ignoreGlobalFilters = false)
+    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -53,7 +55,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
 
     [Authorize]
     [HttpGet("{key}")]
-    public override async Task<IActionResult> GetSingle
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
         (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
@@ -63,7 +65,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
-    public override async Task<IActionResult> GetRevisions(long key)
+    public override async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(long key)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -72,7 +74,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
-    public override async Task<IActionResult> Post([FromBody] CreateDTO dto)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
     {
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -81,7 +83,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
-    public override async Task<IActionResult> Put(long key, [FromBody] UpdateDTO dto)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(long key, [FromBody] UpdateDTO dto)
     {
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -90,7 +92,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     }
 
     [Authorize]
-    public override async Task<IActionResult> Delete(long key)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(long key)
     {
         if (!typeAuthService.CanDelete(action))
             return Forbid();
