@@ -102,6 +102,11 @@ public class FastReportBuilder
 
                 if (barcodeObject != null)
                     barcodeObject.AllowExpressions = true;
+
+                var pictureObject = item as PictureObject;
+
+                if (pictureObject != null)
+                    pictureObject.ImageSourceExpression = pictureObject.ImageLocation;
             }
 
             report.Prepare();
