@@ -55,7 +55,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [Authorize]
     [HttpGet("{key}")]
     public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
-        (long key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
+        (string key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -64,7 +64,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(long key)
+    public override async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
     {
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -82,7 +82,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(long key, [FromBody] UpdateDTO dto)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -91,7 +91,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(long key)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key)
     {
         if (!typeAuthService.CanDelete(action))
             return Forbid();

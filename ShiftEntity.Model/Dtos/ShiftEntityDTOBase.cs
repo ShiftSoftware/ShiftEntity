@@ -1,11 +1,8 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System;
+namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Model.Dtos
+public class ShiftEntityDTOBase
 {
-    public class ShiftEntityDTOBase
-    {
-        [Key]
-        public long ID { get; set; }
-    }
+    [Key]
+    public string? ID { get; set; }
 }
