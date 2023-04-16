@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.HashId;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
@@ -36,7 +37,7 @@ namespace ShiftEntityWeb
         }
 
         [HttpGet]
-        [EnableQuery]
+        [EnableQueryWithHashIdConverter]
         public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
         {
             return Ok(repository.OdataList(ignoreGlobalFilters));
@@ -49,7 +50,7 @@ namespace ShiftEntityWeb
             if (asOf.HasValue)
                 asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
 
-            var item = await repository.FindAsync(HashIdService.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
+            var item = await repository.FindAsync(HashId.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -70,10 +71,10 @@ namespace ShiftEntityWeb
         }
 
         [HttpGet]
-        [EnableQuery]
+        [EnableQueryWithHashIdConverter]
         public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
         {
-            return Ok(await repository.GetRevisionsAsync(HashIdService.Decode(key)));
+            return Ok(await repository.GetRevisionsAsync(HashId.Decode(key)));
         }
 
         [HttpPost]
@@ -152,7 +153,7 @@ namespace ShiftEntityWeb
                 return BadRequest(response);
             }
 
-            var item = await repository.FindAsync(HashIdService.Decode(key));
+            var item = await repository.FindAsync(HashId.Decode(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -190,7 +191,7 @@ namespace ShiftEntityWeb
         [HttpDelete("{key}")]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key)
         {
-            var item = await repository.FindAsync(HashIdService.Decode(key));
+            var item = await repository.FindAsync(HashId.Decode(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>

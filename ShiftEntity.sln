@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity", "ShiftEntity\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntityWeb", "ShiftEntityWeb\ShiftEntityWeb.csproj", "{4021AECE-7F1A-4302-B01A-BA1A6E85AB47}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.Model", "ShiftEntity.Model\ShiftEntity.Model.csproj", "{F7361EAD-67D4-4BFE-8759-02EE3EB61722}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Model", "ShiftEntity.Model\ShiftEntity.Model.csproj", "{F7361EAD-67D4-4BFE-8759-02EE3EB61722}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

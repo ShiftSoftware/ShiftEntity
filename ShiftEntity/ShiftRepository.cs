@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.HashId;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -107,19 +108,26 @@ namespace ShiftSoftware.ShiftEntity.Core
 
         public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(long id)
         {
-            var items = await dbSet
+            var items = (await dbSet
                     .TemporalAll()
                     .AsNoTracking()
                     .Where(x => EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
-                    .Select(x => new RevisionDTO
+                    .Select(x => new
                     {
-                        //ID = EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)),
+                        ID = EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)),
                         ValidFrom = EF.Property<DateTime>(x, "PeriodStart"),
                         ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
                         SavedByUserID = EF.Property<long?>(x, nameof(ShiftEntity<EntityType>.LastSavedByUserID)),
                     })
                     .OrderByDescending(x => x.ValidTo)
-                    .ToListAsync();
+                    .ToListAsync())
+                    .Select(x => new RevisionDTO
+                    {
+                        ID = x.ID.ToString(),
+                        ValidFrom = x.ValidFrom,
+                        ValidTo = x.ValidTo,
+                        SavedByUserID = x.SavedByUserID == null ? null : x.SavedByUserID.ToString(),
+                    }).ToList();
 
             return items;
         }

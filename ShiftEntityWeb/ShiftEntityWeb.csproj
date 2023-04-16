@@ -5,7 +5,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.3.28-alpha</Version>
+		<Version>1.3.30-alpha</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -27,9 +27,9 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="FastReport.OpenSource" Version="2023.2.7" />
 		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2023.2.7" />
-		<PackageReference Include="Hashids.net" Version="1.7.0" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
+		<PackageReference Include="Microsoft.OData.Client" Version="7.15.0" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.0.25-alpha" />
 	</ItemGroup>
 
