@@ -17,7 +17,7 @@ public class JsonHashIdConverter : JsonConverter<string>
 
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
     {
-        if (HashId.hashids == null)
+        if (HashId.hashids == null || string.IsNullOrWhiteSpace(value))
             writer.WriteStringValue(value);
         else
             writer.WriteStringValue(HashId.Encode(long.Parse(value)));

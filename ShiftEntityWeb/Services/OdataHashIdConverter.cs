@@ -18,6 +18,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         internal static string RoutePrefix;
         internal static IEdmModel EdmModel;
+        internal static bool registered = false;
 
         public static void RegisterOdataHashIdConverter(this IServiceCollection services, string routePrefix, IEdmModel edmModel)
         {
@@ -29,6 +30,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 return new ODataIDSerializerProvider(serviceProvider);
             });
+
+            registered = true;
         }
 
         internal enum ProcessedHashIdType
@@ -86,6 +89,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
         {
+            if (!OdataHashIdConverter.registered)
+            {
+                base.OnActionExecuting(actionExecutingContext);
+
+                return;
+            }
+
             var queryStringValue = actionExecutingContext.HttpContext.Request.QueryString.Value;
 
             if (!string.IsNullOrWhiteSpace(queryStringValue))
