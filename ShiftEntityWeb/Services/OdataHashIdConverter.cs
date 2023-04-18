@@ -34,20 +34,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             registered = true;
         }
 
-        internal enum ProcessedHashIdType
+        internal static bool HasJsonConverterAttribute(string fullTypeName, string propertyName)
         {
-            Encoded,
-            Decoded
-        }
-
-        internal static List<string> GetProcessedHashId(string propertyName, string fullTypeName, List<string> originalValues, ProcessedHashIdType processedHashIdType)
-        {
-            if (originalValues == null)
-                return null;
-
-            if (originalValues.Count == 0)
-                return new List<string>();
-
             var declaringType = AppDomain.CurrentDomain.GetAssemblies()
                        .Reverse()
                        .Select(assembly => assembly.GetType(fullTypeName))
@@ -61,27 +49,19 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                        .FirstOrDefault(t => t.Name.Contains(fullTypeName));
 
             if (declaringType == null)
-                return null;
+                return false;
 
             var theProperty = declaringType.GetProperty(propertyName);
 
             if (theProperty == null)
-                return null;
+                return false;
 
             var hasJsonConverterAttribute = theProperty.CustomAttributes.Any(x =>
                     x.AttributeType == typeof(System.Text.Json.Serialization.JsonConverterAttribute) &&
                     x.ConstructorArguments.Any(y => (y.Value as Type)?.FullName == typeof(JsonHashIdConverter).FullName)
                 );
 
-            if (hasJsonConverterAttribute)
-            {
-                if (processedHashIdType == ProcessedHashIdType.Encoded)
-                    return originalValues.Select(x => x == null ? null : HashId.Encode(long.Parse(x))).ToList();
-                else if (processedHashIdType == ProcessedHashIdType.Decoded)
-                    return originalValues.Select(x => HashId.Decode(x).ToString()).ToList();
-            }
-
-            return null;
+            return hasJsonConverterAttribute;
         }
     }
 
@@ -162,178 +142,113 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
 
-            var decodedValue = OdataHashIdConverter.GetProcessedHashId(
-                property.Name, 
-                structuralProperty.DeclaringType.FullTypeName(),
-                new List<string> { property.Value?.ToString() },
-                OdataHashIdConverter.ProcessedHashIdType.Encoded
-            )?.FirstOrDefault()?.ToString();
+            if (property.Value != null && OdataHashIdConverter.HasJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name))
+            {
+                var encoded = HashId.Encode(long.Parse(property.Value.ToString()));
 
-            if (decodedValue != null)
-                property.Value = decodedValue;
+                if (encoded != null)
+                    property.Value = encoded;
+            }
 
             return property;
         }
     }
 
-    public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
+    public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode>
     {
-        public override SingleValueNode Visit(InNode nodeIn)
+        public HashIdQueryNodeVisitor HashIdQueryNodeVisitor { get; private set; }
+
+        public CollectionConstantVisitor(HashIdQueryNodeVisitor hashIdQueryNodeVisitor)
         {
-            if (nodeIn.Left is SingleValuePropertyAccessNode leftPropertyNode
-                && nodeIn.Right is CollectionConstantNode collectionConstant
-            )
-            {
-                var property = leftPropertyNode.Property;
+            this.HashIdQueryNodeVisitor = hashIdQueryNodeVisitor;
+        }
 
-                var fullTypeName = property.DeclaringType.FullTypeName();
+        public override CollectionConstantNode Visit(CollectionConstantNode nodeIn)
+        {
+            var newCollection = nodeIn.Collection.Select(x => x.Accept(this.HashIdQueryNodeVisitor));
 
-                var values = collectionConstant.Collection.Select(x => x.Value.ToString()).ToList();
+            return new CollectionConstantNode(
+                newCollection,
+                "(" + string.Join(",", newCollection.Select(y => (y as ConstantNode).Value)) + ")",
+                nodeIn.CollectionType
+            );
+        }
+    }
 
-                var decodedValues = OdataHashIdConverter.GetProcessedHashId(property.Name, fullTypeName, values, OdataHashIdConverter.ProcessedHashIdType.Decoded);
-
-                if (decodedValues == null)
-                    return nodeIn;
-
-                var newCollection = new CollectionConstantNode(decodedValues.Select(x => x), $"({string.Join(",", decodedValues.Select(x => $"'{x}'"))})", collectionConstant.CollectionType);
-
-                return new InNode(nodeIn.Left, newCollection);
-            }
+    public class HashIdQueryNodeVisitor : 
+        QueryNodeVisitor<SingleValueNode>
+    {
+        public bool HasJsonConverterAttribute { get; set; }
+        
+        public override SingleValueNode Visit(ConstantNode nodeIn)
+        {
+            if (HasJsonConverterAttribute)
+                return new ConstantNode(
+                    $"'{HashId.Decode(nodeIn.Value.ToString())}'",
+                    $"'{HashId.Decode(nodeIn.Value.ToString())}'"
+                );
 
             return nodeIn;
         }
-
+        
         public override SingleValueNode Visit(BinaryOperatorNode nodeIn)
         {
-            SingleValueNode visitedLeft = nodeIn.Left;
-            SingleValueNode visitedRight = nodeIn.Right;
+            var visitor = new HashIdQueryNodeVisitor();
 
-            if (nodeIn.Left is BinaryOperatorNode left)
-            {
-                visitedLeft = Visit(left);
-            }
+            var visitedLeft = nodeIn.Left is BinaryOperatorNode leftBinary ? 
+                Visit(leftBinary) : 
+                nodeIn.Left.Accept(visitor);
 
-            if (nodeIn.Right is BinaryOperatorNode right)
-            {
-                visitedRight = Visit(right);
-            }
+            var visitedRight = nodeIn.Right is BinaryOperatorNode rightBinary ?
+                Visit(rightBinary) : 
+                nodeIn.Right.Accept(visitor);
 
-            ConstantNode theConstantNode = null;
-            SingleValuePropertyAccessNode thePropertyAccessNode = null;
+            if (visitor.HasJsonConverterAttribute && !HashId.acceptUnencodedIds && !(nodeIn.OperatorKind == BinaryOperatorKind.Equal || nodeIn.OperatorKind == BinaryOperatorKind.NotEqual))
+                throw new ODataException("HashId values only accept Equals & Not Equals operators when the JsonConverterAttribute is present and unencoded IDs are not allowed.");
 
-            if (nodeIn.Left is ConstantNode)
-            {
-                theConstantNode = nodeIn.Left as ConstantNode;
-            }
+            return new BinaryOperatorNode(
+                nodeIn.OperatorKind,
+                visitedLeft,
+                visitedRight
+            );
+        }
 
-            if (nodeIn.Right is ConstantNode)
-            {
-                theConstantNode = nodeIn.Right as ConstantNode;
-            }
+        public override SingleValueNode Visit(ConvertNode nodeIn)
+        {
+            return nodeIn.Source.Accept(this);
+        }
 
-            if (nodeIn.Left is ConvertNode leftConvertNode)
-            {
-                if (leftConvertNode.Source is SingleValuePropertyAccessNode leftPropertyAccessNode)
-                    thePropertyAccessNode = leftPropertyAccessNode;
+        public override SingleValueNode Visit(InNode nodeIn)
+        {
+            return new InNode(
+                nodeIn.Left.Accept(this),
+                nodeIn.Right.Accept(new CollectionConstantVisitor(this))
+            );
+        }
 
-                if (leftConvertNode.Source is InNode lefInNode)
-                    visitedLeft = Visit(lefInNode);
-            }
+        public override SingleValueNode Visit(SingleValuePropertyAccessNode nodeIn)
+        {
+            if (nodeIn is SingleValuePropertyAccessNode propertyAccess && HasJsonConverterAttributeForProperty(propertyAccess))
+                this.HasJsonConverterAttribute = true;
 
-            if (nodeIn.Right is ConvertNode rightConvertNode)
-            {
-                if (rightConvertNode.Source is SingleValuePropertyAccessNode rightPropertyAccessNode)
-                    thePropertyAccessNode = rightPropertyAccessNode;
-
-                if (rightConvertNode.Source is InNode rightInNode)
-                    visitedRight = Visit(rightInNode);
-            }
-
-            if (nodeIn.Left is SingleValuePropertyAccessNode leftSingleValuePropertyAccessNode)
-            {
-                thePropertyAccessNode = leftSingleValuePropertyAccessNode;
-            }
-
-            if (nodeIn.Right is SingleValuePropertyAccessNode rightSingleValuePropertyAccessNode)
-            {
-                thePropertyAccessNode = rightSingleValuePropertyAccessNode;
-            }
-
-            if (theConstantNode != null && thePropertyAccessNode != null)
-            {
-                var property = thePropertyAccessNode.Property;
-
-                var decodedValue = OdataHashIdConverter.GetProcessedHashId(
-                    property.Name,
-                    property.DeclaringType.FullTypeName(),
-                    new List<string> { theConstantNode.Value?.ToString() },
-                    OdataHashIdConverter.ProcessedHashIdType.Decoded
-                )?.FirstOrDefault()?.ToString();
-
-                if (decodedValue == null)
-                    return nodeIn;
-
-                var updatedConstantNode = new ConstantNode("", $"'{decodedValue}'");
-
-                if (!HashId.acceptUnencodedIds && !(nodeIn.OperatorKind == BinaryOperatorKind.Equal || nodeIn.OperatorKind == BinaryOperatorKind.NotEqual))
-                {
-                    throw new ODataException("HashId values only accepts Equals & Not Equals operator");
-                }
-
-                return new BinaryOperatorNode(nodeIn.OperatorKind, thePropertyAccessNode, updatedConstantNode);
-            }
-
-            return new BinaryOperatorNode(nodeIn.OperatorKind, visitedLeft, visitedRight);
-            //return nodeIn;
+            return nodeIn;
         }
 
         public override SingleValueNode Visit(SingleValueFunctionCallNode nodeIn)
         {
-            SingleValuePropertyAccessNode thePropertyAccessNode = null;
-            ConstantNode theConstantNode = null;
+            return new SingleValueFunctionCallNode(
+                nodeIn.Name,
+                nodeIn.Parameters.Select(x => x.Accept(this)),
+                nodeIn.TypeReference
+            );
+        }
 
-            theConstantNode = nodeIn.Parameters.Where(x => x is ConstantNode).Select(x => x as ConstantNode).FirstOrDefault();
+        private bool HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
+        {
+            var fullTypeName = propertyAccessNode.Property.DeclaringType.FullTypeName();
+            var propertyName = propertyAccessNode.Property.Name;
 
-            SingleValueFunctionCallNode nodeToCheckProperty = nodeIn.Parameters.Where(x => x is SingleValueFunctionCallNode).Select(x => x as SingleValueFunctionCallNode).FirstOrDefault();
-
-            if (nodeToCheckProperty == null)
-                nodeToCheckProperty = nodeIn;
-
-            thePropertyAccessNode = nodeToCheckProperty.Parameters.Where(x => x is SingleValuePropertyAccessNode).Select(x => x as SingleValuePropertyAccessNode).FirstOrDefault();
-
-            if (thePropertyAccessNode == null)
-                thePropertyAccessNode = nodeToCheckProperty.Parameters.Where(x => x is ConvertNode convertNode && convertNode.Source is SingleValuePropertyAccessNode).Select(x => (x as ConvertNode).Source as SingleValuePropertyAccessNode).FirstOrDefault();
-
-            if (theConstantNode != null && thePropertyAccessNode != null)
-            {
-                var property = thePropertyAccessNode.Property;
-
-                var decodedValue = OdataHashIdConverter.GetProcessedHashId(
-                    property.Name,
-                    property.DeclaringType.FullTypeName(),
-                    new List<string> { theConstantNode.Value?.ToString() },
-                    OdataHashIdConverter.ProcessedHashIdType.Decoded
-                )?.FirstOrDefault()?.ToString();
-
-                if (decodedValue == null)
-                    return nodeIn;
-
-                var updatedConstantNode = new ConstantNode("", $"'{decodedValue}'");
-
-                var newFunction = new SingleValueFunctionCallNode(nodeIn.Name, nodeIn.Functions, new List<QueryNode>
-                {
-                    nodeIn == nodeToCheckProperty ?
-                    thePropertyAccessNode :
-                    new SingleValueFunctionCallNode(nodeToCheckProperty.Name, nodeToCheckProperty.Functions, new List<QueryNode> { 
-                        thePropertyAccessNode,
-                    }, nodeToCheckProperty.TypeReference, nodeToCheckProperty.Source),
-                    updatedConstantNode
-                }, nodeIn.TypeReference, nodeIn.Source);
-
-                return newFunction;
-            }
-
-            return nodeIn;
+            return OdataHashIdConverter.HasJsonConverterAttribute(fullTypeName, propertyName);
         }
     }
 }
