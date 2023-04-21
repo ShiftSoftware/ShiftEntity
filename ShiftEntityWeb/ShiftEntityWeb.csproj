@@ -30,7 +30,6 @@
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.15.0" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.0.25-alpha" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -39,6 +38,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" />
 	  <ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
 	</ItemGroup>
