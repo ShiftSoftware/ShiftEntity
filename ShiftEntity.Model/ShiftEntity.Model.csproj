@@ -33,6 +33,7 @@
 		<Folder Include="Images\" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Dashboard.Shared" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Model" />
 	</ItemGroup>
 
 
