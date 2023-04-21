@@ -27,11 +27,12 @@
 	</PropertyGroup>
 
 
-	
+		
 	<ItemGroup>
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Dashboard.Shared" />
 	</ItemGroup>
 
 

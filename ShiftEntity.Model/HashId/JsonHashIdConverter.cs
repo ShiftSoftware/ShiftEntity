@@ -48,8 +48,9 @@ public class JsonHashIdConverterAttribute : JsonConverterAttribute
 
     public JsonHashIdConverterAttribute(Type dtoType, int minHashLength = 0, string? alphabet = null)
     {
+        //HashIds library seems to be taking the first 24 chars of the salt. This is why we're reversing the type name
         if (HashId.Enabled)
-            Hashids = new ShiftEntityHashId(dtoType.FullName!, minHashLength, alphabet);
+            Hashids = new ShiftEntityHashId(new string(dtoType.FullName!.Reverse().ToArray()), minHashLength, alphabet);
     }
     public override JsonConverter? CreateConverter(Type typeToConvert)
     {
