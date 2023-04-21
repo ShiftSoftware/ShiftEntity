@@ -3,28 +3,43 @@
 namespace ShiftSoftware.ShiftEntity.Model.HashId;
 public static class HashId
 {
-    internal static Hashids? hashids;
     internal static bool acceptUnencodedIds;
+    internal static bool Enabled;
 
-    public static void RegisterHashId(bool acceptUnencodedIds = false, string? salt = null, int minHashLength = 0, string? alphabet = null)
+    internal static string UserIdsSalt = "";
+    internal static int UserIdsMinHashLength;
+    internal static string? UserIdsAlphabet;
+
+    public static void RegisterHashId(bool acceptUnencodedIds = false)
     {
         HashId.acceptUnencodedIds = acceptUnencodedIds;
 
+        HashId.Enabled = true;
+    }
+
+    public static void RegisterUserIdsHasher(string salt = "", int minHashLength = 0, string? alphabet = null)
+    {
+        HashId.UserIdsSalt = salt;
+        HashId.UserIdsMinHashLength = minHashLength;
+        HashId.UserIdsAlphabet = alphabet;
+    }
+}
+
+public class ShiftEntityHashId
+{
+    Hashids hashids;
+
+    public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null)
+    {
         if (alphabet == null)
             hashids = new Hashids(salt, minHashLength);
         else
             hashids = new Hashids(salt, minHashLength, alphabet);
     }
-    public static string Encode(long id)
-    {
-        if (hashids == null)
-            return id.ToString();
 
-        return hashids.EncodeLong(id);
-    }
-    public static long Decode(string hash)
+    public long Decode(string hash)
     {
-        if (hashids == null)
+        if (!HashId.Enabled)
             return long.Parse(hash);
 
         try
@@ -33,7 +48,7 @@ public static class HashId
         }
         catch
         {
-            if (acceptUnencodedIds)
+            if (HashId.acceptUnencodedIds)
             {
                 try
                 {
@@ -46,5 +61,13 @@ public static class HashId
 
             return default;
         }
+    }
+
+    public string Encode(long id)
+    {
+        if (!HashId.Enabled)
+            return id.ToString();
+
+        return hashids.EncodeLong(id);
     }
 }

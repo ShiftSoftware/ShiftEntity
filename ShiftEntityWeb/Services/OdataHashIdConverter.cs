@@ -18,7 +18,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         internal static string RoutePrefix;
         internal static IEdmModel EdmModel;
-        internal static bool registered = false;
 
         public static void RegisterOdataHashIdConverter(this IServiceCollection services, string routePrefix, IEdmModel edmModel)
         {
@@ -30,11 +29,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 return new ODataIDSerializerProvider(serviceProvider);
             });
-
-            registered = true;
         }
 
-        internal static bool HasJsonConverterAttribute(string fullTypeName, string propertyName)
+        internal static JsonHashIdConverterAttribute GetJsonConverterAttribute(string fullTypeName, string propertyName)
         {
             var declaringType = AppDomain.CurrentDomain.GetAssemblies()
                        .Reverse()
@@ -49,19 +46,16 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                        .FirstOrDefault(t => t.Name.Contains(fullTypeName));
 
             if (declaringType == null)
-                return false;
+                return null;
 
             var theProperty = declaringType.GetProperty(propertyName);
 
             if (theProperty == null)
-                return false;
+                return null;
 
-            var hasJsonConverterAttribute = theProperty.CustomAttributes.Any(x =>
-                    x.AttributeType == typeof(System.Text.Json.Serialization.JsonConverterAttribute) &&
-                    x.ConstructorArguments.Any(y => (y.Value as Type)?.FullName == typeof(JsonHashIdConverter).FullName)
-                );
+            var jsonHashIdConverterAttribute = (JsonHashIdConverterAttribute)theProperty.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true).FirstOrDefault();
 
-            return hasJsonConverterAttribute;
+            return jsonHashIdConverterAttribute;
         }
     }
 
@@ -69,7 +63,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
         {
-            if (!OdataHashIdConverter.registered)
+            if (!HashId.Enabled)
             {
                 base.OnActionExecuting(actionExecutingContext);
 
@@ -142,9 +136,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
 
-            if (property.Value != null && OdataHashIdConverter.HasJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name))
+            if (!HashId.Enabled)
+                return property;
+
+            if (property.Value != null && OdataHashIdConverter.GetJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             {
-                var encoded = HashId.Encode(long.Parse(property.Value.ToString()));
+                var encoded = converterAttribute.Hashids.Encode(long.Parse(property.Value.ToString()));
 
                 if (encoded != null)
                     property.Value = encoded;
@@ -178,14 +175,14 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     public class HashIdQueryNodeVisitor : 
         QueryNodeVisitor<SingleValueNode>
     {
-        public bool HasJsonConverterAttribute { get; set; }
+        public JsonHashIdConverterAttribute JsonConverterAttribute { get; set; }
         
         public override SingleValueNode Visit(ConstantNode nodeIn)
         {
-            if (HasJsonConverterAttribute)
+            if (JsonConverterAttribute is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
                 return new ConstantNode(
-                    $"'{HashId.Decode(nodeIn.Value.ToString())}'",
-                    $"'{HashId.Decode(nodeIn.Value.ToString())}'"
+                    $"'{converterAttribute.Hashids.Decode(nodeIn.Value.ToString())}'",
+                    $"'{converterAttribute.Hashids.Decode(nodeIn.Value.ToString())}'"
                 );
 
             return nodeIn;
@@ -203,7 +200,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 Visit(rightBinary) : 
                 nodeIn.Right.Accept(visitor);
 
-            if (visitor.HasJsonConverterAttribute && !HashId.acceptUnencodedIds && !(nodeIn.OperatorKind == BinaryOperatorKind.Equal || nodeIn.OperatorKind == BinaryOperatorKind.NotEqual))
+            if (visitor.JsonConverterAttribute is not null && !HashId.acceptUnencodedIds && !(nodeIn.OperatorKind == BinaryOperatorKind.Equal || nodeIn.OperatorKind == BinaryOperatorKind.NotEqual))
                 throw new ODataException("HashId values only accept Equals & Not Equals operators when the JsonConverterAttribute is present and unencoded IDs are not allowed.");
 
             return new BinaryOperatorNode(
@@ -228,8 +225,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
         public override SingleValueNode Visit(SingleValuePropertyAccessNode nodeIn)
         {
-            if (nodeIn is SingleValuePropertyAccessNode propertyAccess && HasJsonConverterAttributeForProperty(propertyAccess))
-                this.HasJsonConverterAttribute = true;
+            if (nodeIn is SingleValuePropertyAccessNode propertyAccess && HasJsonConverterAttributeForProperty(propertyAccess) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
+                this.JsonConverterAttribute = converterAttribute;
 
             return nodeIn;
         }
@@ -243,12 +240,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             );
         }
 
-        private bool HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
+        private JsonHashIdConverterAttribute HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
         {
             var fullTypeName = propertyAccessNode.Property.DeclaringType.FullTypeName();
             var propertyName = propertyAccessNode.Property.Name;
 
-            return OdataHashIdConverter.HasJsonConverterAttribute(fullTypeName, propertyName);
+            return OdataHashIdConverter.GetJsonConverterAttribute(fullTypeName, propertyName);
         }
     }
 }

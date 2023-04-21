@@ -1,11 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System;
-using System.Collections.Generic;
+﻿namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Model.Dtos
+public abstract class ShiftEntityMixedDTO : ShiftEntityDTO
 {
-    public class ShiftEntityMixedDTO : ShiftEntityDTO
-    {
-        public ICollection<RevisionDTO>? Revisions { get; set; }
-    }
+    public ICollection<RevisionDTO>? Revisions { get; set; }
 }

@@ -1,12 +1,10 @@
-﻿using ShiftSoftware.ShiftEntity.Model.HashId;
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
-public class ShiftEntityDTOBase
+public abstract class ShiftEntityDTOBase
 {
     [Key]
-    [JsonConverter(typeof(JsonHashIdConverter))]
-    public string? ID { get; set; }
+    public abstract string? ID { get; set; }
+
 }

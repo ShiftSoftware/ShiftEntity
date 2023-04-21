@@ -53,7 +53,7 @@ namespace ShiftSoftware.ShiftEntity.Web
             if (asOf.HasValue)
                 asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
 
-            var item = await repository.FindAsync(HashId.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
+            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -77,7 +77,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         [EnableQueryWithHashIdConverter]
         public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
         {
-            return Ok(await repository.GetRevisionsAsync(HashId.Decode(key)));
+            return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds<SelectDTO>.Decode(key)));
         }
 
         [HttpPost]
@@ -156,7 +156,7 @@ namespace ShiftSoftware.ShiftEntity.Web
                 return BadRequest(response);
             }
 
-            var item = await repository.FindAsync(HashId.Decode(key));
+            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -194,7 +194,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         [HttpDelete("{key}")]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key)
         {
-            var item = await repository.FindAsync(HashId.Decode(key));
+            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>

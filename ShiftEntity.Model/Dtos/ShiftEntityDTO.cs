@@ -5,18 +5,19 @@ using System.Text.Json.Serialization;
 
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
-public class ShiftEntityDTO : ShiftEntityDTOBase
+public abstract class ShiftEntityDTO : ShiftEntityDTOBase
 {
+
     [DataType(DataType.DateTime)]
     public DateTime CreateDate { get; set; }
 
     [DataType(DataType.DateTime)]
     public DateTime LastSaveDate { get; set; }
 
-    [JsonConverter(typeof(JsonHashIdConverter))]
+    [UserHashIdConverter]
     public string? CreatedByUserID { get; set; }
 
-    [JsonConverter(typeof(JsonHashIdConverter))]
+    [UserHashIdConverter]
     public string? LastSavedByUserID { get; set; }
 
     public bool IsDeleted { get; set; }

@@ -5,21 +5,62 @@ namespace ShiftSoftware.ShiftEntity.Model.HashId;
 
 public class JsonHashIdConverter : JsonConverter<string>
 {
+    private ShiftEntityHashId hashids;
+
+    public JsonHashIdConverter(ShiftEntityHashId hashids)
+    {
+        this.hashids = hashids;
+    }
+
     public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var id = reader.GetString();
 
-        if (HashId.hashids == null)
+        if (!HashId.Enabled)
             return id!;
 
-        return HashId.Decode(id!).ToString();
+        return this.hashids.Decode(id!).ToString()!;
     }
 
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
     {
-        if (HashId.hashids == null || string.IsNullOrWhiteSpace(value))
-            writer.WriteStringValue(value);
+        if (string.IsNullOrWhiteSpace(value))
+            writer.WriteNullValue();
         else
-            writer.WriteStringValue(HashId.Encode(long.Parse(value)));
+        {
+            if (!HashId.Enabled)
+                writer.WriteStringValue(value);
+            else
+                writer.WriteStringValue(this.hashids.Encode(long.Parse(value)));
+        }
+    }
+}
+
+public class JsonHashIdConverterAttribute : JsonConverterAttribute   
+{
+    internal ShiftEntityHashId? Hashids;
+
+    public JsonHashIdConverterAttribute(string salt, int minHashLength = 0, string? alphabet = null)
+    {
+        if (HashId.Enabled)
+            Hashids = new ShiftEntityHashId(salt, minHashLength, alphabet);
+    }
+
+    public JsonHashIdConverterAttribute(Type dtoType, int minHashLength = 0, string? alphabet = null)
+    {
+        if (HashId.Enabled)
+            Hashids = new ShiftEntityHashId(dtoType.FullName!, minHashLength, alphabet);
+    }
+    public override JsonConverter? CreateConverter(Type typeToConvert)
+    {
+        return new JsonHashIdConverter(this.Hashids!);
+    }
+}
+
+public class JsonHashIdConverterAttribute<T> : JsonHashIdConverterAttribute
+{
+    public JsonHashIdConverterAttribute(int minHashLength = 0, string? alphabet = null) : base(typeof(T), minHashLength, alphabet)
+    {
+
     }
 }
