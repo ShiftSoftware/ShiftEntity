@@ -39,7 +39,6 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" />
-	  <ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
 	</ItemGroup>
 	
