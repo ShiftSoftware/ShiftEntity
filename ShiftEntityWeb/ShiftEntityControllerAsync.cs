@@ -53,7 +53,20 @@ namespace ShiftSoftware.ShiftEntity.Web
             if (asOf.HasValue)
                 asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
 
-            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
+            Entity item;
+
+            try
+            {
+                item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
+            }
+            catch (ShiftEntityException ex)
+            {
+                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
+                {
+                    Message = ex.Message,
+                    Additional = ex.AdditionalData,
+                });
+            }
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -178,7 +191,7 @@ namespace ShiftSoftware.ShiftEntity.Web
                 return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message,
-                    Additional = repository.AdditionalResponseData,
+                    Additional = ex.AdditionalData,
                 });
             }
 
@@ -216,7 +229,7 @@ namespace ShiftSoftware.ShiftEntity.Web
                 return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
                 {
                     Message = ex.Message,
-                    Additional = repository.AdditionalResponseData,
+                    Additional = ex.AdditionalData,
                 });
             }
 

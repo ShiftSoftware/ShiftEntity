@@ -5,7 +5,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.4.1</Version>
+		<Version>1.4.1.1</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -18,7 +18,7 @@
 		<PackageTags></PackageTags>
 		<Title>ShiftEntity.Web</Title>
 		<PackageReleaseNotes>
-			
+
 		</PackageReleaseNotes>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
@@ -39,7 +39,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
+		<ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
 	</ItemGroup>
-	
+
 </Project>
