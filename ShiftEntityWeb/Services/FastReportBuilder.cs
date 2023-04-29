@@ -48,12 +48,12 @@ public class FastReportBuilder
         return this;
     }
 
-    public async Task<FileStreamResult> GetPDFFile()
+    public async Task<FileStreamResult> GetPDFFile(Action<FastReport.Report> reportCustomizer = null)
     {
-        return new FileStreamResult(await this.GetPDFStream(), "application/pdf");
+        return new FileStreamResult(await this.GetPDFStream(reportCustomizer), "application/pdf");
     }
 
-    public async Task<Stream> GetPDFStream()
+    public async Task<Stream> GetPDFStream(Action<FastReport.Report> reportCustomizer = null)
     {
         if (ReportFilePath == null)
             throw new Exception($"ReportFilePath is not Added. Please add it using {nameof(AddFastReportFile)} method.");
@@ -108,6 +108,9 @@ public class FastReportBuilder
                 if (pictureObject != null)
                     pictureObject.ImageSourceExpression = pictureObject.ImageLocation;
             }
+
+            if (reportCustomizer != null)
+                reportCustomizer(report);
 
             report.Prepare();
 
