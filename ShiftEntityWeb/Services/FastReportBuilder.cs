@@ -76,38 +76,28 @@ public class FastReportBuilder
 
                 ds.EnsureInit();
 
-                if (dataSet.DataBand != null)
+                if (dataSet.DataBand == null)
+                    continue;
+
+                var band = report.FindObject(dataSet.DataBand) as FastReport.DataBand;
+
+                if (band == null)
+                    throw new Exception($"A band with The Name ({dataSet.DataBand}) does not exist on the report.");
+
+                if (dataSet.Data.Count == 0)
                 {
-                    var band = report.FindObject(dataSet.DataBand) as FastReport.DataBand;
-
-                    if (band == null)
-                        throw new Exception($"A band with The Name ({dataSet.DataBand}) does not exist on the report.");
-
-                    if (dataSet.FilterExpression != null)
-                        band.Filter = dataSet.FilterExpression;
-
-                    band.DataSource = ds;
-                    band.InitDataSource();
+                    TraverseAllObjects(band.AllObjects, AllObjectTraverserAction.RemoveExpression);
+                    continue;
                 }
+
+                if (dataSet.FilterExpression != null)
+                    band.Filter = dataSet.FilterExpression;
+
+                band.DataSource = ds;
+                band.InitDataSource();
             }
 
-            foreach (var item in report.AllObjects)
-            {
-                var textObject = item as TextObject;
-
-                if (textObject != null)
-                    textObject.AllowExpressions = true;
-
-                var barcodeObject = item as BarcodeObject;
-
-                if (barcodeObject != null)
-                    barcodeObject.AllowExpressions = true;
-
-                var pictureObject = item as PictureObject;
-
-                if (pictureObject != null)
-                    pictureObject.ImageSourceExpression = pictureObject.ImageLocation;
-            }
+            TraverseAllObjects(report.AllObjects, AllObjectTraverserAction.AllowExpression);
 
             if (reportCustomizer != null)
                 reportCustomizer(report);
@@ -127,6 +117,48 @@ public class FastReportBuilder
 
             return stream;
         }
+    }
+
+    private void TraverseAllObjects(ObjectCollection objectCollection, AllObjectTraverserAction action)
+    {
+        foreach (var item in objectCollection)
+        {
+            var textObject = item as TextObject;
+
+            if (textObject != null)
+            {
+                if (action == AllObjectTraverserAction.RemoveExpression && textObject.Text.StartsWith(textObject.Brackets.Substring(0, 1)))
+                    textObject.Text = "";
+                else if (action == AllObjectTraverserAction.AllowExpression)
+                    textObject.AllowExpressions = true;
+            }
+
+            var barcodeObject = item as BarcodeObject;
+
+            if (barcodeObject != null)
+            {
+                if (action == AllObjectTraverserAction.RemoveExpression && barcodeObject.Text.StartsWith(barcodeObject.Brackets.Substring(0, 1)))
+                    barcodeObject.Text = "";
+                else if (action == AllObjectTraverserAction.AllowExpression)
+                    barcodeObject.AllowExpressions = true;
+            }
+
+            var pictureObject = item as PictureObject;
+
+            if (pictureObject != null)
+            {
+                if (action == AllObjectTraverserAction.RemoveExpression)
+                    pictureObject.ImageSourceExpression = "";
+                else if (action == AllObjectTraverserAction.AllowExpression)
+                    pictureObject.ImageSourceExpression = pictureObject.ImageLocation;
+            }
+        }
+    }
+
+    private enum AllObjectTraverserAction
+    {
+        RemoveExpression = 1,
+        AllowExpression = 2
     }
 
     private class ReportDataSet
