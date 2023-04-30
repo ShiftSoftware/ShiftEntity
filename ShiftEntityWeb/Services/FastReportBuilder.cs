@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using System;
+using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
@@ -13,7 +14,21 @@ public class FastReportBuilder
     private string ReportFilePath { get; set; } = default!;
     private List<ReportDataSet> ReportDataSets { get; set; } = new();
 
+    private Dictionary<string, List<string>> EmptyDataBandsToHide = new Dictionary<string, List<string>> { };
+
     public FastReportBuilder() { }
+
+    /// <summary>
+    /// Hides the data band if it's Data List is empty.
+    /// </summary>
+    /// <param name="relatedBands">Name of other Bands that need to be hidden in case the Data Band is hidden.</param>
+    /// <returns></returns>
+    public FastReportBuilder HideDataBandIfEmpty(string dataBandName, params string[] relatedBands)
+    {
+        this.EmptyDataBandsToHide[dataBandName] = new List<string>(relatedBands);
+
+        return this;
+    }
 
     public FastReportBuilder AddFastReportFile(string reportFilePath)
     {
@@ -87,6 +102,22 @@ public class FastReportBuilder
                 if (dataSet.Data.Count == 0)
                 {
                     TraverseAllObjects(band.AllObjects, AllObjectTraverserAction.RemoveExpression);
+
+                    if (this.EmptyDataBandsToHide.Keys.Contains(dataSet.DataBand))
+                    {
+                        band.Visible = false;
+
+                        foreach (var relatedBand in this.EmptyDataBandsToHide[dataSet.DataBand])
+                        {
+                            var relatedBandObject = report.FindObject(relatedBand) as FastReport.BandBase;
+
+                            if (relatedBandObject == null)
+                                throw new Exception($"A band with The Name ({relatedBand}) does not exist on the report.");
+
+                            relatedBandObject.Visible = false;
+                        }
+                    }
+
                     continue;
                 }
 
