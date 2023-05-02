@@ -101,7 +101,12 @@ public class FastReportBuilder
 
                 if (dataSet.Data.Count == 0)
                 {
-                    TraverseAllObjects(band.AllObjects, AllObjectTraverserAction.RemoveExpression);
+                    ObjectCollection objectCollection = new ObjectCollection();
+
+                    for (int i = 0; i < band.Objects.Count; i++)
+                        objectCollection.AddRange(band.Objects[i].AllObjects); 
+
+                    TraverseAllObjects(objectCollection, AllObjectTraverserAction.RemoveExpression);
 
                     if (this.EmptyDataBandsToHide.Keys.Contains(dataSet.DataBand))
                     {
