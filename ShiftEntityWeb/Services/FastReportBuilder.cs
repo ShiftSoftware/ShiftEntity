@@ -179,7 +179,7 @@ public class FastReportBuilder
             if (pictureObject != null)
             {
                 if (action == AllObjectTraverserAction.RemoveExpression)
-                    pictureObject.ImageSourceExpression = "";
+                    pictureObject.ImageLocation = "";
                 else if (action == AllObjectTraverserAction.AllowExpression)
                     pictureObject.ImageSourceExpression = pictureObject.ImageLocation;
             }
