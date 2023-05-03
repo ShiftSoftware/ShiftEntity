@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace ShiftEntityWeb
@@ -18,6 +19,7 @@ namespace ShiftEntityWeb
         ShiftEntityController<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepository<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>
+        where DTO: ShiftEntityDTO
     {
         public ShiftEntityController(Repository repository) : base(repository)
         {
@@ -28,6 +30,7 @@ namespace ShiftEntityWeb
         ControllerBase
         where Repository : IShiftRepository<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
+        where UpdateDTO : ShiftEntityDTO
     {
         public Repository repository { get; set; }
 
@@ -181,6 +184,14 @@ namespace ShiftEntityWeb
 
             try
             {
+                if (item.LastSaveDate != TimeZoneService.ReadOffsettedDate(dto.LastSaveDate))
+                {
+                    throw new ShiftEntityException(
+                        new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
+                        (int) HttpStatusCode.Conflict
+                    );
+                }
+
                 repository.Update(item, dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)

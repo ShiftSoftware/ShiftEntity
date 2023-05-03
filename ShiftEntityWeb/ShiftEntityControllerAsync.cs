@@ -14,6 +14,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.OData.Client;
+using System.Net;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -21,6 +22,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>
+        where DTO : ShiftEntityDTO
     {
         public ShiftEntityControllerAsync(Repository repository) : base(repository)
         {
@@ -31,6 +33,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         ControllerBase
         where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
+        where UpdateDTO : ShiftEntityDTO
     {
         public Repository repository { get; set; }
 
@@ -184,6 +187,14 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
+                if (item.LastSaveDate != TimeZoneService.ReadOffsettedDate(dto.LastSaveDate))
+                {
+                    throw new ShiftEntityException(
+                        new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
+                        (int) HttpStatusCode.Conflict
+                    );
+                }
+
                 await repository.UpdateAsync(item, dto, this.GetUserID());
             }
             catch (ShiftEntityException ex)

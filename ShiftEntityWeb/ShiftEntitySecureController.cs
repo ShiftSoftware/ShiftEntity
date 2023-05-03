@@ -19,7 +19,8 @@ namespace ShiftSoftware.ShiftEntity.Web;
 public class ShiftEntitySecureController<Repository, Entity, ListDTO, DTO> :
     ShiftEntitySecureController<Repository, Entity, ListDTO, DTO, DTO, DTO>
     where Repository : IShiftRepository<Entity, ListDTO, DTO>
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity> 
+    where DTO : ShiftEntityDTO
 {
     public ShiftEntitySecureController(Repository repository, TypeAuthService typeAuthService, ReadWriteDeleteAction action) :
         base(repository, typeAuthService, action)
@@ -31,6 +32,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
         ShiftEntityController<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Repository : IShiftRepository<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
+        where UpdateDTO : ShiftEntityDTO
 {
     private readonly TypeAuthService typeAuthService;
     private readonly ReadWriteDeleteAction action;

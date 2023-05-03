@@ -35,7 +35,10 @@ public static class TimeZoneService
 
     internal static TimeSpan GetTimeZoneOffset()
     {
-        return TimeSpan.Parse(TimeZoneService.httpContextAccessor!.HttpContext!.Request!.Headers!["timezone-offset"]!);
+        if (TimeZoneService.httpContextAccessor != null && TimeZoneService.httpContextAccessor.HttpContext!.Request!.Headers.ContainsKey("timezone-offset"))
+            return TimeSpan.Parse(TimeZoneService.httpContextAccessor!.HttpContext!.Request!.Headers!["timezone-offset"]!);
+
+        return TimeSpan.Zero;
     }
 
     internal static DateTime ReadOffsettedDate(DateTimeOffset dateTime)
