@@ -104,7 +104,10 @@ public class FastReportBuilder
                     ObjectCollection objectCollection = new ObjectCollection();
 
                     for (int i = 0; i < band.Objects.Count; i++)
-                        objectCollection.AddRange(band.Objects[i].AllObjects); 
+                    {
+                        objectCollection.Add(band.Objects[0]);
+                        objectCollection.AddRange(band.Objects[i].AllObjects);
+                    }
 
                     TraverseAllObjects(objectCollection, AllObjectTraverserAction.RemoveExpression);
 
