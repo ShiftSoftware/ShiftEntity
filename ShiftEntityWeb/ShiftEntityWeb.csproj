@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net7.0</TargetFramework>
+		<TargetFramework>net6.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
@@ -30,7 +31,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.0.11" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.15.0" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.1" />
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.1.1" />
 	</ItemGroup>
 
 	<ItemGroup>
