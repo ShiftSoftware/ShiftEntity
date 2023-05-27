@@ -36,7 +36,7 @@ public class JsonHashIdConverter : JsonConverter<string>
     }
 }
 
-public class JsonHashIdConverterAttribute : JsonConverterAttribute   
+public class JsonHashIdConverterAttribute : JsonConverterAttribute
 {
     internal ShiftEntityHashId? Hashids;
 
@@ -52,6 +52,7 @@ public class JsonHashIdConverterAttribute : JsonConverterAttribute
         if (HashId.Enabled)
             Hashids = new ShiftEntityHashId(new string(dtoType.FullName!.Reverse().ToArray()), minHashLength, alphabet);
     }
+
     public override JsonConverter? CreateConverter(Type typeToConvert)
     {
         return new JsonHashIdConverter(this.Hashids!);

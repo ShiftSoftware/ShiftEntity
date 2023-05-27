@@ -21,7 +21,7 @@ namespace ShiftEntityWeb
         where Entity : ShiftEntity<Entity>
         where DTO: ShiftEntityDTO
     {
-        public ShiftEntityController(Repository repository) : base(repository)
+        public ShiftEntityController(Repository repository, TimeZoneService timeZoneService) : base(repository, timeZoneService)
         {
         }
     }
@@ -32,11 +32,14 @@ namespace ShiftEntityWeb
         where Entity : ShiftEntity<Entity>
         where UpdateDTO : ShiftEntityDTO
     {
+        private readonly TimeZoneService timeZoneService;
+
         public Repository repository { get; set; }
 
-        public ShiftEntityController(Repository repository)
+        public ShiftEntityController(Repository repository, TimeZoneService timeZoneService)
         {
             this.repository = repository;
+            this.timeZoneService = timeZoneService;
         }
 
         [HttpGet]
@@ -51,7 +54,7 @@ namespace ShiftEntityWeb
             (string key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
             if (asOf.HasValue)
-                asOf = TimeZoneService.ReadOffsettedDate(asOf.Value);
+                asOf = timeZoneService.ReadOffsettedDate(asOf.Value);
 
             Entity item;
 
@@ -184,7 +187,7 @@ namespace ShiftEntityWeb
 
             try
             {
-                if (item.LastSaveDate != TimeZoneService.ReadOffsettedDate(dto.LastSaveDate))
+                if (item.LastSaveDate != timeZoneService.ReadOffsettedDate(dto.LastSaveDate))
                 {
                     throw new ShiftEntityException(
                         new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),

@@ -16,21 +16,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 {
     public static class OdataHashIdConverter
     {
-        internal static string RoutePrefix;
-        internal static IEdmModel EdmModel;
-
-        public static void RegisterOdataHashIdConverter(this IServiceCollection services, string routePrefix, IEdmModel edmModel)
-        {
-            RoutePrefix = routePrefix;
-
-            EdmModel = edmModel;
-
-            services.AddSingleton<IODataSerializerProvider>(serviceProvider =>
-            {
-                return new ODataIDSerializerProvider(serviceProvider);
-            });
-        }
-
         internal static JsonHashIdConverterAttribute GetJsonConverterAttribute(string fullTypeName, string propertyName)
         {
             var declaringType = AppDomain.CurrentDomain.GetAssemblies()
@@ -63,6 +48,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
         {
+            ShiftEntityOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
+
             if (!HashId.Enabled)
             {
                 base.OnActionExecuting(actionExecutingContext);
@@ -79,9 +66,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 //This will remove the base url all the way to the odata prefix
                 //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
                 ///ToDo?$filter=ID eq 'MQaLZ'
-                var relativePath = originalUrl.Substring(originalUrl.IndexOf(OdataHashIdConverter.RoutePrefix) + OdataHashIdConverter.RoutePrefix.Length);
+                var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.ODatat.RoutePrefix) + options.ODatat.RoutePrefix.Length);
 
-                ODataUriParser parser = new ODataUriParser(OdataHashIdConverter.EdmModel, new Uri(relativePath, UriKind.Relative));
+                ODataUriParser parser = new ODataUriParser(options.ODatat.ODataConvention.GetEdmModel(), new Uri(relativePath, UriKind.Relative));
 
                 var odataUri = parser.ParseUri();
 
@@ -138,7 +125,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             if (!HashId.Enabled)
                 return property;
-
+            
             if (property.Value != null && OdataHashIdConverter.GetJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             {
                 var encoded = converterAttribute.Hashids.Encode(long.Parse(property.Value.ToString()));
