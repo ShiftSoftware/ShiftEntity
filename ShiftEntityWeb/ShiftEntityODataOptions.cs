@@ -70,5 +70,6 @@ public class ShiftEntityODataOptions
     public ShiftEntityODataOptions()
     {
         this.SetMaxTop();
+        ODataConvention = new();
     }
 }
