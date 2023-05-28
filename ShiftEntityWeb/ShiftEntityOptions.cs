@@ -22,6 +22,7 @@ public class ShiftEntityOptions
 
     public ShiftEntityOptions()
     {
-        ODatat = new ShiftEntityODataOptions();
+        ODatat = new ();
+        HashId = new ();
     }
 }
