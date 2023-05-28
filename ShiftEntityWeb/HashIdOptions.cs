@@ -10,7 +10,7 @@ public class HashIdOptions
 {
     public bool AcceptUnencodedIds { get; set; }
 
-    public string Salt { set; get; }
-    public int MinHashLength { set; get; }
-    public string? Alphabet { set; get; }
+    public string UserIdsSalt { set; get; }
+    public int UserIdsMinHashLength { set; get; }
+    public string? UserIdsAlphabet { set; get; }
 }

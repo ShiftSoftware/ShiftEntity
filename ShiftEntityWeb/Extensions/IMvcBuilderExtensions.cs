@@ -23,6 +23,8 @@ public static class IMvcBuilderExtensions
             .RegisterTimeZoneConverters()
             .TryAddSingleton(o);
 
+       builder.Services.TryAddSingleton<TimeZoneService>();
+
         builder.AddJsonOptions(options =>
         {
             options.JsonSerializerOptions.PropertyNamingPolicy = null;
