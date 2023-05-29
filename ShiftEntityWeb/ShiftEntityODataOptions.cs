@@ -1,4 +1,5 @@
-﻿using Microsoft.OData.ModelBuilder;
+﻿using Microsoft.OData.Edm;
+using Microsoft.OData.ModelBuilder;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,7 +52,8 @@ public class ShiftEntityODataOptions
         return this;
     }
 
-    public ODataConventionModelBuilder ODataConvention;
+    public ODataConventionModelBuilder ODataConvention { get; private set; }
+    public IEdmModel EdmModel { get;private set; }
     public string RoutePrefix { get; set; }
 
 
@@ -71,5 +73,10 @@ public class ShiftEntityODataOptions
     {
         this.SetMaxTop();
         ODataConvention = new();
+    }
+
+    internal void GenerateEdmModel()
+    {
+        this.EdmModel = ODataConvention.GetEdmModel();
     }
 }

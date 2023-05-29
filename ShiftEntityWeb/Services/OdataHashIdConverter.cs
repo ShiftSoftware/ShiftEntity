@@ -68,7 +68,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 ///ToDo?$filter=ID eq 'MQaLZ'
                 var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.ODatat.RoutePrefix) + options.ODatat.RoutePrefix.Length);
 
-                ODataUriParser parser = new ODataUriParser(options.ODatat.ODataConvention.GetEdmModel(), new Uri(relativePath, UriKind.Relative));
+                ODataUriParser parser = new ODataUriParser(options.ODatat.EdmModel, new Uri(relativePath, UriKind.Relative));
 
                 var odataUri = parser.ParseUri();
 

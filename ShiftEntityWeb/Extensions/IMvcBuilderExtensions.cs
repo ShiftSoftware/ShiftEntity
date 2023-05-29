@@ -18,6 +18,8 @@ public static class IMvcBuilderExtensions
         ShiftEntityOptions o = new();
         options.Invoke(o);
 
+        o.ODatat.GenerateEdmModel();
+
         builder.Services.AddHttpContextAccessor()
             .AddLocalization()
             .RegisterTimeZoneConverters()
@@ -64,7 +66,7 @@ public static class IMvcBuilderExtensions
                 options.OrderBy();
             options.SetMaxTop(o.ODatat._MaxTop);
 
-            options.AddRouteComponents(o.ODatat.RoutePrefix, o.ODatat.ODataConvention.GetEdmModel(), serviceCollection =>
+            options.AddRouteComponents(o.ODatat.RoutePrefix, o.ODatat.EdmModel, serviceCollection =>
             {
                 serviceCollection.RegisterTimeZoneConverters();
                 serviceCollection.RegisterOdataHashIdConverter();
