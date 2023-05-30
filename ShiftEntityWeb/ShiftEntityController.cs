@@ -187,7 +187,7 @@ namespace ShiftEntityWeb
 
             try
             {
-                if (item.LastSaveDate != timeZoneService.ReadOffsettedDate(dto.LastSaveDate))
+                if (item.LastSaveDate != dto.LastSaveDate)
                 {
                     throw new ShiftEntityException(
                         new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
