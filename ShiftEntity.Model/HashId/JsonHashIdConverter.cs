@@ -16,10 +16,12 @@ public class JsonHashIdConverter : JsonConverter<string>
     {
         var id = reader.GetString();
 
-        if (!HashId.Enabled ||!HashId.UserIdsHashEnabled)
-            return id!;
+        if ((HashId.Enabled && !this.hashids.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.hashids.UserIdsHasher))
+        {
+            return this.hashids.Decode(id!).ToString()!;
+        }
 
-        return this.hashids.Decode(id!).ToString()!;
+        return id!;
     }
 
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
@@ -28,10 +30,10 @@ public class JsonHashIdConverter : JsonConverter<string>
             writer.WriteNullValue();
         else
         {
-            if (!HashId.Enabled || !HashId.UserIdsHashEnabled)
-                writer.WriteStringValue(value);
-            else
+            if ((HashId.Enabled && !(this.hashids?.UserIdsHasher??true)) || (HashId.UserIdsHashEnabled && (this.hashids?.UserIdsHasher??false)))
                 writer.WriteStringValue(this.hashids.Encode(long.Parse(value)));
+            else
+                writer.WriteStringValue(value);
         }
     }
 }
@@ -39,20 +41,27 @@ public class JsonHashIdConverter : JsonConverter<string>
 public class JsonHashIdConverterAttribute : JsonConverterAttribute
 {
     internal ShiftEntityHashId? Hashids;
+    internal bool UserIdsHasher = false;
 
     public JsonHashIdConverterAttribute(string salt, int minHashLength = 0, string? alphabet = null)
     {
-        if ((HashId.Enabled && this.GetType()==typeof(JsonHashIdConverterAttribute)) ||
-            (HashId.UserIdsHashEnabled && this.GetType() == typeof(UserHashIdConverter)))
+        if (HashId.Enabled && !this.UserIdsHasher)
                 Hashids = new ShiftEntityHashId(salt, minHashLength, alphabet);
+    }
+
+    internal JsonHashIdConverterAttribute(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = true)
+    {
+        this.UserIdsHasher = userIdsHasher;
+
+        if (HashId.UserIdsHashEnabled && userIdsHasher)
+            Hashids = new ShiftEntityHashId(salt, minHashLength, alphabet, userIdsHasher);
     }
 
     public JsonHashIdConverterAttribute(Type dtoType, int minHashLength = 0, string? alphabet = null)
     {
         //HashIds library seems to be taking the first 24 chars of the salt. This is why we're reversing the type name
-        ((HashId.Enabled && this.GetType() == typeof(JsonHashIdConverterAttribute)) ||
-            (HashId.UserIdsHashEnabled && this.GetType() == typeof(UserHashIdConverter)))
-                Hashids = new ShiftEntityHashId(new string(dtoType.FullName!.Reverse().ToArray()), minHashLength, alphabet);
+        if (HashId.Enabled)
+            Hashids = new ShiftEntityHashId(new string(dtoType.FullName!.Reverse().ToArray()), minHashLength, alphabet);
     }
 
     public override JsonConverter? CreateConverter(Type typeToConvert)

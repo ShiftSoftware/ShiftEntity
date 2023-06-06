@@ -46,11 +46,11 @@ class ShiftEntityODataResourceSerializer : ODataResourceSerializer
     {
         ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
 
-        if (HashId.Enabled)
+        if (HashId.Enabled || HashId.UserIdsHashEnabled)
         {
             if (property.Value != null && OdataHashIdConverter.GetJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             {
-                var encoded = converterAttribute.Hashids.Encode(long.Parse(property.Value.ToString()));
+                var encoded = converterAttribute.Hashids?.Encode(long.Parse(property.Value.ToString()));
 
                 if (encoded != null)
                     property.Value = encoded;

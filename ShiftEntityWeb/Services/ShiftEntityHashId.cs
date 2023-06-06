@@ -15,7 +15,7 @@ internal static class ShiftEntityHashIds<T>
 
         var hashId = typeof(T).GetProperty(nameof(ShiftEntityDTOBase.ID)).GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
                 .Cast<JsonHashIdConverterAttribute>()
-                .FirstOrDefault()?.Hashids ?? new ShiftEntityHashId("");
+                .FirstOrDefault()?.Hashids ?? new ShiftEntityHashId("", 0, null);
 
         return hashId.Decode(key);
     }

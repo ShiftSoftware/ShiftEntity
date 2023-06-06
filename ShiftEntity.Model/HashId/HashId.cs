@@ -31,6 +31,7 @@ public static class HashId
 public class ShiftEntityHashId
 {
     Hashids hashids;
+    internal bool UserIdsHasher = false;
 
     public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null)
     {
@@ -40,37 +41,51 @@ public class ShiftEntityHashId
             hashids = new Hashids(salt, minHashLength, alphabet);
     }
 
+    internal ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = true)
+        : this(salt, minHashLength, alphabet)
+    {
+        this.UserIdsHasher = userIdsHasher;
+    }
+
     public long Decode(string hash)
     {
-        if (!HashId.Enabled)
-            return long.Parse(hash);
-
-        try
+        if ((HashId.Enabled && !this.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.UserIdsHasher))
         {
-            return hashids.DecodeSingleLong(hash);
-        }
-        catch
-        {
-            if (HashId.acceptUnencodedIds)
+            try
             {
-                try
-                {
-                    return long.Parse(hash);
-                }
-                catch
-                {
-                }
+                return hashids.DecodeSingleLong(hash);
             }
+            catch
+            {
+                if (HashId.acceptUnencodedIds)
+                {
+                    try
+                    {
+                        return long.Parse(hash);
+                    }
+                    catch
+                    {
+                    }
+                }
 
-            return default;
+                return default;
+            }
+        }
+        else
+        {
+            return long.Parse(hash);
         }
     }
 
     public string Encode(long id)
     {
-        if (!HashId.Enabled)
+        if ((HashId.Enabled && !this.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.UserIdsHasher))
+        {
+            return hashids.EncodeLong(id);
+        }
+        else
+        {
             return id.ToString();
-
-        return hashids.EncodeLong(id);
+        }
     }
 }
