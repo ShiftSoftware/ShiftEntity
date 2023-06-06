@@ -23,7 +23,7 @@ public static class IMvcBuilderExtensions
         builder.Services.AddHttpContextAccessor()
             .AddLocalization()
             .TryAddSingleton(o);
-
+        
         builder.Services.TryAddSingleton<TimeZoneService>();
 
         builder.AddJsonOptions(options =>
