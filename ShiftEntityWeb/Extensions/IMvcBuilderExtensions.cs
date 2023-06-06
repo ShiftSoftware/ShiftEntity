@@ -73,9 +73,6 @@ public static class IMvcBuilderExtensions
             });
         });
 
-        HashId.RegisterHashId(o.HashId.AcceptUnencodedIds);
-        HashId.RegisterUserIdsHasher(o.HashId.UserIdsSalt, o.HashId.UserIdsMinHashLength, o.HashId.UserIdsAlphabet);
-
         return builder;
     }
 }

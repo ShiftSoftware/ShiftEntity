@@ -28,7 +28,7 @@ public class JsonHashIdConverter : JsonConverter<string>
             writer.WriteNullValue();
         else
         {
-            if (!HashId.Enabled)
+            if (!HashId.Enabled || !HashId.UserIdsHashEnabled)
                 writer.WriteStringValue(value);
             else
                 writer.WriteStringValue(this.hashids.Encode(long.Parse(value)));
@@ -42,7 +42,8 @@ public class JsonHashIdConverterAttribute : JsonConverterAttribute
 
     public JsonHashIdConverterAttribute(string salt, int minHashLength = 0, string? alphabet = null)
     {
-        if (HashId.Enabled)
+        if ((HashId.Enabled && this.GetType()==typeof(JsonHashIdConverterAttribute)) ||
+            (HashId.UserIdsHashEnabled && this.GetType() == typeof(UserHashIdConverter)))
             Hashids = new ShiftEntityHashId(salt, minHashLength, alphabet);
     }
 

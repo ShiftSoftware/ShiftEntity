@@ -6,6 +6,7 @@ public static class HashId
     internal static bool acceptUnencodedIds;
     internal static bool Enabled;
 
+    internal static bool UserIdsHashEnabled = false;
     internal static string UserIdsSalt = "";
     internal static int UserIdsMinHashLength;
     internal static string? UserIdsAlphabet;
@@ -22,6 +23,8 @@ public static class HashId
         HashId.UserIdsSalt = salt;
         HashId.UserIdsMinHashLength = minHashLength;
         HashId.UserIdsAlphabet = alphabet;
+
+        HashId.UserIdsHashEnabled = true;
     }
 }
 
