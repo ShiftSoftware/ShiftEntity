@@ -98,46 +98,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
     }
 
-    class ODataIDSerializerProvider : ODataSerializerProvider
-    {
-        public ODataIDSerializerProvider(IServiceProvider serviceProvider) : base(serviceProvider)
-        {
-        }
-
-        public override IODataEdmTypeSerializer GetEdmTypeSerializer(IEdmTypeReference edmType)
-        {
-            if (edmType.Definition.TypeKind == EdmTypeKind.Entity)
-                return new ODataIDResourceSerializer(this);
-            else
-                return base.GetEdmTypeSerializer(edmType);
-        }
-    }
-
-    class ODataIDResourceSerializer : ODataResourceSerializer
-    {
-        public ODataIDResourceSerializer(ODataSerializerProvider serializerProvider) : base(serializerProvider)
-        {
-        }
-
-        public override ODataProperty CreateStructuralProperty(IEdmStructuralProperty structuralProperty, ResourceContext resourceContext)
-        {
-            ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
-
-            if (!HashId.Enabled)
-                return property;
-            
-            if (property.Value != null && OdataHashIdConverter.GetJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
-            {
-                var encoded = converterAttribute.Hashids.Encode(long.Parse(property.Value.ToString()));
-
-                if (encoded != null)
-                    property.Value = encoded;
-            }
-
-            return property;
-        }
-    }
-
     public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode>
     {
         public HashIdQueryNodeVisitor HashIdQueryNodeVisitor { get; private set; }

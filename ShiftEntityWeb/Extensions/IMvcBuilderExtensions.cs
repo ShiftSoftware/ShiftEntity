@@ -22,17 +22,16 @@ public static class IMvcBuilderExtensions
 
         builder.Services.AddHttpContextAccessor()
             .AddLocalization()
-            .RegisterTimeZoneConverters()
             .TryAddSingleton(o);
 
-       builder.Services.TryAddSingleton<TimeZoneService>();
+        builder.Services.TryAddSingleton<TimeZoneService>();
 
         builder.AddJsonOptions(options =>
         {
             options.JsonSerializerOptions.PropertyNamingPolicy = null;
             options.RegisterTimeZoneConverters(builder.Services.BuildServiceProvider().GetRequiredService<TimeZoneService>());
         });
-        
+
         //Wrap the validation error with ShiftEntityResponse
         if (o._WrapValidationErrorResponseWithShiftEntityResponse)
             builder.ConfigureApiBehaviorOptions(options =>
@@ -58,18 +57,19 @@ public static class IMvcBuilderExtensions
                 options.Count();
             if (o.ODatat._Filter)
                 options.Filter();
-            if(o.ODatat._Expand)
+            if (o.ODatat._Expand)
                 options.Expand();
-            if(o.ODatat._Select)
+            if (o.ODatat._Select)
                 options.Select();
-            if(o.ODatat._OrderBy) 
+            if (o.ODatat._OrderBy)
                 options.OrderBy();
             options.SetMaxTop(o.ODatat._MaxTop);
 
             options.AddRouteComponents(o.ODatat.RoutePrefix, o.ODatat.EdmModel, serviceCollection =>
             {
-                serviceCollection.RegisterTimeZoneConverters();
-                serviceCollection.RegisterOdataHashIdConverter();
+                serviceCollection.AddHttpContextAccessor()
+                    .TryAddSingleton<TimeZoneService>();
+                serviceCollection.RegisterConverters();
             });
         });
 

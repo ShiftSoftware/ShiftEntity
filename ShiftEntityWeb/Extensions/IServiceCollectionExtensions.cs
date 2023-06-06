@@ -7,21 +7,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
 public static class IServiceCollectionExtensions
 {
-    public static IServiceCollection RegisterTimeZoneConverters(this IServiceCollection services)
-    {
-        services.TryAddSingleton<IODataSerializerProvider>(serviceProvider =>
-        {
-            return new ODataDatetimeSerializerProvider(serviceProvider);
-        });
-
-        return services;
-    }
-
-    public static void RegisterOdataHashIdConverter(this IServiceCollection services)
+    public static IServiceCollection RegisterConverters(this IServiceCollection services)
     {
         services.AddSingleton<IODataSerializerProvider>(serviceProvider =>
         {
-            return new ODataIDSerializerProvider(serviceProvider);
+            return new ShiftEntityODataSerializerProvider(serviceProvider);
         });
+
+        return services;
     }
 }
