@@ -10,5 +10,5 @@ public interface IShiftEntityDelete<EntityType> where EntityType : class
 
 public interface IShiftEntityDeleteAsync<EntityType> where EntityType : class
 {
-    public Task<EntityType> DeleteAsync(EntityType entity, long? userId = null);
+    public ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId = null);
 }

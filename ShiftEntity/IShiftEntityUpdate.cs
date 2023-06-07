@@ -12,6 +12,6 @@ namespace ShiftSoftware.ShiftEntity.Core
     public interface IShiftEntityUpdateAsync<EntityType, DTOType>
         where EntityType : class
     {
-        public Task<EntityType> UpdateAsync(EntityType entity, DTOType dto, long? userId = null);
+        public ValueTask<EntityType> UpdateAsync(EntityType entity, DTOType dto, long? userId = null);
     }
 }

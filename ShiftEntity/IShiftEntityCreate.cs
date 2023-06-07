@@ -12,5 +12,5 @@ public interface IShiftEntityCreate<EntityType,DTOType>
 public interface IShiftEntityCreateAsync<EntityType, DTOType>
     where EntityType : class
 {
-    public Task<EntityType> CreateAsync(DTOType dto, long? userId = null);
+    public ValueTask<EntityType> CreateAsync(DTOType dto, long? userId = null);
 }
