@@ -15,6 +15,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.OData.Client;
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ShiftSoftware.ShiftEntity.Web
 {
@@ -24,7 +25,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         where Entity : ShiftEntity<Entity>
         where DTO : ShiftEntityDTO
     {
-        public ShiftEntityControllerAsync(Repository repository, TimeZoneService timeZoneService) : base(repository, timeZoneService)
+        public ShiftEntityControllerAsync(Repository repository) : base(repository)
         {
         }
     }
@@ -35,14 +36,11 @@ namespace ShiftSoftware.ShiftEntity.Web
         where Entity : ShiftEntity<Entity>
         where UpdateDTO : ShiftEntityDTO
     {
-        private readonly TimeZoneService timeZoneService;
-
         public Repository repository { get; set; }
 
-        public ShiftEntityControllerAsync(Repository repository, TimeZoneService timeZoneService)
+        public ShiftEntityControllerAsync(Repository repository)
         {
             this.repository = repository;
-            this.timeZoneService = timeZoneService;
         }
 
         [HttpGet]
@@ -56,6 +54,8 @@ namespace ShiftSoftware.ShiftEntity.Web
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
             (string key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
+            var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
+
             if (asOf.HasValue)
                 asOf = timeZoneService.ReadOffsettedDate(asOf.Value);
 

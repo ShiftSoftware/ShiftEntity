@@ -22,9 +22,8 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
 {
     public ShiftEntitySecureControllerAsync(Repository repository, 
         TypeAuthService typeAuthService, 
-        ReadWriteDeleteAction action, 
-        TimeZoneService timeZoneService) :
-        base(repository, typeAuthService, action, timeZoneService)
+        ReadWriteDeleteAction action) :
+        base(repository, typeAuthService, action)
     {
     }
 }
@@ -41,8 +40,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     public ShiftEntitySecureControllerAsync(
         Repository repository,
         TypeAuthService typeAuthService,
-        ReadWriteDeleteAction action, 
-        TimeZoneService timeZoneService) : base(repository, timeZoneService)
+        ReadWriteDeleteAction action) : base(repository)
     {
         this.typeAuthService = typeAuthService;
         this.action = action;

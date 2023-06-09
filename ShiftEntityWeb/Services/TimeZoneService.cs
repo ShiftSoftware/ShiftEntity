@@ -12,7 +12,7 @@ using System;
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class TimeZoneService
 {
-    private IHttpContextAccessor? httpContextAccessor;
+    private IHttpContextAccessor httpContextAccessor;
 
     public TimeZoneService(IHttpContextAccessor httpContextAccessor)
     {
