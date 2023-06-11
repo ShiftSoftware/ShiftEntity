@@ -16,7 +16,7 @@ public class JsonHashIdConverter : JsonConverter<string>
     {
         var id = reader.GetString();
 
-        if ((HashId.Enabled && !this.hashids.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.hashids.UserIdsHasher))
+        if ((HashId.Enabled && !(this.hashids?.UserIdsHasher ?? true)) || (HashId.UserIdsHashEnabled && (this.hashids?.UserIdsHasher ?? false)))
         {
             return this.hashids.Decode(id!).ToString()!;
         }

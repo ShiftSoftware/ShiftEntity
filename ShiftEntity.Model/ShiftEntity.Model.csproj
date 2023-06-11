@@ -9,7 +9,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Model</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Model</Product>
-		<Version>1.5.1.2</Version>
+		<Version>1.5.1.3</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Model</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Model</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
