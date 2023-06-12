@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>netstandard2.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
@@ -9,7 +9,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Model</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Model</Product>
-		<Version>1.5.1.3</Version>
+		<Version>1.5.1.4</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Model</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Model</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -35,10 +35,13 @@
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Dashboard.Shared" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Model" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Core" />
 	</ItemGroup>
 
 
 	<ItemGroup>
 		<PackageReference Include="Hashids.net" Version="1.7.0" />
+		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+		<PackageReference Include="System.Text.Json" Version="7.0.2" />
 	</ItemGroup>
 </Project>
