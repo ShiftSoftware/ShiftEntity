@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.OData.Query;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
@@ -17,7 +18,12 @@ public static class SwaggerService
             !apiDesc.RelativePath.Equals("odata");
         }
 
-        if (apiDesc.ActionDescriptor.FilterDescriptors.Select(x => x.Filter).Count(x => x.GetType() == typeof(EnableQueryAttribute)) > 0)
+        var excludedAttributes = new List<System.Type> {
+            typeof(EnableQueryAttribute),
+            typeof(EnableQueryWithHashIdConverter),
+        };
+
+        if (apiDesc.ActionDescriptor.FilterDescriptors.Select(x => x.Filter).Count(x => excludedAttributes.Contains(x.GetType())) > 0)
         {
             return false;
         }
