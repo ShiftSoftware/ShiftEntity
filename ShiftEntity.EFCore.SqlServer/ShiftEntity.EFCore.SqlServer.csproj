@@ -4,12 +4,12 @@
 		<TargetFramework>net6.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<RootNamespace>ShiftSoftware.EFCore.SqlServer</RootNamespace>
+		<RootNamespace>ShiftSoftware.ShiftEntity.EFCore.SqlServer</RootNamespace>
 		<Authors>Shift Software</Authors>
-		<Product>ShiftSoftware.EFCore.SqlServer</Product>
+		<Product>ShiftSoftware.ShiftEntity.EFCore.SqlServer</Product>
 		<Version>1.6.0.2</Version>
-		<AssemblyName>ShiftSoftware.EFCore.SqlServer</AssemblyName>
-		<PackageId>ShiftSoftware.EFCore.SqlServer</PackageId>
+		<AssemblyName>ShiftSoftware.ShiftEntity.EFCore.SqlServer</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.EFCore.SqlServer</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
@@ -17,7 +17,7 @@
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
-		<Title>ShiftSoftware.EFCore.SqlServer</Title>
+		<Title>ShiftSoftware.ShiftEntity.EFCore.SqlServer</Title>
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>
