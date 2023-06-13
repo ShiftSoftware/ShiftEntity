@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashId;
@@ -7,9 +8,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core
+namespace ShiftSoftware.EFCore.SqlServer
 {
-    public class ShiftRepository<EntityType> where EntityType : 
+    public class ShiftRepository<EntityType> where EntityType :
         ShiftEntity<EntityType>
     {
         DbSet<EntityType> dbSet;

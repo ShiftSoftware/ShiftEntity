@@ -1,0 +1,20 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+
+ - script: dotnet build ShiftEntity.EFCore.SqlServer --configuration release
+   displayName: 'dotnet build'
+
+ - script: dotnet pack ShiftEntity.EFCore.SqlServer --configuration release --output $(Build.ArtifactStagingDirectory)
+   displayName: 'dotnet pack'
+
+ - task: NuGetCommand@2
+   inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'NuGet.org'

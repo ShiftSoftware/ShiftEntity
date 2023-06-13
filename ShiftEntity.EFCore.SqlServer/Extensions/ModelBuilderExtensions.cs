@@ -2,12 +2,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
+using ShiftSoftware.ShiftEntity.Core;
 using System;
 using System.Linq;
 using System.Linq.Expressions;
 using static Microsoft.EntityFrameworkCore.Query.ReplacingExpressionVisitor;
 
-namespace ShiftSoftware.ShiftEntity.Core.Extensions;
+namespace ShiftSoftware.EFCore.SqlServer.Extensions;
 
 public static class ModelBuilderExtensions
 {
@@ -21,7 +22,7 @@ public static class ModelBuilderExtensions
 
             if (clrType.IsAssignableTo(typeof(IShiftEntity)))
             {
-                var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => (x as TemporalShiftEntity) != null);
+                var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
 
                 if (isTemporal != null)
                 {
@@ -31,7 +32,7 @@ public static class ModelBuilderExtensions
 
                 //Golobaly filter soft deleted rows
                 var parameter = Expression.Parameter(clrType);
-                var body = ReplacingExpressionVisitor.Replace(filterExpr.Parameters.First(), parameter, filterExpr.Body);
+                var body = Replace(filterExpr.Parameters.First(), parameter, filterExpr.Body);
                 var lambdaExpression = Expression.Lambda(body, parameter);
                 entityType.SetQueryFilter(lambdaExpression);
             }
@@ -49,7 +50,7 @@ public static class ModelBuilderExtensions
     }
 
     public static DbContextOptionsBuilder AddDelegateDecompiler(this DbContextOptionsBuilder optionsBuilder)
-    { 
+    {
         return optionsBuilder.AddInterceptors(new DelegateDecompilerQueryPreprocessor());
     }
 

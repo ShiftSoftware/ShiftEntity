@@ -1,12 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.ShiftEntity.Core.Extensions;
+using ShiftSoftware.EFCore.SqlServer.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core;
+namespace ShiftSoftware.EFCore.SqlServer;
 
 public abstract class ShiftDbContext : DbContext
 {

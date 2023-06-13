@@ -14,3 +14,5 @@
 /ShiftEntity.Web/bin
 /ShiftEntity.Web/obj
 /ShiftEntity.Core/bin
+/ShiftEntity.EFCore.SqlServer/bin
+/ShiftEntity.EFCore.SqlServer/obj

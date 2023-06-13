@@ -6,7 +6,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core;
+namespace ShiftSoftware.EFCore.SqlServer;
 
 
 public class IncludeOperations<TEntity>
