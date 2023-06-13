@@ -40,7 +40,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\ShiftEntity\ShiftEntity.csproj" />
+		<ProjectReference Include="..\ShiftEntity\ShiftEntity.Core.csproj" />
 	</ItemGroup>
 
 </Project>

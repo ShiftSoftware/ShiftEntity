@@ -10,3 +10,7 @@
 /ShiftEntityWeb/bin
 /ShiftEntity.Model/obj
 /ShiftEntity.Model/bin
+/ShiftEntity.Core/obj
+/ShiftEntity.Web/bin
+/ShiftEntity.Web/obj
+/ShiftEntity.Core/bin
