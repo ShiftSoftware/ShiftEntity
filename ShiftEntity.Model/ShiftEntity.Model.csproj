@@ -9,7 +9,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Model</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Model</Product>
-		<Version>1.6.0.4</Version>
+		<Version>1.6.0.5</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Model</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Model</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -32,6 +32,7 @@
 	<ItemGroup>
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftBlazor" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Dashboard.Shared" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Model" />
