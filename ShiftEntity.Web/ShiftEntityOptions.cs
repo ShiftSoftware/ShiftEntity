@@ -16,13 +16,13 @@ public class ShiftEntityOptions
         return this;
     }
 
-    public ShiftEntityODataOptions ODatat { get; set; }
+    public ShiftEntityODataOptions ODataOptions { get; set; }
 
     public HashIdOptions HashId { get; set; }
 
     public ShiftEntityOptions()
     {
-        ODatat = new ();
+        ODataOptions = new ();
         HashId = new ();
     }
 }

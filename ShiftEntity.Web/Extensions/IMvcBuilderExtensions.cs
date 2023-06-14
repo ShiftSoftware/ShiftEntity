@@ -2,9 +2,7 @@
 using Microsoft.AspNetCore.OData;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.DependencyModel;
 using ShiftSoftware.ShiftEntity.Model;
-using ShiftSoftware.ShiftEntity.Model.HashId;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
@@ -18,12 +16,15 @@ public static class IMvcBuilderExtensions
         ShiftEntityOptions o = new();
         options.Invoke(o);
 
-        o.ODatat.GenerateEdmModel();
-
-        builder.Services.AddHttpContextAccessor()
+        return AddShiftEntity(builder, o);
+    }
+    public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
+    {
+        builder.Services
+            .AddHttpContextAccessor()
             .AddLocalization()
-            .TryAddSingleton(o);
-        
+            .TryAddSingleton(shiftEntityOptions);
+
         builder.Services.TryAddSingleton<TimeZoneService>();
 
         builder.AddJsonOptions(options =>
@@ -33,13 +34,13 @@ public static class IMvcBuilderExtensions
         });
 
         //Wrap the validation error with ShiftEntityResponse
-        if (o._WrapValidationErrorResponseWithShiftEntityResponse)
+        if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
             builder.ConfigureApiBehaviorOptions(options =>
             {
                 options.InvalidModelStateResponseFactory = context =>
                 {
-                    var errors = context.ModelState.Select(x => new { x.Key, x.Value?.Errors })
-                        .ToDictionary(x => x.Key, x => x.Errors);
+                    var errors = context.ModelState.Select(x => new { x.Key, x.Value?.Errors }).ToDictionary(x => x.Key, x => x.Errors);
+
                     var response = new ShiftEntityResponse<object>
                     {
                         Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
@@ -48,27 +49,36 @@ public static class IMvcBuilderExtensions
                 };
             });
 
+        return builder;
+    }
+    public static IMvcBuilder AddOdata(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
+    {
+        shiftEntityOptions.ODataOptions.GenerateEdmModel();
+
         //Configre OData
-        builder.AddOData(options =>
+        builder.AddOData(oDataoptions =>
         {
-            options.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
+            oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
 
-            if (o.ODatat._Count)
-                options.Count();
-            if (o.ODatat._Filter)
-                options.Filter();
-            if (o.ODatat._Expand)
-                options.Expand();
-            if (o.ODatat._Select)
-                options.Select();
-            if (o.ODatat._OrderBy)
-                options.OrderBy();
-            options.SetMaxTop(o.ODatat._MaxTop);
+            if (shiftEntityOptions.ODataOptions._Count)
+                oDataoptions.Count();
+            if (shiftEntityOptions.ODataOptions._Filter)
+                oDataoptions.Filter();
+            if (shiftEntityOptions.ODataOptions._Expand)
+                oDataoptions.Expand();
+            if (shiftEntityOptions.ODataOptions._Select)
+                oDataoptions.Select();
+            if (shiftEntityOptions.ODataOptions._OrderBy)
+                oDataoptions.OrderBy();
 
-            options.AddRouteComponents(o.ODatat.RoutePrefix, o.ODatat.EdmModel, serviceCollection =>
+            oDataoptions.SetMaxTop(shiftEntityOptions.ODataOptions._MaxTop);
+
+            oDataoptions.AddRouteComponents(shiftEntityOptions.ODataOptions.RoutePrefix, shiftEntityOptions.ODataOptions.EdmModel, serviceCollection =>
             {
-                serviceCollection.AddHttpContextAccessor()
-                    .TryAddSingleton<TimeZoneService>();
+                serviceCollection
+                .AddHttpContextAccessor()
+                .TryAddSingleton<TimeZoneService>();
+
                 serviceCollection.RegisterConverters();
             });
         });

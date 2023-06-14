@@ -66,9 +66,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 //This will remove the base url all the way to the odata prefix
                 //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
                 ///ToDo?$filter=ID eq 'MQaLZ'
-                var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.ODatat.RoutePrefix) + options.ODatat.RoutePrefix.Length);
+                var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.ODataOptions.RoutePrefix) + options.ODataOptions.RoutePrefix.Length);
 
-                ODataUriParser parser = new ODataUriParser(options.ODatat.EdmModel, new Uri(relativePath, UriKind.Relative));
+                ODataUriParser parser = new ODataUriParser(options.ODataOptions.EdmModel, new Uri(relativePath, UriKind.Relative));
 
                 var odataUri = parser.ParseUri();
 
