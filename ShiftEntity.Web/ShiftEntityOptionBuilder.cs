@@ -11,7 +11,7 @@ public class ShiftEntityOptionBuilder
 
     public ShiftEntityOptionBuilder WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponseWithShiftEntityResponse)
     {
-        this.WrapValidationErrorResponseWithShiftEntityResponse(wrapValidationErrorResponseWithShiftEntityResponse);
+        this._shiftEntityOptions.WrapValidationErrorResponseWithShiftEntityResponse(wrapValidationErrorResponseWithShiftEntityResponse);
 
         return this;
     }
