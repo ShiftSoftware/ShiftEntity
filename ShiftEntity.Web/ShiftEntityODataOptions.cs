@@ -79,4 +79,11 @@ public class ShiftEntityODataOptions
     {
         this.EdmModel = ODataConvention.GetEdmModel();
     }
+
+    public ShiftEntityODataOptions OdataEntitySet<T>(string name) where T : class
+    {
+        this.ODataConvention.EntitySet<T>(name);
+
+        return this;
+    }
 }

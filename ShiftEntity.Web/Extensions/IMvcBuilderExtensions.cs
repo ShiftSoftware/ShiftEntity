@@ -11,10 +11,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
 public static class IMvcBuilderExtensions
 {
-    public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, Action<ShiftEntityOptions> options)
+    public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
     {
         ShiftEntityOptions o = new();
-        options.Invoke(o);
+
+        shiftEntityOptionsBuilder.Invoke(o);
 
         return AddShiftEntity(builder, o);
     }
@@ -33,7 +34,6 @@ public static class IMvcBuilderExtensions
             options.RegisterTimeZoneConverters(builder.Services.BuildServiceProvider().GetRequiredService<TimeZoneService>());
         });
 
-        //Wrap the validation error with ShiftEntityResponse
         if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
             builder.ConfigureApiBehaviorOptions(options =>
             {
@@ -51,29 +51,38 @@ public static class IMvcBuilderExtensions
 
         return builder;
     }
-    public static IMvcBuilder AddOdata(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
+    public static IMvcBuilder AddOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
     {
-        shiftEntityOptions.ODataOptions.GenerateEdmModel();
+        ShiftEntityODataOptions o = new();
+        shiftEntityODataOptionsBuilder.Invoke(o);
+
+        return AddOdata(builder, o);
+    }
+    public static IMvcBuilder AddOdata(this IMvcBuilder builder, ShiftEntityODataOptions shiftEntityODataOptions)
+    {
+        builder.Services.TryAddSingleton(shiftEntityODataOptions);
+
+        shiftEntityODataOptions.GenerateEdmModel();
 
         //Configre OData
         builder.AddOData(oDataoptions =>
         {
             oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
 
-            if (shiftEntityOptions.ODataOptions._Count)
+            if (shiftEntityODataOptions._Count)
                 oDataoptions.Count();
-            if (shiftEntityOptions.ODataOptions._Filter)
+            if (shiftEntityODataOptions._Filter)
                 oDataoptions.Filter();
-            if (shiftEntityOptions.ODataOptions._Expand)
+            if (shiftEntityODataOptions._Expand)
                 oDataoptions.Expand();
-            if (shiftEntityOptions.ODataOptions._Select)
+            if (shiftEntityODataOptions._Select)
                 oDataoptions.Select();
-            if (shiftEntityOptions.ODataOptions._OrderBy)
+            if (shiftEntityODataOptions._OrderBy)
                 oDataoptions.OrderBy();
 
-            oDataoptions.SetMaxTop(shiftEntityOptions.ODataOptions._MaxTop);
+            oDataoptions.SetMaxTop(shiftEntityODataOptions._MaxTop);
 
-            oDataoptions.AddRouteComponents(shiftEntityOptions.ODataOptions.RoutePrefix, shiftEntityOptions.ODataOptions.EdmModel, serviceCollection =>
+            oDataoptions.AddRouteComponents(shiftEntityODataOptions.RoutePrefix, shiftEntityODataOptions.EdmModel, serviceCollection =>
             {
                 serviceCollection
                 .AddHttpContextAccessor()

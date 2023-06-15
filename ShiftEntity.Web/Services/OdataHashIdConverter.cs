@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.OData.Formatter;
-using Microsoft.AspNetCore.OData.Formatter.Serialization;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData.Edm;
 using Microsoft.OData;
 using ShiftSoftware.ShiftEntity.Model.HashId;
@@ -10,7 +8,6 @@ using Microsoft.OData.UriParser;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.AspNetCore.Http.Extensions;
-using System.Collections.Generic;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
@@ -48,7 +45,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
         {
-            ShiftEntityOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
+            ShiftEntityODataOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
 
             if (!HashId.Enabled)
             {
@@ -66,9 +63,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 //This will remove the base url all the way to the odata prefix
                 //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
                 ///ToDo?$filter=ID eq 'MQaLZ'
-                var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.ODataOptions.RoutePrefix) + options.ODataOptions.RoutePrefix.Length);
+                var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.RoutePrefix) + options.RoutePrefix.Length);
 
-                ODataUriParser parser = new ODataUriParser(options.ODataOptions.EdmModel, new Uri(relativePath, UriKind.Relative));
+                ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri(relativePath, UriKind.Relative));
 
                 var odataUri = parser.ParseUri();
 
