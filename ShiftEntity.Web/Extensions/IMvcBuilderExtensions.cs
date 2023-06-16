@@ -51,14 +51,14 @@ public static class IMvcBuilderExtensions
 
         return builder;
     }
-    public static IMvcBuilder AddOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
+    public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
     {
         ShiftEntityODataOptions o = new();
         shiftEntityODataOptionsBuilder.Invoke(o);
 
-        return AddOdata(builder, o);
+        return AddShiftEntityOdata(builder, o);
     }
-    public static IMvcBuilder AddOdata(this IMvcBuilder builder, ShiftEntityODataOptions shiftEntityODataOptions)
+    public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, ShiftEntityODataOptions shiftEntityODataOptions)
     {
         builder.Services.TryAddSingleton(shiftEntityODataOptions);
 
