@@ -22,9 +22,6 @@ namespace ShiftEntityWeb
         where Entity : ShiftEntity<Entity>
         where DTO: ShiftEntityDTO
     {
-        public ShiftEntityController(Repository repository) : base(repository)
-        {
-        }
     }
 
     public class ShiftEntityController<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
@@ -33,17 +30,11 @@ namespace ShiftEntityWeb
         where Entity : ShiftEntity<Entity>
         where UpdateDTO : ShiftEntityDTO
     {
-        public Repository repository { get; set; }
-
-        public ShiftEntityController(Repository repository)
-        {
-            this.repository = repository;
-        }
-
         [HttpGet]
         [EnableQueryWithHashIdConverter]
         public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
             return Ok(repository.OdataList(ignoreGlobalFilters));
         }
 
@@ -51,6 +42,7 @@ namespace ShiftEntityWeb
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
             (string key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
             var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
 
             if (asOf.HasValue)
@@ -93,12 +85,16 @@ namespace ShiftEntityWeb
         [EnableQueryWithHashIdConverter]
         public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
             return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds<SelectDTO>.Decode(key)));
         }
 
         [HttpPost]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
             if (!ModelState.IsValid)
             {
                 var response = new ShiftEntityResponse<SelectDTO>
@@ -150,6 +146,8 @@ namespace ShiftEntityWeb
         [HttpPut("{key}")]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
             if (!ModelState.IsValid)
             {
                 var response = new ShiftEntityResponse<SelectDTO>
@@ -218,6 +216,8 @@ namespace ShiftEntityWeb
         [HttpDelete("{key}")]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
             var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key));
 
             if (item == null)
@@ -256,6 +256,8 @@ namespace ShiftEntityWeb
         [NonAction]
         public virtual async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
         {
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
             var list = repository.OdataList();
 
             if (oDataQueryOptions.Filter != null)

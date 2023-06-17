@@ -21,9 +21,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
     where Entity : ShiftEntity<Entity>
     where DTO : ShiftEntityDTO
 {
-    public ShiftEntitySecureControllerAsync(Repository repository,
-        ReadWriteDeleteAction action) :
-        base(repository, action)
+    public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action) : base(action)
     {
     }
 }
@@ -36,9 +34,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 {
     private readonly ReadWriteDeleteAction action;
 
-    public ShiftEntitySecureControllerAsync(
-        Repository repository,
-        ReadWriteDeleteAction action) : base(repository)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action)
     {
         this.action = action;
     }

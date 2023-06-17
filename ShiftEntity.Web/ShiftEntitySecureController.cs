@@ -22,9 +22,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, DTO> :
     where Entity : ShiftEntity<Entity> 
     where DTO : ShiftEntityDTO
 {
-    public ShiftEntitySecureController(Repository repository,
-        ReadWriteDeleteAction action) :
-        base(repository, action)
+    public ShiftEntitySecureController(ReadWriteDeleteAction action) : base(action)
     {
     }
 }
@@ -38,8 +36,7 @@ public class ShiftEntitySecureController<Repository, Entity, ListDTO, SelectDTO,
     private readonly ReadWriteDeleteAction action;
 
     public ShiftEntitySecureController(
-        Repository repository,
-        ReadWriteDeleteAction action) : base(repository)
+        ReadWriteDeleteAction action)
     {
         this.action = action;
     }
