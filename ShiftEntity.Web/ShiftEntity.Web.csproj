@@ -31,7 +31,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.7" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.16.0" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.1.4" />
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.1.4" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')"/>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -40,12 +40,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!--Shift Framework References will be removed by pre-commit-->
 	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')"/>
 	</ItemGroup>
-
-	<Target Name="CopyPreCommitHook" BeforeTargets="Build" Condition=" '$(IsCrossTargetingBuild)' != 'true' ">
-		<Exec Command="xcopy /Y /I pre-commit ..\.git\hooks\" />
-	</Target>
 
 </Project>
