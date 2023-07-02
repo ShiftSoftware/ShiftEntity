@@ -19,7 +19,7 @@ public class TimeZoneService
         this.httpContextAccessor = httpContextAccessor;
     }
 
-    internal TimeSpan GetTimeZoneOffset()
+    public TimeSpan GetTimeZoneOffset()
     {
         if (this.httpContextAccessor != null && this.httpContextAccessor.HttpContext!.Request!.Headers.ContainsKey("timezone-offset"))
             return TimeSpan.Parse(this.httpContextAccessor!.HttpContext!.Request!.Headers!["timezone-offset"]!);
@@ -27,12 +27,12 @@ public class TimeZoneService
         return TimeSpan.Zero;
     }
 
-    internal DateTime ReadOffsettedDate(DateTimeOffset dateTime)
+    public DateTime ReadOffsettedDate(DateTimeOffset dateTime)
     {
         return new DateTime(dateTime.Subtract(this.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
     }
 
-    internal DateTime WriteOffsettedDate(DateTimeOffset dateTime)
+    public DateTime WriteOffsettedDate(DateTimeOffset dateTime)
     {
         return new DateTime(dateTime.Add(this.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified);
     }
