@@ -20,16 +20,16 @@ public static class ModelBuilderExtensions
         {
             var clrType = entityType.ClrType;
 
+            var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
+
+            if (isTemporal != null)
+            {
+                //Make the tables temporal that has TemporalShiftEntyty attribute 
+                modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
+            }
+
             if (clrType.IsAssignableTo(typeof(IShiftEntity)))
             {
-                var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
-
-                if (isTemporal != null)
-                {
-                    //Make the tables temporal that has TemporalShiftEntyty attribute 
-                    modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
-                }
-
                 //Golobaly filter soft deleted rows
                 var parameter = Expression.Parameter(clrType);
                 var body = Replace(filterExpr.Parameters.First(), parameter, filterExpr.Body);
