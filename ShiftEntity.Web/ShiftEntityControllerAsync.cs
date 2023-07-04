@@ -141,6 +141,9 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             await repository.SaveChangesAsync();
 
+            if (newItem.ReloadAfterSave)
+                newItem = await repository.FindAsync(newItem.ID);
+
             return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
             {
                 Message = repository.ResponseMessage,
@@ -211,6 +214,9 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             await repository.SaveChangesAsync();
 
+            if (item.ReloadAfterSave)
+                item = await repository.FindAsync(item.ID);
+
             return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
             {
                 Message = repository.ResponseMessage,
@@ -250,6 +256,9 @@ namespace ShiftSoftware.ShiftEntity.Web
             }
 
             await repository.SaveChangesAsync();
+
+            if (item.ReloadAfterSave)
+                item = await repository.FindAsync(item.ID);
 
             return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
             {

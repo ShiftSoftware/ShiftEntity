@@ -6,7 +6,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Core</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity</Product>
-		<Version>1.6.4</Version>
+		<Version>1.6.5</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
