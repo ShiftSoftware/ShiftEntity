@@ -18,14 +18,14 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
 		<Title>ShiftEntity.Web</Title>
-		<PackageReleaseNotes>
-
-		</PackageReleaseNotes>
+		<PackageReleaseNotes></PackageReleaseNotes>
+		<Nullable>enable</Nullable>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.16.0" />
 		<PackageReference Include="FastReport.OpenSource" Version="2023.2.18" />
 		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2023.2.18" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.0" />
