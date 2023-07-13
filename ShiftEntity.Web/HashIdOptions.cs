@@ -15,13 +15,13 @@ public class HashIdOptions
         return this;
     }
 
-    public HashIdOptions RegisterUserIdsHasher(string salt = "", int minHashLength = 0, string? alphabet = null)
+    public HashIdOptions RegisterIdentityHashId(string salt = "", int minHashLength = 0, string? alphabet = null)
     {
-        HashId.UserIdsSalt = salt;
-        HashId.UserIdsMinHashLength = minHashLength;
-        HashId.UserIdsAlphabet = alphabet;
+        HashId.IdentityHashIdSalt = salt;
+        HashId.IdentityHashIdMinLength = minHashLength;
+        HashId.IdentityHashIdAlphabet = alphabet;
 
-        HashId.UserIdsHashEnabled = true;
+        HashId.IdentityHashIdEnabled = true;
 
         return this;
     }

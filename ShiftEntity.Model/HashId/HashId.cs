@@ -6,10 +6,10 @@ public static class HashId
     internal static bool acceptUnencodedIds;
     internal static bool Enabled;
 
-    internal static bool UserIdsHashEnabled = false;
-    internal static string UserIdsSalt = "";
-    internal static int UserIdsMinHashLength;
-    internal static string? UserIdsAlphabet;
+    internal static bool IdentityHashIdEnabled = false;
+    internal static string IdentityHashIdSalt = "";
+    internal static int IdentityHashIdMinLength;
+    internal static string? IdentityHashIdAlphabet;
 
     public static void RegisterHashId(bool acceptUnencodedIds = false)
     {
@@ -20,18 +20,18 @@ public static class HashId
 
     public static void RegisterUserIdsHasher(string salt = "", int minHashLength = 0, string? alphabet = null)
     {
-        HashId.UserIdsSalt = salt;
-        HashId.UserIdsMinHashLength = minHashLength;
-        HashId.UserIdsAlphabet = alphabet;
+        HashId.IdentityHashIdSalt = salt;
+        HashId.IdentityHashIdMinLength = minHashLength;
+        HashId.IdentityHashIdAlphabet = alphabet;
 
-        HashId.UserIdsHashEnabled = true;
+        HashId.IdentityHashIdEnabled = true;
     }
 }
 
 public class ShiftEntityHashId
 {
     Hashids hashids;
-    internal bool UserIdsHasher = false;
+    internal bool IsIdentityHasher = false;
 
     public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null)
     {
@@ -41,15 +41,15 @@ public class ShiftEntityHashId
             hashids = new Hashids(salt, minHashLength, alphabet);
     }
 
-    internal ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = true)
+    internal ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = false)
         : this(salt, minHashLength, alphabet)
     {
-        this.UserIdsHasher = userIdsHasher;
+        this.IsIdentityHasher = userIdsHasher;
     }
 
     public long Decode(string hash)
     {
-        if ((HashId.Enabled && !this.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.UserIdsHasher))
+        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
         {
             try
             {
@@ -79,7 +79,7 @@ public class ShiftEntityHashId
 
     public string Encode(long id)
     {
-        if ((HashId.Enabled && !this.UserIdsHasher) || (HashId.UserIdsHashEnabled && this.UserIdsHasher))
+        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
         {
             return hashids.EncodeLong(id);
         }
