@@ -1,15 +1,24 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using AutoMapper;
+using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Model.HashId;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.EFCore.SqlServer
 {
+    public class ShiftRepository<DB, EntityType> : ShiftRepository<EntityType>
+        where DB : DbContext
+        where EntityType : ShiftEntity<EntityType>
+    {
+        public readonly DB db;
+        public readonly IMapper mapper;
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet)
+        {
+            this.db = db;
+            this.mapper = mapper;
+        }
+    }
+
     public class ShiftRepository<EntityType> where EntityType :
         ShiftEntity<EntityType>
     {
