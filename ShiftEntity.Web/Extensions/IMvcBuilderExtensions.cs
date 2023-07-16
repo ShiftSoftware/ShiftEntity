@@ -49,7 +49,7 @@ public static class IMvcBuilderExtensions
                 };
             });
 
-        builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+        builder.Services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
 
         return builder;
     }
