@@ -1,10 +1,5 @@
-﻿using DelegateDecompiler;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Query;
+﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
-using System;
-using System.Linq;
 using System.Linq.Expressions;
 using static Microsoft.EntityFrameworkCore.Query.ReplacingExpressionVisitor;
 
@@ -49,24 +44,4 @@ public static class ModelBuilderExtensions
         return modelBuilder;
     }
 
-    public static DbContextOptionsBuilder AddDelegateDecompiler(this DbContextOptionsBuilder optionsBuilder)
-    {
-        return optionsBuilder.AddInterceptors(new DelegateDecompilerQueryPreprocessor());
-    }
-
-    public class DelegateDecompilerQueryPreprocessor : DecompileExpressionVisitor, IQueryExpressionInterceptor
-    {
-        Expression IQueryExpressionInterceptor.QueryCompilationStarting(Expression queryExpression, QueryExpressionEventData eventData) => Visit(queryExpression);
-
-        protected override Expression VisitUnary(UnaryExpression node)
-        {
-            if (node.NodeType == ExpressionType.Convert && node.Method != null)
-            {
-                var decompiled = node.Method.Decompile();
-                return Replace(decompiled.Parameters[0], Visit(node.Operand), decompiled.Body);
-            }
-
-            return base.VisitUnary(node);
-        }
-    }
 }

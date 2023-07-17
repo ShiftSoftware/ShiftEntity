@@ -6,7 +6,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>1.6.6</Version>
+		<Version>1.6.10</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -26,12 +26,13 @@
 	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Azure.Storage.Blobs" Version="12.16.0" />
+		<PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
 		<PackageReference Include="FastReport.OpenSource" Version="2023.2.18" />
 		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2023.2.18" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.0" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.7" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.20" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.16.0" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.2" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')"/>
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.2" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -41,7 +42,7 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
-	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')"/>
+	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
 	</ItemGroup>
 
 </Project>

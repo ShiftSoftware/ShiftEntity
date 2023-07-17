@@ -1,12 +1,23 @@
-﻿namespace ShiftSoftware.ShiftEntity.Web;
+﻿using System.Collections.Generic;
+using System.Reflection;
+
+namespace ShiftSoftware.ShiftEntity.Web;
 
 public class ShiftEntityOptions
 {
     internal bool _WrapValidationErrorResponseWithShiftEntityResponse;
+    internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
+
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
         this._WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponse;
 
+        return this;
+    }
+
+    public ShiftEntityOptions AddAutoMapper(params Assembly[] assemblies)
+    {
+        this.AutoMapperAssemblies.AddRange(assemblies);
         return this;
     }
 

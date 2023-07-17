@@ -49,6 +49,8 @@ public static class IMvcBuilderExtensions
                 };
             });
 
+        builder.Services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
+
         return builder;
     }
     public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
