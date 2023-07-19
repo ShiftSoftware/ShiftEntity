@@ -1,9 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Web.Triggers;
 using System;
 using System.Linq;
 
@@ -19,19 +22,34 @@ public static class IMvcBuilderExtensions
 
         return AddShiftEntity(builder, o);
     }
+
+    private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder, IServiceProvider serviceProvider)
+    {
+        var dbContextServiceDescriptor = builder.Services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions));
+        var dbContextBuilder = new DbContextOptionsBuilder(serviceProvider.GetRequiredService<DbContextOptions>());
+        dbContextBuilder.UseTriggers(t => t.AddTrigger<SetUserIdTrigger>());
+        builder.Services.Remove(dbContextServiceDescriptor);
+        builder.Services.Add(new ServiceDescriptor(typeof(DbContextOptions), dbContextBuilder.Options));
+
+        return builder;
+    }
+
     public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
     {
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization()
             .TryAddSingleton(shiftEntityOptions);
-
         builder.Services.TryAddSingleton<TimeZoneService>();
 
+        var serviceProvider = builder.Services.BuildServiceProvider();
+
+        builder.RegisterTriggers(serviceProvider);
+        
         builder.AddJsonOptions(options =>
         {
             options.JsonSerializerOptions.PropertyNamingPolicy = null;
-            options.RegisterTimeZoneConverters(builder.Services.BuildServiceProvider().GetRequiredService<TimeZoneService>());
+            options.RegisterTimeZoneConverters(serviceProvider.GetRequiredService<TimeZoneService>());
         });
 
         if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)

@@ -9,7 +9,7 @@ public static class ModelBuilderExtensions
 {
     public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder)
     {
-        Expression<Func<IShiftEntity, bool>> filterExpr = bm => !bm.IsDeleted;
+        Expression<Func<ShiftEntityBase, bool>> filterExpr = bm => !bm.IsDeleted;
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -23,7 +23,7 @@ public static class ModelBuilderExtensions
                 modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
             }
 
-            if (clrType.IsAssignableTo(typeof(IShiftEntity)))
+            if (clrType.IsAssignableTo(typeof(ShiftEntityBase)))
             {
                 //Golobaly filter soft deleted rows
                 var parameter = Expression.Parameter(clrType);

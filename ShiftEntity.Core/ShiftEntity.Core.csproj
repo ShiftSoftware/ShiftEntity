@@ -30,6 +30,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.EFCore.SqlServer" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 	</ItemGroup>
 

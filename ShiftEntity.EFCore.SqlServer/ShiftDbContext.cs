@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.EFCore.SqlServer.Extensions;
-
+using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
 
 namespace ShiftSoftware.EFCore.SqlServer;
 
@@ -23,6 +23,8 @@ public abstract class ShiftDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        optionsBuilder.UseTriggers(x=> x.AddTrigger<GeneralTrigger>());
+
         base.OnConfiguring(optionsBuilder);
     }
 }
