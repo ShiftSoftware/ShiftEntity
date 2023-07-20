@@ -22,15 +22,6 @@ public static class ModelBuilderExtensions
                 //Make the tables temporal that has TemporalShiftEntyty attribute 
                 modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
             }
-
-            if (clrType.IsAssignableTo(typeof(ShiftEntityBase)))
-            {
-                //Golobaly filter soft deleted rows
-                var parameter = Expression.Parameter(clrType);
-                var body = Replace(filterExpr.Parameters.First(), parameter, filterExpr.Body);
-                var lambdaExpression = Expression.Lambda(body, parameter);
-                entityType.SetQueryFilter(lambdaExpression);
-            }
         }
 
         ///// Disable Cascade Delete
