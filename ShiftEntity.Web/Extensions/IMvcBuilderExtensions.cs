@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Web.Triggers;
@@ -44,14 +45,27 @@ public static class IMvcBuilderExtensions
             .TryAddSingleton(shiftEntityOptions);
         builder.Services.TryAddSingleton<TimeZoneService>();
 
-        var serviceProvider = builder.Services.BuildServiceProvider();
-
         builder.RegisterTriggers();
-        
-        builder.AddJsonOptions(options =>
+
+        //builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
+        //{
+        //    Action<JsonOptions> options = (o) =>
+        //    {
+        //        o.JsonSerializerOptions.PropertyNamingPolicy = null;
+        //        o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
+        //    };
+
+        //    return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);
+        //});
+
+        builder.Services.AddSingleton<JsonOptions>(p =>
         {
+            var options = new JsonOptions();
+           
             options.JsonSerializerOptions.PropertyNamingPolicy = null;
-            options.RegisterTimeZoneConverters(serviceProvider.GetRequiredService<TimeZoneService>());
+            options.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
+            
+            return options;
         });
 
         if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
