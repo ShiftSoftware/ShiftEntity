@@ -3,12 +3,7 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftEntityDelete<EntityType> where EntityType : class
+public interface IShiftEntityDeleteAsync<EntityType> where EntityType : ShiftEntity<EntityType>
 {
-    public EntityType Delete(EntityType entity, long? userId = null);
-}
-
-public interface IShiftEntityDeleteAsync<EntityType> where EntityType : class
-{
-    public ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId = null);
+    public ValueTask<EntityType> DeleteAsync(EntityType entity, bool isSoftDelete = false, long? userId = null);
 }

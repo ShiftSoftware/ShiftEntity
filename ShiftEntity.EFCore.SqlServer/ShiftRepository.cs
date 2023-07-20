@@ -19,7 +19,7 @@ namespace ShiftSoftware.EFCore.SqlServer
         }
     }
 
-    public class ShiftRepository<EntityType> where EntityType :
+    public class ShiftRepository<EntityType> : IShiftEntityDeleteAsync<EntityType> where EntityType :
         ShiftEntity<EntityType>
     {
         DbSet<EntityType> dbSet;
@@ -150,6 +150,16 @@ namespace ShiftSoftware.EFCore.SqlServer
         public virtual async Task SaveChangesAsync()
         {
             await db.SaveChangesAsync();
+        }
+
+        public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isSoftDelete = false, long? userId = null)
+        {
+            if (isSoftDelete)
+                entity.DeleteShiftEntity(userId);
+            else
+                dbSet.Remove(entity);
+
+            return new ValueTask<EntityType>(entity);
         }
     }
 }

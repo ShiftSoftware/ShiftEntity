@@ -16,7 +16,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         IShiftEntityView<Entity, SelectDTO>,
         IShiftEntityCreate<Entity, CreateDTO>,
         IShiftEntityUpdate<Entity, UpdateDTO>,
-        IShiftEntityDelete<Entity>
+        IShiftEntityDeleteAsync<Entity>
         where Entity : ShiftEntity<Entity>
     {
         void Add(Entity entity);
