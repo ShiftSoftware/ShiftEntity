@@ -14,6 +14,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
 public static class IMvcBuilderExtensions
 {
+    static bool locked = false;
     public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
     {
         ShiftEntityOptions o = new();
@@ -23,13 +24,14 @@ public static class IMvcBuilderExtensions
         return AddShiftEntity(builder, o);
     }
 
-    private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder, IServiceProvider serviceProvider)
+    private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder)
     {
-        var dbContextServiceDescriptor = builder.Services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions));
-        var dbContextBuilder = new DbContextOptionsBuilder(serviceProvider.GetRequiredService<DbContextOptions>());
-        dbContextBuilder.UseTriggers(t => t.AddTrigger<SetUserIdTrigger>());
-        builder.Services.Remove(dbContextServiceDescriptor);
-        builder.Services.Add(new ServiceDescriptor(typeof(DbContextOptions), dbContextBuilder.Options));
+        builder.Services.Decorate<DbContextOptions>((inner, provider) =>
+        {
+            var dbContextBuilder = new DbContextOptionsBuilder(inner);
+            dbContextBuilder.UseTriggers(t => t.AddTrigger<SetUserIdTrigger>());
+            return dbContextBuilder.Options;
+        });
 
         return builder;
     }
@@ -44,7 +46,7 @@ public static class IMvcBuilderExtensions
 
         var serviceProvider = builder.Services.BuildServiceProvider();
 
-        builder.RegisterTriggers(serviceProvider);
+        builder.RegisterTriggers();
         
         builder.AddJsonOptions(options =>
         {
