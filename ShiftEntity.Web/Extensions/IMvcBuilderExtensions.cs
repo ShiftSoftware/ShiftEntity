@@ -44,29 +44,20 @@ public static class IMvcBuilderExtensions
             .AddLocalization()
             .TryAddSingleton(shiftEntityOptions);
         builder.Services.TryAddSingleton<TimeZoneService>();
-
+        
         builder.RegisterTriggers();
 
-        //builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
-        //{
-        //    Action<JsonOptions> options = (o) =>
-        //    {
-        //        o.JsonSerializerOptions.PropertyNamingPolicy = null;
-        //        o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
-        //    };
-
-        //    return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);
-        //});
-
-        builder.Services.AddSingleton<JsonOptions>(p =>
+        builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
         {
-            var options = new JsonOptions();
-           
-            options.JsonSerializerOptions.PropertyNamingPolicy = null;
-            options.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
-            
-            return options;
+            Action<JsonOptions> options = (o) =>
+            {
+                o.JsonSerializerOptions.PropertyNamingPolicy = null;
+                o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
+            };
+
+            return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);
         });
+
 
         if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
             builder.ConfigureApiBehaviorOptions(options =>
