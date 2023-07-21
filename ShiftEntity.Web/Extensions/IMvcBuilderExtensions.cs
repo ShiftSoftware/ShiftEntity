@@ -1,10 +1,13 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using EntityFrameworkCore.Triggered;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Web.Triggers;
@@ -27,12 +30,8 @@ public static class IMvcBuilderExtensions
 
     private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder)
     {
-        builder.Services.Decorate<DbContextOptions>((inner, provider) =>
-        {
-            var dbContextBuilder = new DbContextOptionsBuilder(inner);
-            dbContextBuilder.UseTriggers(t => t.AddTrigger<SetUserIdTrigger>());
-            return dbContextBuilder.Options;
-        });
+        builder.Services.AddTransient<IBeforeSaveTrigger<ShiftEntityBase>, GeneralTrigger>();
+        builder.Services.AddTransient<IBeforeSaveTrigger<ShiftEntityBase>, SetUserIdTrigger>();
 
         return builder;
     }

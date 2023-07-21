@@ -23,7 +23,7 @@ public abstract class ShiftDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.UseTriggers(x=> x.AddTrigger<GeneralTrigger>());
+        optionsBuilder.UseTriggers();
 
         base.OnConfiguring(optionsBuilder);
     }
