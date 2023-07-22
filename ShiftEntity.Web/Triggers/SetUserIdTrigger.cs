@@ -11,7 +11,8 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Triggers;
 
-internal class SetUserIdTrigger : IBeforeSaveTrigger<ShiftEntityBase>
+internal class SetUserIdTrigger<Entity> : IBeforeSaveTrigger<Entity>
+    where Entity : ShiftEntity<Entity>
 {
     private readonly IHttpContextAccessor? http;
 
@@ -30,7 +31,7 @@ internal class SetUserIdTrigger : IBeforeSaveTrigger<ShiftEntityBase>
             return userId;
     }
 
-    public Task BeforeSave(ITriggerContext<ShiftEntityBase> context, CancellationToken cancellationToken)
+    public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {
         long? userId = GetUserId();
 

@@ -13,6 +13,7 @@ using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Web.Triggers;
 using System;
 using System.Linq;
+using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
@@ -30,8 +31,30 @@ public static class IMvcBuilderExtensions
 
     private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder)
     {
-        builder.Services.AddTransient<IBeforeSaveTrigger<ShiftEntityBase>, GeneralTrigger>();
-        builder.Services.AddTransient<IBeforeSaveTrigger<ShiftEntityBase>, SetUserIdTrigger>();
+        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
+        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserIdTrigger<>));
+        builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSave<>));
+
+        return builder;
+    }
+
+    private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly)
+    {
+        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly(); // Adjust this as needed
+
+        // Find all types in the assembly that implement IRepository<>
+        var repositoryTypes = repositoryAssembly.GetTypes()
+            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)));
+
+        // Register each IRepository<> implementation with its corresponding interface
+        foreach (var repositoryType in repositoryTypes)
+        {
+            var interfaceType = repositoryType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>));
+            if (interfaceType != null)
+            {
+                builder.Services.AddScoped(interfaceType, repositoryType);
+            }
+        }
 
         return builder;
     }
@@ -45,6 +68,7 @@ public static class IMvcBuilderExtensions
         builder.Services.TryAddSingleton<TimeZoneService>();
         
         builder.RegisterTriggers();
+        builder.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
 
         builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
         {

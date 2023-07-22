@@ -3,9 +3,10 @@ using ShiftSoftware.ShiftEntity.Core;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
 
-internal class GeneralTrigger : IBeforeSaveTrigger<ShiftEntityBase>
+internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity>
+    where Entity : ShiftEntity<Entity>
 {
-    public Task BeforeSave(ITriggerContext<ShiftEntityBase> context, CancellationToken cancellationToken)
+    public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {        
         if (context.ChangeType == ChangeType.Added)
         {
