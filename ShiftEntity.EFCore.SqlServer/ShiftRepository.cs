@@ -184,12 +184,13 @@ namespace ShiftSoftware.EFCore.SqlServer
             await db.SaveChangesAsync();
         }
 
-        public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isSoftDelete = false, long? userId = null)
+        public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null)
         {
-            if (isSoftDelete)
-                entity.DeleteShiftEntity(userId);
-            else
+            if (isHardDelete)
                 dbSet.Remove(entity);
+            else
+                entity.DeleteShiftEntity(userId);
+
 
             return new ValueTask<EntityType>(entity);
         }

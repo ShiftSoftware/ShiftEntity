@@ -219,7 +219,7 @@ namespace ShiftSoftware.ShiftEntity.Web
         }
 
         [HttpDelete("{key}")]
-        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isSoftDelete = false)
+        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -238,7 +238,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
-                await repository.DeleteAsync(item, isSoftDelete, this.GetUserID());
+                await repository.DeleteAsync(item, isHardDelete, this.GetUserID());
             }
             catch (ShiftEntityException ex)
             {
