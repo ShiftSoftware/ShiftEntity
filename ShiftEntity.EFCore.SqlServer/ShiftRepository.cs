@@ -6,6 +6,32 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.EFCore.SqlServer
 {
+    public class ShiftRepository<DB, EntityType, ListDTO, ViewDTO, UpsertDTO> : ShiftRepository<DB, EntityType>
+        where DB : DbContext
+        where EntityType : ShiftEntity<EntityType>
+    {
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet, mapper)
+        {
+        }
+
+        public virtual IQueryable<ListDTO> OdataList(bool ignoreGlobalFilters = false)
+        {
+            return mapper.ProjectTo<ListDTO>(dbSet.AsNoTracking());
+        }
+
+        public virtual ValueTask<ViewDTO> ViewAsync(EntityType entity)
+        {
+            return new ValueTask<ViewDTO>(mapper.Map<ViewDTO>(entity));
+        }
+
+        public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, UpsertDTO dto, ActionTypes actionType, long? userId = null)
+        {
+            entity = mapper.Map<UpsertDTO, EntityType>(dto, entity);
+
+            return new ValueTask<EntityType>(entity);
+        }
+    }
+
     public class ShiftRepository<DB, EntityType> : ShiftRepository<EntityType>
         where DB : DbContext
         where EntityType : ShiftEntity<EntityType>
@@ -22,7 +48,7 @@ namespace ShiftSoftware.EFCore.SqlServer
     public class ShiftRepository<EntityType> : IShiftEntityDeleteAsync<EntityType> where EntityType :
         ShiftEntity<EntityType>
     {
-        DbSet<EntityType> dbSet;
+        internal DbSet<EntityType> dbSet;
         DbContext db;
 
         public Message ResponseMessage { get; set; }
@@ -67,6 +93,12 @@ namespace ShiftSoftware.EFCore.SqlServer
             return await q.FirstOrDefaultAsync(x =>
                     EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
+        }
+
+        public virtual async Task<EntityType> FindAsync
+            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false)
+        {
+            return await FindAsync(id, asOf, ignoreGlobalFilters, new List<string> { });
         }
 
         public virtual async Task<EntityType> FindAsync
