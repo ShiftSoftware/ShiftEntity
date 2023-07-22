@@ -19,7 +19,7 @@ namespace ShiftSoftware.ShiftEntity.Web;
 public class ShiftEntitySecureController<Repository, Entity, ListDTO, DTO> :
     ShiftEntitySecureController<Repository, Entity, ListDTO, DTO, DTO, DTO>
     where Repository : IShiftRepository<Entity, ListDTO, DTO>
-    where Entity : ShiftEntity<Entity> 
+    where Entity : ShiftEntity<Entity>, new()
     where DTO : ShiftEntityDTO
 {
     public ShiftEntitySecureController(ReadWriteDeleteAction action) : base(action)

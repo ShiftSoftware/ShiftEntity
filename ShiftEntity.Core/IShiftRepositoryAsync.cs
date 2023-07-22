@@ -7,11 +7,11 @@ namespace ShiftSoftware.ShiftEntity.Core
 {
     public interface IShiftRepositoryAsync<Entity, ListDTO, DTO> :
         IShiftRepositoryAsync<Entity, ListDTO, DTO, DTO, DTO>
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, new()
     {
         ValueTask<Entity> IShiftEntityCreateAsync<Entity, DTO>.CreateAsync(DTO dto, long? userId = null)
         {
-            return UpsertAsync(null, dto, ActionTypes.Insert, userId);
+            return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId);
         }
 
         ValueTask<Entity> IShiftEntityUpdateAsync<Entity, DTO>.UpdateAsync(Entity entity, DTO dto, long? userId = null)

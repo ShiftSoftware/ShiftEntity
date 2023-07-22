@@ -18,7 +18,7 @@ namespace ShiftSoftware.ShiftEntity.Web;
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> :
     ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
     where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, new()
     where DTO : ShiftEntityDTO
 {
     public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action) : base(action)

@@ -7,11 +7,11 @@ namespace ShiftSoftware.ShiftEntity.Core
 {
     public interface IShiftRepository<Entity, ListDTO, DTO> : 
         IShiftRepository<Entity, ListDTO, DTO,DTO,DTO>
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, new()
     {
         Entity IShiftEntityCreate<Entity, DTO>.Create(DTO dto, long? userId = null)
         {
-            return Upsert(null, dto, ActionTypes.Insert, userId);
+            return Upsert(new Entity(), dto, ActionTypes.Insert, userId);
         }
 
         Entity IShiftEntityUpdate<Entity, DTO>.Update(Entity entity, DTO dto, long? userId = null)

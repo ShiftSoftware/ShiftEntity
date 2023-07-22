@@ -19,7 +19,7 @@ namespace ShiftEntityWeb
     public class ShiftEntityController<Repository, Entity, ListDTO, DTO> :
         ShiftEntityController<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepository<Entity, ListDTO, DTO>
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, new()
         where DTO: ShiftEntityDTO
     {
     }

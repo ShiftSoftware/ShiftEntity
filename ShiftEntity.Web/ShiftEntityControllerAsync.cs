@@ -22,7 +22,7 @@ namespace ShiftSoftware.ShiftEntity.Web
     public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
         ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
         where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, new()
         where DTO : ShiftEntityDTO
     {
     }
