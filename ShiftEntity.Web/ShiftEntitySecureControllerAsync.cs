@@ -40,14 +40,14 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
+    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool showDeletedRows = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return base.Get(ignoreGlobalFilters);
+        return base.Get(showDeletedRows);
     }
 
     [Authorize]

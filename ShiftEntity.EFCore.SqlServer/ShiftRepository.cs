@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using Thinktecture;
 
 namespace ShiftSoftware.EFCore.SqlServer
 {
@@ -14,9 +15,9 @@ namespace ShiftSoftware.EFCore.SqlServer
         {
         }
 
-        public virtual IQueryable<ListDTO> OdataList(bool ignoreGlobalFilters = false)
+        public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false)
         {
-            return mapper.ProjectTo<ListDTO>(dbSet.AsNoTracking());
+            return mapper.ProjectTo<ListDTO>(GetIQueryable(showDeletedRows).AsNoTracking());
         }
 
         public virtual ValueTask<ViewDTO> ViewAsync(EntityType entity)
@@ -146,6 +147,27 @@ namespace ShiftSoftware.EFCore.SqlServer
             };
 
             return GetIQueryable(asOf, includes);
+        }
+
+        protected IQueryable<EntityType> GetIQueryable(bool showDeletedRows=false)
+        {
+            var query = dbSet.AsQueryable();
+
+            if (showDeletedRows)
+            {
+                query = dbSet.TemporalAll()
+                .Where(x => !dbSet.Any(p => p.ID == x.ID))
+                .Select(x => new
+                {
+                    Entity = x,
+                    RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
+                })
+                .AsSubQuery()
+                .Where(x => x.RowNumber <= 1)
+                .Select(x => x.Entity);
+            }
+
+            return query;
         }
 
         public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(long id)

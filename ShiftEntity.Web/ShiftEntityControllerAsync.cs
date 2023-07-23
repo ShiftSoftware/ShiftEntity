@@ -35,11 +35,11 @@ namespace ShiftSoftware.ShiftEntity.Web
     {
         [HttpGet]
         [EnableQueryWithHashIdConverter]
-        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool ignoreGlobalFilters = false)
+        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool showDeletedRows = false)
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-            return Ok(repository.OdataList(ignoreGlobalFilters));
+            return Ok(repository.OdataList(showDeletedRows));
         }
 
         [HttpGet("{key}")]

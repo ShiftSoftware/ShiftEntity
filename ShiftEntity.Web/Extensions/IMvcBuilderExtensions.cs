@@ -14,6 +14,7 @@ using ShiftSoftware.ShiftEntity.Web.Triggers;
 using System;
 using System.Linq;
 using System.Reflection;
+using Thinktecture;
 
 namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
@@ -70,6 +71,18 @@ public static class IMvcBuilderExtensions
         builder.RegisterTriggers();
         builder.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
 
+        //Add rou number capability to sqlserver
+        builder.Services.Decorate<DbContextOptions>((inner, provider) =>
+        {
+            var dbContextBuilder = new DbContextOptionsBuilder(inner);
+            var slqServerOptionBuilder= new SqlServerDbContextOptionsBuilder(dbContextBuilder);
+
+            slqServerOptionBuilder.AddRowNumberSupport();
+
+            return dbContextBuilder.Options;
+        });
+
+        //Register timezone service to json options
         builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
         {
             Action<JsonOptions> options = (o) =>
