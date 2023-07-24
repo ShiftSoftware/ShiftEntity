@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
@@ -21,6 +22,7 @@ namespace ShiftEntityWeb
         where Repository : IShiftRepository<Entity, ListDTO, DTO>
         where Entity : ShiftEntity<Entity>, new()
         where DTO: ShiftEntityDTO
+        where ListDTO: ShiftEntityDTOBase
     {
     }
 
@@ -29,12 +31,32 @@ namespace ShiftEntityWeb
         where Repository : IShiftRepository<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
         where UpdateDTO : ShiftEntityDTO
+        where ListDTO : ShiftEntityDTOBase
     {
         [HttpGet]
         [EnableQueryWithHashIdConverter]
-        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool showDeletedRows = false)
+        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+            bool isFilteringByIsDeleted = false;
+
+            FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
+
+            if (filterClause is not null)
+            {
+                var visitor = new SoftDeleteQueryNodeVisitor();
+
+                var visited = filterClause.Expression.Accept(visitor);
+
+                isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
+            }
+
+            var data = repository.OdataList(showDeletedRows);
+
+            if (!isFilteringByIsDeleted)
+                data = data.Where(x => x.IsDeleted == false);
+
             return Ok(repository.OdataList(showDeletedRows));
         }
 

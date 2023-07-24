@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OData.Formatter;
+using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
@@ -20,6 +22,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
     where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
     where Entity : ShiftEntity<Entity>, new()
     where DTO : ShiftEntityDTO
+    where ListDTO : ShiftEntityDTOBase
 {
     public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action) : base(action)
     {
@@ -31,6 +34,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
         where Entity : ShiftEntity<Entity>
         where UpdateDTO : ShiftEntityDTO
+        where ListDTO : ShiftEntityDTOBase
 {
     private readonly ReadWriteDeleteAction action;
 
@@ -40,14 +44,14 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get([FromQuery] bool showDeletedRows = false)
+    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return base.Get(showDeletedRows);
+        return base.Get(oDataQueryOptions, showDeletedRows);
     }
 
     [Authorize]

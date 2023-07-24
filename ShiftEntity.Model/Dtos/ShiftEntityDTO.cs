@@ -19,6 +19,4 @@ public abstract class ShiftEntityDTO : ShiftEntityDTOBase
 
     [UserHashIdConverter]
     public string? LastSavedByUserID { get; set; }
-
-    public bool IsDeleted { get; set; }
 }

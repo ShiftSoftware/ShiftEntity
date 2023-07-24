@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ namespace ShiftSoftware.ShiftEntity.Core
     public interface IShiftRepository<Entity, ListDTO, DTO> : 
         IShiftRepository<Entity, ListDTO, DTO,DTO,DTO>
         where Entity : ShiftEntity<Entity>, new()
+        where ListDTO : ShiftEntityDTOBase
     {
         Entity IShiftEntityCreate<Entity, DTO>.Create(DTO dto, long? userId = null)
         {
@@ -42,6 +44,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         IShiftEntityUpdate<Entity, UpdateDTO>,
         IShiftEntityDeleteAsync<Entity>
         where Entity : ShiftEntity<Entity>
+        where ListDTO : ShiftEntityDTOBase
     {
         void Add(Entity entity);
         Task SaveChangesAsync();

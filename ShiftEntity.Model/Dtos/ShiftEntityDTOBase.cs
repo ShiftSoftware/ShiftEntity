@@ -8,5 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos
         [Key]
         public abstract string? ID { get; set; }
 
+        public bool IsDeleted { get; set; }
+
     }
 }
