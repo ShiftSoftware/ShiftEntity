@@ -57,7 +57,7 @@ namespace ShiftEntityWeb
             if (!isFilteringByIsDeleted)
                 data = data.Where(x => x.IsDeleted == false);
 
-            return Ok(repository.OdataList(showDeletedRows));
+            return Ok(data);
         }
 
         [HttpGet("{key}")]
