@@ -11,6 +11,7 @@ public abstract class ShiftEntity<EntityType>
     public long ID { get; internal set; }
     public DateTime CreateDate { get; internal set; }
     public DateTime LastSaveDate { get; internal set; }
+    //public DateTime? LastSyncDate { get; internal set; }
     public long? CreatedByUserID { get; internal set; }
     public long? LastSavedByUserID { get; internal set; }
     public bool IsDeleted { get; internal set; }

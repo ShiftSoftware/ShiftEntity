@@ -10,13 +10,13 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
 
-internal class ReloadAfterSave<Entity> : IAfterSaveTrigger<Entity>
+internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity>
     where Entity : ShiftEntity<Entity>
 {
     private readonly IShiftEntityFind<Entity>? shiftEntityFind;
     private readonly IMapper mapper;
 
-    public ReloadAfterSave(IShiftEntityFind<Entity>? shiftEntityFind, IMapper mapper)
+    public ReloadAfterSaveTrigger(IShiftEntityFind<Entity>? shiftEntityFind, IMapper mapper)
     {
         this.shiftEntityFind = shiftEntityFind;
         this.mapper = mapper;

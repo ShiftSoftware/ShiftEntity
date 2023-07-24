@@ -34,7 +34,7 @@ public static class IMvcBuilderExtensions
     {
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserIdTrigger<>));
-        builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSave<>));
+        builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
 
         return builder;
     }

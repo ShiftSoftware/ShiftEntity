@@ -16,3 +16,5 @@
 /ShiftEntity.Core/bin
 /ShiftEntity.EFCore.SqlServer/bin
 /ShiftEntity.EFCore.SqlServer/obj
+/ShiftEntity.CosmosDbSync/obj
+/ShiftEntity.CosmosDbSync/bin
