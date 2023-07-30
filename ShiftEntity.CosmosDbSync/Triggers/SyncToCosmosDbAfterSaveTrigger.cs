@@ -7,7 +7,7 @@ using ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
 
 
-internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>
+internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
     where EntityType : ShiftEntity<EntityType>
 {
     private readonly ShiftEntityCosmosDbOptions options;
@@ -19,21 +19,24 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
         this.cosmosDBService = cosmosDBService;
     }
 
+    //Make the trigger excute the last one
+    public int Priority => int.MaxValue;
+
     public Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
         var entityType = context.Entity.GetType();
 
-        var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null);
+        var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null)!;
 
         if (syncAttribute != null)
         {
             var configurations = GetConfigurations(syncAttribute, entityType.Name);
 
-            if (context.ChangeType == ChangeType.Modified || context.ChangeType == ChangeType.Modified)
-                cosmosDBService.UpsertAsync(context.Entity, syncAttribute.CosmosDbItemType, 
+            if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
+                _ = cosmosDBService.UpsertAsync(context.Entity, syncAttribute.CosmosDbItemType,
                     configurations.collection, configurations.databaseName, configurations.connectionString);
             else if(context.ChangeType == ChangeType.Deleted)
-                cosmosDBService.DeleteAsync(context.Entity, syncAttribute.CosmosDbItemType,
+                _ = cosmosDBService.DeleteAsync(context.Entity, syncAttribute.CosmosDbItemType,
                     configurations.collection, configurations.databaseName, configurations.connectionString);
         }
 
@@ -43,12 +46,12 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
     private (string collection, string connectionString, string databaseName) GetConfigurations
         (ShiftEntitySyncAttribute syncAttribute, string entityName)
     {
-        string collection;
+        string container;
         string connectionString;
         string databaseName;
         CosmosDBAccount? account;
 
-        collection = syncAttribute.CollectionName ?? entityName;
+        container = syncAttribute.ContainerName ?? entityName;
 
         if (syncAttribute.CosmosDbAccountName is null)
         {
@@ -74,6 +77,6 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
         else
             databaseName = syncAttribute.CosmosDbDatabaseName! ?? account.DefaultDatabaseName!;
 
-        return (collection, connectionString, databaseName);
+        return (container, connectionString, databaseName);
     }
 }

@@ -101,13 +101,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isSoftDelete = false)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanDelete(action))
             return Forbid();
 
-        return await base.Delete(key, isSoftDelete);
+        return await base.Delete(key, isHardDelete);
     }
 }
