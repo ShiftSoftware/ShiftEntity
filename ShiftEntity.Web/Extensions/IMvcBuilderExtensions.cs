@@ -39,7 +39,7 @@ public static class IMvcBuilderExtensions
         return builder;
     }
 
-    private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly)
+    private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly=null)
     {
         Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly(); // Adjust this as needed
 

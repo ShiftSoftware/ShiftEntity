@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,6 +18,11 @@ public class ShiftEntityCosmosDbOptions
     /// This is become the default database for the specified connection string
     /// </summary>
     public string? DefaultDatabaseName { get; set; }
+
+    /// <summary>
+    /// If not set, it gets the entry assembly
+    /// </summary>
+    public Assembly? RepositoriesAssembly { get; set; }
 
     public List<CosmosDBAccount> Accounts { get; set; }
 

@@ -7,6 +7,10 @@ public class ShiftEntityOptions
 {
     internal bool _WrapValidationErrorResponseWithShiftEntityResponse;
     internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
+
+    /// <summary>
+    /// If not set, it gets the entry assembly
+    /// </summary>
     public Assembly? RepositoriesAssembly { get; set; }
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
