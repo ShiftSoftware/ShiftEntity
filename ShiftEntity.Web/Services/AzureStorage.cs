@@ -46,7 +46,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             Stream s = new MemoryStream();
             await file.CopyToAsync(s);
-            string mimeType = GetMimeTypeForFileExtension(file.FileName);
+            // setting the mimeType to application/octet-stream let's the browser download the file when requesting the url
+            string mimeType = "application/octet-stream";
             s.Seek(0, SeekOrigin.Begin);
             blobContainerClient.GetBlobClient(blobName).Upload(s, new Azure.Storage.Blobs.Models.BlobHttpHeaders { ContentType = mimeType });
             s.Close();
@@ -69,20 +70,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             var sharedKeyCredential = new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey);
 
             return sasBuilder.ToSasQueryParameters(sharedKeyCredential).ToString();
-        }
-
-        public string GetMimeTypeForFileExtension(string filePath)
-        {
-            const string DefaultContentType = "application/octet-stream";
-
-            var provider = new FileExtensionContentTypeProvider();
-
-            if (!provider.TryGetContentType(filePath, out string? contentType))
-            {
-                contentType = DefaultContentType;
-            }
-
-            return contentType;
         }
 
         public string GetSignedURL(string blobName)
