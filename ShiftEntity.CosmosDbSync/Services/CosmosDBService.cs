@@ -73,17 +73,12 @@ internal class CosmosDBService<EntityType>
         string cosmosDbDatabaseName,
         string cosmosDbConnectionString)
     {
-        var item = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 
         //Delete from cosmosdb
         using CosmosClient client = new(cosmosDbConnectionString);
         var db = client.GetDatabase(cosmosDbDatabaseName);
         var container = db.GetContainer(containerName);
 
-        Type objectType = item.GetType();
-        PropertyInfo idProperty = objectType.GetProperty(nameof(ShiftEntity.Model.Dtos.ShiftEntityDTOBase.ID), BindingFlags.Public | BindingFlags.Instance);
-        string id = (string)idProperty.GetValue(item)!;
-
-        await container.DeleteItemAsync<dynamic>(id, PartitionKey.None);
+        await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
     }
 }
