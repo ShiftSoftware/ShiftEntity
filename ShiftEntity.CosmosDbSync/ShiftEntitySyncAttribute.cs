@@ -28,3 +28,12 @@ public class ShiftEntitySyncAttribute : Attribute
     /// </summary>
     public string? CosmosDbAccountName { get; set; }
 }
+
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+public class ShiftEntitySyncAttribute<ItemType> : ShiftEntitySyncAttribute
+{
+    public ShiftEntitySyncAttribute()
+    {
+        base.CosmosDbItemType= typeof(ItemType);
+    }
+}

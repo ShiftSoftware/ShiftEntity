@@ -37,20 +37,18 @@ internal class CosmosDBService<EntityType>
         var db = client.GetDatabase(cosmosDbDatabaseName);
         var container = db.GetContainer(containerName);
 
-        Type objectType = item.GetType();
-        PropertyInfo? idProperty = objectType.GetProperty(nameof(ShiftEntity.Model.Dtos.ShiftEntityDTOBase.ID), BindingFlags.Public | BindingFlags.Instance);
-
-        if (idProperty == null || idProperty?.PropertyType != typeof(string))
-            throw new ArgumentException($"The cosmosDbItemType dose not contain string ID");
-
-        string id = (string)idProperty.GetValue(item)!;
-
-        var response = await container.UpsertItemAsync(new { id = id, item = item });
-
-        if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-            response.StatusCode == System.Net.HttpStatusCode.Created)
+        try
         {
-            await UpdateLastSyncDateAsync(entity);
+            var response = await container.UpsertItemAsync(new { id = entity.ID.ToString(), item = item });
+
+            if (response.StatusCode == System.Net.HttpStatusCode.OK ||
+                response.StatusCode == System.Net.HttpStatusCode.Created)
+            {
+                await UpdateLastSyncDateAsync(entity);
+            }
+        }
+        catch (Exception ex)
+        {
         }
     }
 
