@@ -67,6 +67,12 @@ public static class IServiceCollectionExtensions
         services.TryAddSingleton(options);
         services.AddScoped(typeof(CosmosDBService<>));
 
+        //Register DbContextProvider
+        foreach (var provider in options.DbContextProviders)
+        {
+            services.AddSingleton<IDbContextProvider>(provider);
+        }
+
         return services;
     }
 

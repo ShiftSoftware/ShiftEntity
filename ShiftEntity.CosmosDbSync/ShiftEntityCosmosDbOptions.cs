@@ -26,9 +26,18 @@ public class ShiftEntityCosmosDbOptions
 
     public List<CosmosDBAccount> Accounts { get; set; }
 
+    public List<IDbContextProvider> DbContextProviders { get;private set; }
+
     public ShiftEntityCosmosDbOptions()
     {
         Accounts = new();
+        DbContextProviders = new();
+    }
+
+    public ShiftEntityCosmosDbOptions AddDbContextProvider(IDbContextProvider provider)
+    {
+        this.DbContextProviders.Add(provider);
+        return this;
     }
 }
 
