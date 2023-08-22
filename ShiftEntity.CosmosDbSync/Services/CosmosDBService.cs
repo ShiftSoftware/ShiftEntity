@@ -1,15 +1,9 @@
 ﻿using AutoMapper;
 using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
-using System;
-using System.Collections.Generic;
+using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
 using System.Dynamic;
-using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
 
@@ -41,14 +35,75 @@ internal class CosmosDBService<EntityType>
         dynamic item = new ExpandoObject();
         item.id = entity.ID.ToString();
         CopyProperties(dto, item);
+        var partitionKey = GetPartitionKey(item);
 
-        var response = await container.UpsertItemAsync(item);
+        ItemResponse<ExpandoObject> response;
 
+        if (partitionKey is null)
+            response = await container.UpsertItemAsync(item);
+        else
+            response = await container.UpsertItemAsync(item, partitionKey);
+            
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created)
         {
             await UpdateLastSyncDateAsync(entity);
         }
+    }
+
+    private PartitionKey? GetPartitionKey(object item)
+    {
+        string? partitionKeyName = null;
+        
+        var attribute = (SyncPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
+
+        if (attribute is null || attribute?.PropertyName is null)
+            return null;
+
+        partitionKeyName = attribute.PropertyName;
+
+        var property = item.GetType().GetProperty(partitionKeyName);
+        if (property is null)
+            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object");
+
+        Type propertyType = property.PropertyType;
+        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || IsNumericType(propertyType)))
+            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+
+        var value = property.GetValue(item);
+
+        if (propertyType == typeof(bool?) || propertyType == typeof(bool))
+            return new PartitionKey(Convert.ToBoolean(value));
+        else if (propertyType == typeof(string))
+            return new PartitionKey(Convert.ToString(value));
+        else
+            return new PartitionKey(Convert.ToDouble(value));
+    }
+
+    private bool IsNumericType(Type type)
+    {
+        return type == typeof(byte) ||
+               type == typeof(sbyte) ||
+               type == typeof(short) ||
+               type == typeof(ushort) ||
+               type == typeof(int) ||
+               type == typeof(uint) ||
+               type == typeof(long) ||
+               type == typeof(ulong) ||
+               type == typeof(float) ||
+               type == typeof(double) ||
+               type == typeof(decimal) ||
+               type == typeof(byte?) ||
+               type == typeof(sbyte?) ||
+               type == typeof(short?) ||
+               type == typeof(ushort?) ||
+               type == typeof(int?) ||
+               type == typeof(uint?) ||
+               type == typeof(long?) ||
+               type == typeof(ulong?) ||
+               type == typeof(float?) ||
+               type == typeof(double?) ||
+               type == typeof(decimal?);
     }
 
     private void CopyProperties(object source, dynamic destination)
@@ -89,6 +144,15 @@ internal class CosmosDBService<EntityType>
         var db = client.GetDatabase(cosmosDbDatabaseName);
         var container = db.GetContainer(containerName);
 
-        await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
+        var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
+
+        var partitionKey = GetPartitionKey(dto);
+
+        if (partitionKey is null)
+            await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
+        else
+            await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), partitionKey.Value);
     }
 }
+
+
