@@ -2,9 +2,7 @@
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync;
 
-/// <summary>
-/// This is store the entity in property named 'item'
-/// </summary>
+
 [AttributeUsage(AttributeTargets.Class, AllowMultiple =false)]
 public class ShiftEntitySyncAttribute : Attribute
 {

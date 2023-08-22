@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -30,25 +31,34 @@ internal class CosmosDBService<EntityType>
         string cosmosDbDatabaseName,
         string cosmosDbConnectionString)
     {
-        var item = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
+        var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 
         //Upsert to cosmosdb
         using CosmosClient client = new(cosmosDbConnectionString);
         var db = client.GetDatabase(cosmosDbDatabaseName);
         var container = db.GetContainer(containerName);
 
-        try
-        {
-            var response = await container.UpsertItemAsync(new { id = entity.ID.ToString(), item = item });
+        dynamic item = new ExpandoObject();
+        item.id = entity.ID.ToString();
+        CopyProperties(dto, item);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-                response.StatusCode == System.Net.HttpStatusCode.Created)
-            {
-                await UpdateLastSyncDateAsync(entity);
-            }
-        }
-        catch (Exception ex)
+        var response = await container.UpsertItemAsync(item);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.OK ||
+            response.StatusCode == System.Net.HttpStatusCode.Created)
         {
+            await UpdateLastSyncDateAsync(entity);
+        }
+    }
+
+    private void CopyProperties(object source, dynamic destination)
+    {
+        PropertyInfo[] properties = source.GetType().GetProperties();
+
+        foreach (PropertyInfo property in properties)
+        {
+            object value = property.GetValue(source);
+            ((IDictionary<string, object>)destination)[property.Name] = value;
         }
     }
 
