@@ -7,20 +7,23 @@ namespace ShiftSoftware.EFCore.SqlServer.Extensions;
 
 public static class ModelBuilderExtensions
 {
-    public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder)
+    public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder, bool useTemporal)
     {
         Expression<Func<ShiftEntityBase, bool>> filterExpr = bm => !bm.IsDeleted;
 
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        if (useTemporal)
         {
-            var clrType = entityType.ClrType;
-
-            var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
-
-            if (isTemporal != null)
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
             {
-                //Make the tables temporal that has TemporalShiftEntyty attribute 
-                modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
+                var clrType = entityType.ClrType;
+
+                var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
+
+                if (isTemporal != null)
+                {
+                    //Make the tables temporal that has TemporalShiftEntyty attribute 
+                    modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
+                }
             }
         }
 

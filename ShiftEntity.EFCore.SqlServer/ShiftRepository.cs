@@ -8,7 +8,7 @@ using Thinktecture;
 namespace ShiftSoftware.EFCore.SqlServer
 {
     public class ShiftRepository<DB, EntityType, ListDTO, ViewDTO, UpsertDTO> : ShiftRepository<DB, EntityType>
-        where DB : DbContext
+        where DB : ShiftDbContext
         where EntityType : ShiftEntity<EntityType>
     {
         public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet, mapper)
@@ -34,7 +34,7 @@ namespace ShiftSoftware.EFCore.SqlServer
     }
 
     public class ShiftRepository<DB, EntityType> : ShiftRepository<EntityType>
-        where DB : DbContext
+        where DB : ShiftDbContext
         where EntityType : ShiftEntity<EntityType>
     {
         public readonly DB db;
@@ -50,12 +50,12 @@ namespace ShiftSoftware.EFCore.SqlServer
         ShiftEntity<EntityType>
     {
         internal DbSet<EntityType> dbSet;
-        DbContext db;
+        ShiftDbContext db;
 
         public Message ResponseMessage { get; set; }
         public Dictionary<string, object> AdditionalResponseData { get; set; }
 
-        public ShiftRepository(DbContext db, DbSet<EntityType> dbSet)
+        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet)
         {
             this.db = db;
             this.dbSet = dbSet;
@@ -150,18 +150,21 @@ namespace ShiftSoftware.EFCore.SqlServer
         {
             var query = dbSet.AsQueryable();
 
-            if (showDeletedRows)
+            if (db?.ShiftDbContextOptions?.UseTemporal ?? false)
             {
-                query = dbSet.TemporalAll()
-                .Where(x => !dbSet.Any(p => p.ID == x.ID))
-                .Select(x => new
+                if (showDeletedRows)
                 {
-                    Entity = x,
-                    RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
-                })
-                .AsSubQuery()
-                .Where(x => x.RowNumber <= 1)
-                .Select(x => x.Entity);
+                    query = dbSet.TemporalAll()
+                    .Where(x => !dbSet.Any(p => p.ID == x.ID))
+                    .Select(x => new
+                    {
+                        Entity = x,
+                        RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
+                    })
+                    .AsSubQuery()
+                    .Where(x => x.RowNumber <= 1)
+                    .Select(x => x.Entity);
+                }
             }
 
             return query;
