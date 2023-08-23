@@ -31,7 +31,7 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
     public async Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
         var entityType = context.Entity.GetType();
-
+        
         var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null)!;
 
         if (syncAttribute != null)

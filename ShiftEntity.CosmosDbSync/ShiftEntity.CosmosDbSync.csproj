@@ -39,6 +39,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+		<ProjectReference Include="..\ShiftEntity.EFCore.SqlServer\ShiftEntity.EFCore.SqlServer.csproj" />
 	</ItemGroup>
 
 </Project>

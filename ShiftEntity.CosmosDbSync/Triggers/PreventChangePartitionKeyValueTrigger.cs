@@ -41,7 +41,7 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
                 {
                     var property = syncAttribute.CosmosDbItemType.GetProperty(partitionKeyAttribute.PropertyName);
                     if (property is null)
-                        throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object");
+                        throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object for partition key");
 
                     Type propertyType = property.PropertyType;
                     if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))

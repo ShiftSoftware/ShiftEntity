@@ -1,10 +1,13 @@
 ﻿using AutoMapper;
+using AutoMapper.Configuration.Annotations;
 using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
+using System.Data.Common;
 using System.Dynamic;
 using System.Reflection;
+using System.Xml.Schema;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
 
@@ -12,9 +15,9 @@ internal class CosmosDBService<EntityType>
     where EntityType : ShiftEntity<EntityType>
 {
     private readonly IMapper mapper;
-    private readonly IEnumerable<IDbContextProvider> dbContextProviders;
+    private readonly IEnumerable<DbContextProvider> dbContextProviders;
 
-    public CosmosDBService(IMapper mapper,IEnumerable<IDbContextProvider> dbContextProviders)
+    public CosmosDBService(IMapper mapper,IEnumerable<DbContextProvider> dbContextProviders)
     {
         this.mapper = mapper;
         this.dbContextProviders = dbContextProviders;
@@ -36,23 +39,24 @@ internal class CosmosDBService<EntityType>
         dynamic item = new ExpandoObject();
         item.id = entity.ID.ToString();
         CopyProperties(dto, item);
-        var partitionKey = GetPartitionKey(item);
+        var partitionKey = GetPartitionKey(dto);
 
         ItemResponse<ExpandoObject> response;
 
-        if (partitionKey is null)
+        if (partitionKey.partitionKey is null)
             response = await container.UpsertItemAsync(item);
         else
-            response = await container.UpsertItemAsync(item, partitionKey);
+            response = await container.UpsertItemAsync(item, partitionKey.partitionKey.Value);
             
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-            response.StatusCode == System.Net.HttpStatusCode.Created)
+            response.StatusCode == System.Net.HttpStatusCode.Created ||
+            response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
             await UpdateLastSyncDateAsync(entity);
         }
     }
 
-    private PartitionKey? GetPartitionKey(object item)
+    private PartitionKey? GetPartitionKey2(object item)
     {
         string? partitionKeyName = null;
         
@@ -65,7 +69,7 @@ internal class CosmosDBService<EntityType>
 
         var property = item.GetType().GetProperty(partitionKeyName);
         if (property is null)
-            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object");
+            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object for partition key");
 
         Type propertyType = property.PropertyType;
         if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
@@ -79,6 +83,35 @@ internal class CosmosDBService<EntityType>
             return new PartitionKey(Convert.ToString(value));
         else
             return new PartitionKey(Convert.ToDouble(value));
+    }
+
+    private (PartitionKey? partitionKey, string? value, PartitionKeyTypes type) GetPartitionKey(object item)
+    {
+        string? partitionKeyName = null;
+
+        var attribute = (SyncPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
+
+        if (attribute is null || attribute?.PropertyName is null)
+            return (null, null, PartitionKeyTypes.None);
+
+        partitionKeyName = attribute.PropertyName;
+
+        var property = item.GetType().GetProperty(partitionKeyName);
+        if (property is null)
+            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object for partition key");
+
+        Type propertyType = property.PropertyType;
+        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
+            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+
+        var value = property.GetValue(item);
+
+        if (propertyType == typeof(bool?) || propertyType == typeof(bool))
+            return (new PartitionKey(Convert.ToBoolean(value)), Convert.ToString(value), PartitionKeyTypes.Boolean);
+        else if (propertyType == typeof(string))
+            return (new PartitionKey(Convert.ToString(value)), Convert.ToString(value), PartitionKeyTypes.String);
+        else
+            return (new PartitionKey(Convert.ToDouble(value)), Convert.ToString(value), PartitionKeyTypes.Numeric);
     }
 
     private void CopyProperties(object source, dynamic destination)
@@ -123,10 +156,47 @@ internal class CosmosDBService<EntityType>
 
         var partitionKey = GetPartitionKey(dto);
 
-        if (partitionKey is null)
-            await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
+        ItemResponse<dynamic> response;
+
+        if (partitionKey.partitionKey is null)
+            response = await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
         else
-            await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), partitionKey.Value);
+            response = await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), partitionKey.partitionKey.Value);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.OK ||
+            response.StatusCode == System.Net.HttpStatusCode.Created ||
+            response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
+            await UpdateDeleteRowLogLastSynncDateAsync(entity, partitionKey.value, partitionKey.type);
+        }
+    }
+
+    private async Task UpdateDeleteRowLogLastSynncDateAsync(EntityType entity, 
+        string? partitionKeyValue, 
+        PartitionKeyTypes partitionKeyType)
+    {
+        var entityName = entity.GetType().Name;
+
+        foreach (var provider in dbContextProviders)
+        {
+            using var dbContext = provider.ProvideDbContext();
+
+            if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
+            {
+                var log = dbContext.DeletedRowLogs.SingleOrDefault(x =>
+                    x.RowID == entity.ID &&
+                    x.PartitionKeyValue == partitionKeyValue &&
+                    x.PartitionKeyType == partitionKeyType &&
+                    x.EntityName == entityName
+                );
+
+                if(log is not null)
+                {
+                    log.LastSyncDate = DateTime.UtcNow;
+                    await dbContext.SaveChangesAsync();
+                }
+            }
+        }
     }
 }
 

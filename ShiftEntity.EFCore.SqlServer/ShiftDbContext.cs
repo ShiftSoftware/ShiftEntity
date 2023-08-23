@@ -1,11 +1,14 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.EFCore.SqlServer.Extensions;
+using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Entities;
 using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
 
 namespace ShiftSoftware.EFCore.SqlServer;
 
 public abstract class ShiftDbContext : DbContext
 {
+    public DbSet<DeletedRowLog> DeletedRowLogs { get; set; }
+
     public ShiftDbContext() : base()
     {
     }

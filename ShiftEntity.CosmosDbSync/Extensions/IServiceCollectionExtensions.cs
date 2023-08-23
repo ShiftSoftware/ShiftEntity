@@ -1,6 +1,7 @@
 ﻿using EntityFrameworkCore.Triggered;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ShiftSoftware.EFCore.SqlServer;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
@@ -38,6 +39,7 @@ public static class IServiceCollectionExtensions
         //Register triggers
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(SyncToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
+        services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
 
         CosmosDBAccount connection = new();
 
@@ -68,10 +70,11 @@ public static class IServiceCollectionExtensions
         services.TryAddSingleton(options);
         services.AddScoped(typeof(CosmosDBService<>));
 
-        //Register DbContextProvider
-        foreach (var provider in options.DbContextProviders)
+        foreach (var shiftDbContext in options.ShiftDbContextStorage)
         {
-            services.AddSingleton<IDbContextProvider>(provider);
+            services.AddScoped(typeof(ShiftDbContext), x => x.GetRequiredService(shiftDbContext.ShiftDbContextType));
+            services.AddSingleton(
+                new DbContextProvider(shiftDbContext.ShiftDbContextType, shiftDbContext.DbContextOptionsBuilder));
         }
 
         return services;

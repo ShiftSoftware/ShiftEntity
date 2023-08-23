@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using Microsoft.EntityFrameworkCore;
+using ShiftSoftware.EFCore.SqlServer;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync;
 
@@ -26,17 +23,18 @@ public class ShiftEntityCosmosDbOptions
 
     public List<CosmosDBAccount> Accounts { get; set; }
 
-    public List<IDbContextProvider> DbContextProviders { get;private set; }
+    internal List<ShiftDbContextStore> ShiftDbContextStorage { get; private set; }
 
     public ShiftEntityCosmosDbOptions()
     {
         Accounts = new();
-        DbContextProviders = new();
+        ShiftDbContextStorage = new();
     }
 
-    public ShiftEntityCosmosDbOptions AddDbContextProvider(IDbContextProvider provider)
+    public ShiftEntityCosmosDbOptions AddShiftDbContext<T>(Action<DbContextOptionsBuilder> optionBuilder)
+        where T : ShiftDbContext
     {
-        this.DbContextProviders.Add(provider);
+        this.ShiftDbContextStorage.Add(new ShiftDbContextStore(typeof(T), optionBuilder));
         return this;
     }
 }
@@ -58,5 +56,17 @@ public class CosmosDBAccount
         this.Name = name;
         this.IsDefault = isDefault;
         this.DefaultDatabaseName = defaultDatabaseName;
+    }
+}
+
+internal class ShiftDbContextStore
+{
+    public Type ShiftDbContextType { get; private set; }
+    public Action<DbContextOptionsBuilder> DbContextOptionsBuilder { get; private set; }
+
+    public ShiftDbContextStore(Type shiftDbContextType, Action<DbContextOptionsBuilder> dbContextOptionsBuilder)
+    {
+        this.ShiftDbContextType = shiftDbContextType;
+        this.DbContextOptionsBuilder = dbContextOptionsBuilder;
     }
 }
