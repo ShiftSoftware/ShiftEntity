@@ -37,6 +37,7 @@ public static class IServiceCollectionExtensions
 
         //Register triggers
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(SyncToCosmosDbAfterSaveTrigger<>));
+        services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
 
         CosmosDBAccount connection = new();
 

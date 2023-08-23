@@ -2,6 +2,7 @@
 using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
+using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
 using System.Dynamic;
 using System.Reflection;
 
@@ -67,7 +68,7 @@ internal class CosmosDBService<EntityType>
             throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object");
 
         Type propertyType = property.PropertyType;
-        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || IsNumericType(propertyType)))
+        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
             throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
 
         var value = property.GetValue(item);
@@ -78,32 +79,6 @@ internal class CosmosDBService<EntityType>
             return new PartitionKey(Convert.ToString(value));
         else
             return new PartitionKey(Convert.ToDouble(value));
-    }
-
-    private bool IsNumericType(Type type)
-    {
-        return type == typeof(byte) ||
-               type == typeof(sbyte) ||
-               type == typeof(short) ||
-               type == typeof(ushort) ||
-               type == typeof(int) ||
-               type == typeof(uint) ||
-               type == typeof(long) ||
-               type == typeof(ulong) ||
-               type == typeof(float) ||
-               type == typeof(double) ||
-               type == typeof(decimal) ||
-               type == typeof(byte?) ||
-               type == typeof(sbyte?) ||
-               type == typeof(short?) ||
-               type == typeof(ushort?) ||
-               type == typeof(int?) ||
-               type == typeof(uint?) ||
-               type == typeof(long?) ||
-               type == typeof(ulong?) ||
-               type == typeof(float?) ||
-               type == typeof(double?) ||
-               type == typeof(decimal?);
     }
 
     private void CopyProperties(object source, dynamic destination)
