@@ -3,7 +3,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using System.Linq.Expressions;
 using static Microsoft.EntityFrameworkCore.Query.ReplacingExpressionVisitor;
 
-namespace ShiftSoftware.EFCore.SqlServer.Extensions;
+namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
 public static class ModelBuilderExtensions
 {

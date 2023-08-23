@@ -1,10 +1,10 @@
 ﻿using EntityFrameworkCore.Triggered;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using ShiftSoftware.EFCore.SqlServer;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
+using ShiftSoftware.ShiftEntity.EFCore;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;

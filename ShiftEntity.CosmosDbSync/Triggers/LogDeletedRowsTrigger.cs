@@ -1,10 +1,10 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
-using ShiftSoftware.EFCore.SqlServer;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
-using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Entities;
+using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
 

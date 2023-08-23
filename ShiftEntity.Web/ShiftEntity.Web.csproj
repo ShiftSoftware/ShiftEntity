@@ -45,7 +45,7 @@
 	<ItemGroup>
 	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
-	  <ProjectReference Include="..\ShiftEntity.EFCore.SqlServer\ShiftEntity.EFCore.SqlServer.csproj" />
+	  <ProjectReference Include="..\ShiftEntity.EFCore.SqlServer\ShiftEntity.EFCore.csproj" />
 	</ItemGroup>
 
 </Project>

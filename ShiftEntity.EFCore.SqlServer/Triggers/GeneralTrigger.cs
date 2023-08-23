@@ -1,13 +1,13 @@
 ﻿using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
+namespace ShiftSoftware.ShiftEntity.EFCore.Triggers;
 
 internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity>
     where Entity : ShiftEntity<Entity>
 {
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
-    {        
+    {
         if (context.ChangeType == ChangeType.Added)
         {
             var now = DateTime.UtcNow;
@@ -18,7 +18,7 @@ internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity>
             context.Entity.IsDeleted = false;
         }
 
-        if(context.ChangeType==ChangeType.Modified)
+        if (context.ChangeType == ChangeType.Modified)
         {
             var now = DateTime.UtcNow;
 

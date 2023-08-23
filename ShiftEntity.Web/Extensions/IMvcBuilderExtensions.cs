@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
+using ShiftSoftware.ShiftEntity.EFCore.Triggers;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Web.Triggers;

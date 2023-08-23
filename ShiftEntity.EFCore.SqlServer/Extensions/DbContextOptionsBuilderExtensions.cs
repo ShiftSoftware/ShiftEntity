@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.SqlServer.Extensions;
+namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
 public static class DbContextOptionsBuilderExtensions
 {
@@ -18,8 +18,8 @@ public static class DbContextOptionsBuilderExtensions
 
         extension.UseTemporal = useTemporal;
 
-        var t = ((IDbContextOptionsBuilderInfrastructure)optionsBuilder);
-        t.AddOrUpdateExtension<ShiftDbContextExtensionOptions>(extension);
+        var t = (IDbContextOptionsBuilderInfrastructure)optionsBuilder;
+        t.AddOrUpdateExtension(extension);
 
         return optionsBuilder;
     }

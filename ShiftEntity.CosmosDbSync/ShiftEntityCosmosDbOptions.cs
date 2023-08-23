@@ -1,5 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.EFCore.SqlServer;
+using ShiftSoftware.ShiftEntity.EFCore;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbSync;

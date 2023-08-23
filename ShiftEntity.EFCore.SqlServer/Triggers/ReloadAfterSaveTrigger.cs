@@ -1,14 +1,8 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
-using ShiftSoftware.EFCore.SqlServer;
 using ShiftSoftware.ShiftEntity.Core;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.SqlServer.Triggers;
+namespace ShiftSoftware.ShiftEntity.EFCore.Triggers;
 
 internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity>
     where Entity : ShiftEntity<Entity>

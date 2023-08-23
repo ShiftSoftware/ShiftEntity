@@ -4,12 +4,12 @@
 		<TargetFramework>net6.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<RootNamespace>ShiftSoftware.ShiftEntity.EFCore.SqlServer</RootNamespace>
+		<RootNamespace>ShiftSoftware.ShiftEntity.EFCore</RootNamespace>
 		<Authors>Shift Software</Authors>
-		<Product>ShiftSoftware.ShiftEntity.EFCore.SqlServer</Product>
+		<Product>ShiftSoftware.ShiftEntity.EFCore</Product>
 		<Version>1.6.17</Version>
-		<AssemblyName>ShiftSoftware.ShiftEntity.EFCore.SqlServer</AssemblyName>
-		<PackageId>ShiftSoftware.ShiftEntity.EFCore.SqlServer</PackageId>
+		<AssemblyName>ShiftSoftware.ShiftEntity.EFCore</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.EFCore</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
@@ -17,7 +17,7 @@
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
-		<Title>ShiftSoftware.ShiftEntity.EFCore.SqlServer</Title>
+		<Title>ShiftSoftware.ShiftEntity.EFCore</Title>
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>
@@ -28,7 +28,6 @@
 		<PackageReference Include="AutoMapper" Version="12.0.1" />
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.20" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="6.0.20" />
 		<PackageReference Include="Thinktecture.EntityFrameworkCore.SqlServer" Version="4.5.1" />
 	</ItemGroup>
 

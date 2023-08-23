@@ -1,9 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.EFCore.SqlServer.Extensions;
-using ShiftSoftware.ShiftEntity.EFCore.SqlServer;
-using ShiftSoftware.ShiftEntity.EFCore.SqlServer.Entities;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
-namespace ShiftSoftware.EFCore.SqlServer;
+namespace ShiftSoftware.ShiftEntity.EFCore;
 
 public abstract class ShiftDbContext : DbContext
 {
@@ -17,7 +16,7 @@ public abstract class ShiftDbContext : DbContext
 
     public ShiftDbContext(DbContextOptions options) : base(options)
     {
-        this.ShiftDbContextOptions = options.Extensions
+        ShiftDbContextOptions = options.Extensions
             .OfType<ShiftDbContextExtensionOptions>()
             .FirstOrDefault();
     }

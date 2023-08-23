@@ -5,7 +5,7 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using Thinktecture;
 
-namespace ShiftSoftware.EFCore.SqlServer
+namespace ShiftSoftware.ShiftEntity.EFCore
 {
     public class ShiftRepository<DB, EntityType, ListDTO, ViewDTO, UpsertDTO> : ShiftRepository<DB, EntityType>
         where DB : ShiftDbContext
@@ -27,7 +27,7 @@ namespace ShiftSoftware.EFCore.SqlServer
 
         public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, UpsertDTO dto, ActionTypes actionType, long? userId = null)
         {
-            entity = mapper.Map<UpsertDTO, EntityType>(dto, entity);
+            entity = mapper.Map(dto, entity);
 
             return new ValueTask<EntityType>(entity);
         }
@@ -146,7 +146,7 @@ namespace ShiftSoftware.EFCore.SqlServer
             return GetIQueryable(asOf, includes);
         }
 
-        protected IQueryable<EntityType> GetIQueryable(bool showDeletedRows=false)
+        protected IQueryable<EntityType> GetIQueryable(bool showDeletedRows = false)
         {
             var query = dbSet.AsQueryable();
 

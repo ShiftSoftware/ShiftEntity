@@ -30,7 +30,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.EFCore.SqlServer" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.EFCore" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
 	</ItemGroup>
 
