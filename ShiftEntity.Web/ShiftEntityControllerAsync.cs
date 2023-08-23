@@ -69,7 +69,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
         [HttpGet("{key}")]
         public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
-            (string key, [FromQuery] DateTime? asOf, [FromQuery] bool ignoreGlobalFilters = false)
+            (string key, [FromQuery] DateTime? asOf)
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -82,7 +82,7 @@ namespace ShiftSoftware.ShiftEntity.Web
 
             try
             {
-                item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf, ignoreGlobalFilters: ignoreGlobalFilters);
+                item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf);
             }
             catch (ShiftEntityException ex)
             {

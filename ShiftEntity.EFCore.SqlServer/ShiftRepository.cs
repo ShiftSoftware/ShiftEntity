@@ -84,12 +84,9 @@ namespace ShiftSoftware.EFCore.SqlServer
         }
 
         public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false, List<string> includes = null)
+            (long id, DateTime? asOf = null, List<string> includes = null)
         {
             var q = GetIQueryable(asOf, includes);
-
-            if (ignoreGlobalFilters)
-                q = q.IgnoreQueryFilters();
 
             return await q.FirstOrDefaultAsync(x =>
                     EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
@@ -97,13 +94,13 @@ namespace ShiftSoftware.EFCore.SqlServer
         }
 
         public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false)
+            (long id, DateTime? asOf = null)
         {
-            return await FindAsync(id, asOf, ignoreGlobalFilters, new List<string> { });
+            return await FindAsync(id, asOf, new List<string> { });
         }
 
         public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, bool ignoreGlobalFilters = false, params Action<IncludeOperations<EntityType>>[] includeOperations)
+            (long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -114,7 +111,7 @@ namespace ShiftSoftware.EFCore.SqlServer
                 includes.Add(operation.Includes);
             }
 
-            return await FindAsync(id, asOf, ignoreGlobalFilters, includes);
+            return await FindAsync(id, asOf, includes);
         }
 
         private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
