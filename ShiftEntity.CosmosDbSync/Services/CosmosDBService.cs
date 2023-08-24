@@ -134,7 +134,8 @@ internal class CosmosDBService<EntityType>
             if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
             {
                 entity.UpdateSyncDate();
-                dbContext.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                dbContext.Attach(entity);
+                dbContext.Entry(entity).Property(x => x.LastSyncDate).IsModified = true;
                 await dbContext.SaveChangesAsync();
             }
         }
