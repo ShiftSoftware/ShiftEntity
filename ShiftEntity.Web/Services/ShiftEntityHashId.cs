@@ -13,9 +13,12 @@ internal static class ShiftEntityHashIds<T>
         if (!HashId.Enabled)
             return long.Parse(key);
 
-        var hashId = typeof(T).GetProperty(nameof(ShiftEntityDTOBase.ID)).GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
+        var hashId = typeof(T).GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
                 .Cast<JsonHashIdConverterAttribute>()
-                .FirstOrDefault()?.Hashids ?? new ShiftEntityHashId("", 0, null);
+                .FirstOrDefault()?.Hashids;
+
+        if (hashId == null)
+            return long.Parse(key);
 
         return hashId.Decode(key);
     }
