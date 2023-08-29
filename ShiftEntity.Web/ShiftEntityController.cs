@@ -74,7 +74,7 @@ namespace ShiftEntityWeb
 
             try
             {
-                item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key), asOf);
+                item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), asOf);
             }
             catch (ShiftEntityException ex)
             {
@@ -109,7 +109,7 @@ namespace ShiftEntityWeb
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-            return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds<SelectDTO>.Decode(key)));
+            return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<SelectDTO>(key)));
         }
 
         [HttpPost]
@@ -192,7 +192,7 @@ namespace ShiftEntityWeb
                 return BadRequest(response);
             }
 
-            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key));
+            var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>
@@ -243,7 +243,7 @@ namespace ShiftEntityWeb
         {
             var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-            var item = await repository.FindAsync(ShiftEntityHashIds<SelectDTO>.Decode(key));
+            var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
 
             if (item == null)
                 return NotFound(new ShiftEntityResponse<SelectDTO>

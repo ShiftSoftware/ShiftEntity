@@ -4,9 +4,9 @@ using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
-internal static class ShiftEntityHashIds<T>
+public static class ShiftEntityHashIds
 {
-    public static long Decode(string key)
+    public static long Decode<T>(string key)
     {
         //This is actually redundant, The same logic exists in hashId.Decode.
         //But this is here for performance and to avoid the overhead of creating a new hashId object.
