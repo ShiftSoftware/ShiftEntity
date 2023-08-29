@@ -35,6 +35,7 @@
 		<PackageReference Include="Microsoft.OData.Client" Version="7.16.0" />
 		<PackageReference Include="Scrutor" Version="4.2.2" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="1.4.2" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
+		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="1.6.13" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -43,9 +44,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
-	  <ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
-	  <ProjectReference Include="..\ShiftEntity.EFCore.SqlServer\ShiftEntity.EFCore.csproj" />
+		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+		<ProjectReference Include="..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
+		<ProjectReference Include="..\ShiftEntity.EFCore.SqlServer\ShiftEntity.EFCore.csproj" />
+
+		<ProjectReference Include="..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj" Condition="Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
 	</ItemGroup>
 
 </Project>

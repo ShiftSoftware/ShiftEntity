@@ -1,6 +1,7 @@
 ﻿using EntityFrameworkCore.Triggered;
 using Microsoft.AspNetCore.Http;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Web.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,19 +22,21 @@ internal class SetUserIdTrigger<Entity> : IBeforeSaveTrigger<Entity>
         this.http = http;
     }
 
-    private long? GetUserId()
-    {
-        var userIdClaim = http?.HttpContext?.User.Claims?.FirstOrDefault(x => x.Type == ClaimTypes.NameIdentifier);
-        long userId = 0;
-        if (userIdClaim == null || !long.TryParse(userIdClaim?.Value, out userId))
-            return null;
-        else
-            return userId;
-    }
+    //private long? GetUserId()
+    //{
+    //    //Services.ShiftEntityHashIds.Decode<ShiftIdentity.Core.DTOs.User.UserDTO>(id);
+
+    //    var userIdClaim = http?.HttpContext?.User.Claims?.FirstOrDefault(x => x.Type == ClaimTypes.NameIdentifier);
+    //    long userId = 0;
+    //    if (userIdClaim == null || !long.TryParse(userIdClaim?.Value, out userId))
+    //        return null;
+    //    else
+    //        return userId;
+    //}
 
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {
-        long? userId = GetUserId();
+        long? userId = http!.HttpContext!.GetUserID();
 
         if (context.ChangeType == ChangeType.Added)
         {
