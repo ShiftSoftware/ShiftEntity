@@ -2,17 +2,23 @@
 
 namespace ShiftSoftware.ShiftEntity.Model;
 
-public class ShiftEntityResponse<T>
+public class ShiftEntityResponse
 {
     public ShiftEntityResponse() { }
+
+    public Message? Message { get; set; }
+    public Dictionary<string, object>? Additional { get; set; }
+}
+
+public class ShiftEntityResponse<T> : ShiftEntityResponse
+{
+    public ShiftEntityResponse() : base() { }
     public ShiftEntityResponse(T entity)
     {
         Entity = entity;
     }
 
-    public Message? Message { get; set; }
     public T? Entity { get; set; }
-    public Dictionary<string, object>? Additional { get; set; }
 }
 
 public class Message
