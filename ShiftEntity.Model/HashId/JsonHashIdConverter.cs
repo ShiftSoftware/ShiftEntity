@@ -54,7 +54,7 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
 
         var obj = JsonSerializer.Deserialize<JsonElement>(ref reader, options);
 
-        if (obj.TryGetProperty("ID", out var idProperty))
+        if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
         {
             var id = idProperty.GetString();
 
@@ -68,7 +68,7 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
             }
         }
 
-        if (obj.TryGetProperty("Text", out var textProperty))
+        if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
         {
             dto.Text = textProperty.GetString();
         }
@@ -86,16 +86,16 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
 
             if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
             {
-                writer.WriteString("ID", this.hashids.Encode(long.Parse(value.Value)));
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), this.hashids.Encode(long.Parse(value.Value)));
             }
             else
             {
-                writer.WriteString("ID", value.Value);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), value.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(value?.Text))
             {
-                writer.WriteString("Text", value!.Text);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Text), value!.Text);
             }
 
             writer.WriteEndObject();
@@ -124,7 +124,7 @@ public class ShiftEntitySelectDTOEnumerableJsonHashIdConverter : JsonConverter<I
             {
                 var dto = new ShiftEntitySelectDTO();
 
-                if (element.TryGetProperty("ID", out var idProperty))
+                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
                 {
                     var id = idProperty.GetString();
 
@@ -138,7 +138,7 @@ public class ShiftEntitySelectDTOEnumerableJsonHashIdConverter : JsonConverter<I
                     }
                 }
 
-                if (element.TryGetProperty("Text", out var textProperty))
+                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
                 {
                     dto.Text = textProperty.GetString();
                 }
@@ -166,16 +166,16 @@ public class ShiftEntitySelectDTOEnumerableJsonHashIdConverter : JsonConverter<I
 
             if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
             {
-                writer.WriteString("ID", this.hashids.Encode(long.Parse(dto.Value)));
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), this.hashids.Encode(long.Parse(dto.Value)));
             }
             else
             {
-                writer.WriteString("ID", dto.Value);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), dto.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(dto.Text))
             {
-                writer.WriteString("Text", dto.Text);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Text), dto.Text);
             }
 
             writer.WriteEndObject();
@@ -206,7 +206,7 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
             {
                 var dto = new ShiftEntitySelectDTO();
 
-                if (element.TryGetProperty("ID", out var idProperty))
+                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
                 {
                     var id = idProperty.GetString();
 
@@ -220,7 +220,7 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
                     }
                 }
 
-                if (element.TryGetProperty("Text", out var textProperty))
+                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
                 {
                     dto.Text = textProperty.GetString();
                 }
@@ -248,16 +248,16 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
 
             if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
             {
-                writer.WriteString("ID", this.hashids.Encode(long.Parse(dto.Value)));
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), this.hashids.Encode(long.Parse(dto.Value)));
             }
             else
             {
-                writer.WriteString("ID", dto.Value);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Value), dto.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(dto.Text))
             {
-                writer.WriteString("Text", dto.Text);
+                writer.WriteString(nameof(ShiftEntitySelectDTO.Text), dto.Text);
             }
 
             writer.WriteEndObject();
