@@ -24,7 +24,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
     where DTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
-    public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action) : base(action)
+    public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action, DynamicReadWriteDeleteAction? dataLevelAction = null) : base(action, dataLevelAction)
     {
     }
 }
@@ -37,10 +37,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         where ListDTO : ShiftEntityDTOBase
 {
     private readonly ReadWriteDeleteAction action;
+    private readonly DynamicReadWriteDeleteAction? dataLevelAction;
 
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, DynamicReadWriteDeleteAction? dataLevelAction = null)
     {
         this.action = action;
+        this.dataLevelAction = dataLevelAction;
     }
 
     [Authorize]
@@ -62,6 +64,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
+            return Forbid();
+
+        if (dataLevelAction is not null && !typeAuthService.CanRead(dataLevelAction, key))
             return Forbid();
 
         return await base.GetSingle(key, asOf);
