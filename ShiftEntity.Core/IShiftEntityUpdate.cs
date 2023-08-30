@@ -1,17 +1,9 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core
+namespace ShiftSoftware.ShiftEntity.Core;
+
+public interface IShiftEntityUpdateAsync<EntityType, DTOType>
+    where EntityType : class
 {
-    public interface IShiftEntityUpdate<EntityType,DTOType>
-        where EntityType: class
-    {
-        public EntityType Update(EntityType entity, DTOType dto, long? userId = null);
-    }
-
-    public interface IShiftEntityUpdateAsync<EntityType, DTOType>
-        where EntityType : class
-    {
-        public ValueTask<EntityType> UpdateAsync(EntityType entity, DTOType dto, long? userId = null);
-    }
+    public ValueTask<EntityType> UpdateAsync(EntityType entity, DTOType dto, long? userId = null);
 }

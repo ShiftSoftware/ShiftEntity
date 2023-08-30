@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using System.Linq.Expressions;
-using static Microsoft.EntityFrameworkCore.Query.ReplacingExpressionVisitor;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
@@ -9,8 +8,6 @@ public static class ModelBuilderExtensions
 {
     public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder, bool useTemporal)
     {
-        Expression<Func<ShiftEntityBase, bool>> filterExpr = bm => !bm.IsDeleted;
-
         if (useTemporal)
         {
             foreach (var entityType in modelBuilder.Model.GetEntityTypes())

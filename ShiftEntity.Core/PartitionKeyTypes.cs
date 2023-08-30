@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace ShiftSoftware.ShiftEntity.Core;
+﻿namespace ShiftSoftware.ShiftEntity.Core;
 
 public enum PartitionKeyTypes
 {
