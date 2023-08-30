@@ -211,7 +211,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             if (isHardDelete)
                 dbSet.Remove(entity);
             else
-                entity.DeleteShiftEntity(userId);
+                entity.MarkAsDeleted();
 
 
             return new ValueTask<EntityType>(entity);

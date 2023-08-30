@@ -25,7 +25,7 @@ public abstract class ShiftEntity<EntityType>
 
     public ShiftEntity()
     {
-        
+
     }
 
     public ShiftEntity(long id)
@@ -33,37 +33,13 @@ public abstract class ShiftEntity<EntityType>
         this.ID = id;
     }
 
-    public EntityType CreateShiftEntity(long? userId = null, long? id = null)
-    {
-        if (id is not null)
-            this.ID = id.Value;
-
-        CreatedByUserID = userId;
-        LastSavedByUserID = userId;
-
-        return this as EntityType;
-    }
-
-    public EntityType UpdateShiftEntity(long? userId = null)
-    {
-        LastSavedByUserID = userId;
-
-        return this as EntityType;
-    }
-
-    public EntityType UpdateSyncDate(long? userId = null)
+    public void UpdateSyncDate()
     {
         LastSyncDate = DateTime.UtcNow;
-
-        return this as EntityType;
     }
 
-    public EntityType DeleteShiftEntity(long? userId = null)
+    public void MarkAsDeleted()
     {
-        UpdateShiftEntity(userId);
-
-        IsDeleted = true;
-
-        return this as EntityType;
+        this.IsDeleted = true;
     }
 }
