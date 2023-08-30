@@ -41,6 +41,7 @@
 
 
 	<ItemGroup>
+		<PackageReference Include="FluentValidation" Version="11.7.1" />
 		<PackageReference Include="Hashids.net" Version="1.7.0" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
 		<PackageReference Include="System.Text.Json" Version="7.0.3" />
