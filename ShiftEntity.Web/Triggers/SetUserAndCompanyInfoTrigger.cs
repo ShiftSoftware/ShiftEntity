@@ -5,6 +5,7 @@ using ShiftSoftware.ShiftEntity.Web.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Threading;
@@ -36,9 +37,6 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
 
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {
-        long? regionId = http!.HttpContext!.GetRegionID();
-        long? companyId = http!.HttpContext!.GetCompanyID();
-        long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
         long? userId = http!.HttpContext!.GetUserID();
 
         if (context.ChangeType == ChangeType.Added)
@@ -46,9 +44,16 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
             context.Entity.CreatedByUserID = userId;
             context.Entity.LastSavedByUserID = userId;
 
-            context.Entity.RegionID = regionId;
-            context.Entity.CompanyID = companyId;
-            context.Entity.CompanyBranchID = companyBranchId;
+            if (context.Entity.GetType().GetCustomAttributes<ShiftIdentity.Core.DontSetCompanyInfoOnThisEntityWithAutoTrigger>().Count() == 0)
+            {
+                long? regionId = http!.HttpContext!.GetRegionID();
+                long? companyId = http!.HttpContext!.GetCompanyID();
+                long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
+
+                context.Entity.RegionID = regionId;
+                context.Entity.CompanyID = companyId;
+                context.Entity.CompanyBranchID = companyBranchId;
+            }
         }
 
         if (context.ChangeType == ChangeType.Modified)
