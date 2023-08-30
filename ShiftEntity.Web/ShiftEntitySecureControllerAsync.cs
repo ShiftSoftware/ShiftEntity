@@ -1,97 +1,109 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.TypeAuth.AspNetCore.Services;
-using ShiftSoftware.TypeAuth.Core.Actions;
+using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OData;
+using ShiftSoftware.TypeAuth.Core.Actions;
+using Microsoft.AspNetCore.Authorization;
+using ShiftSoftware.TypeAuth.AspNetCore.Services;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
-        ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-        where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-        where Entity : ShiftEntity<Entity>
-        where UpdateDTO : ShiftEntityDTO
-        where ListDTO : ShiftEntityDTOBase
+    ControllerBase
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
+    where Entity : ShiftEntity<Entity>
+    where UpdateDTO : ShiftEntityDTO
+    where ListDTO : ShiftEntityDTOBase
 {
     private readonly ReadWriteDeleteAction action;
+    private readonly ShiftEntityControllerService<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> shiftEntityControllerService;
     public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action)
     {
+        this.shiftEntityControllerService = new ShiftEntityControllerService<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>(this);
         this.action = action;
     }
 
+    [HttpGet]
+    [EnableQueryWithHashIdConverter]
     [Authorize]
-    public override ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
+    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return base.Get(oDataQueryOptions, showDeletedRows);
+        return Ok(this.shiftEntityControllerService.Get(oDataQueryOptions, showDeletedRows));
     }
 
     [Authorize]
     [HttpGet("{key}")]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return await base.GetSingle(key, asOf);
+        return (await this.shiftEntityControllerService.GetSingle(key, asOf)).ActionResult;
     }
 
     [Authorize]
-    public override async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
+    [HttpGet]
+    [EnableQueryWithHashIdConverter]
+    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return await base.GetRevisions(key);
+        return Ok(await this.shiftEntityControllerService.GetRevisions(key));
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
+    [HttpPost]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        return await base.Post(dto);
+        return (await this.shiftEntityControllerService.Post(dto)).ActionResult;
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+    [HttpPut("{key}")]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        return await base.Put(key, dto);
+        return (await this.shiftEntityControllerService.Put(key, dto)).ActionResult;
     }
 
     [Authorize]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    [HttpDelete("{key}")]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
         if (!typeAuthService.CanDelete(action))
             return Forbid();
 
-        return await base.Delete(key, isHardDelete);
+        return (await this.shiftEntityControllerService.Delete(key, isHardDelete)).ActionResult;
     }
 }
 
