@@ -12,12 +12,12 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Triggers;
 
-internal class SetUserIdTrigger<Entity> : IBeforeSaveTrigger<Entity>
+internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
     where Entity : ShiftEntity<Entity>
 {
     private readonly IHttpContextAccessor? http;
 
-    public SetUserIdTrigger(IHttpContextAccessor? http)
+    public SetUserAndCompanyInfoTrigger(IHttpContextAccessor? http)
     {
         this.http = http;
     }
@@ -36,12 +36,19 @@ internal class SetUserIdTrigger<Entity> : IBeforeSaveTrigger<Entity>
 
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {
+        long? regionId = http!.HttpContext!.GetRegionID();
+        long? companyId = http!.HttpContext!.GetCompanyID();
+        long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
         long? userId = http!.HttpContext!.GetUserID();
 
         if (context.ChangeType == ChangeType.Added)
         {
             context.Entity.CreatedByUserID = userId;
             context.Entity.LastSavedByUserID = userId;
+
+            context.Entity.RegionID = regionId;
+            context.Entity.CompanyID = companyId;
+            context.Entity.CompanyBranchID = companyBranchId;
         }
 
         if (context.ChangeType == ChangeType.Modified)

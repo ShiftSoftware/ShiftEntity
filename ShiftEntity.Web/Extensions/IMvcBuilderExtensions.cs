@@ -33,7 +33,7 @@ public static class IMvcBuilderExtensions
     private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder)
     {
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
-        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserIdTrigger<>));
+        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserAndCompanyInfoTrigger<>));
         builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
 
         return builder;
