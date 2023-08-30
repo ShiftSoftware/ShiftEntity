@@ -1,305 +1,296 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Model.HashId;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Microsoft.OData.Client;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.OData.Formatter;
 using Microsoft.OData.UriParser;
-using System.Xml.Linq;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.OData;
 
-namespace ShiftSoftware.ShiftEntity.Web
+namespace ShiftSoftware.ShiftEntity.Web;
+
+public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
+    ControllerBase
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
+    where Entity : ShiftEntity<Entity>
+    where UpdateDTO : ShiftEntityDTO
+    where ListDTO : ShiftEntityDTOBase
 {
-    public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
-        ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
-        where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
-        where Entity : ShiftEntity<Entity>, new()
-        where DTO : ShiftEntityDTO
-        where ListDTO : ShiftEntityDTOBase
+    [HttpGet]
+    [EnableQueryWithHashIdConverter]
+    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        bool isFilteringByIsDeleted = false;
+        
+        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
+
+        if (filterClause is not null)
+        {
+            var visitor = new SoftDeleteQueryNodeVisitor();
+
+            var visited = filterClause.Expression.Accept(visitor);
+
+            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
+        }
+
+        var data = repository.OdataList(showDeletedRows);
+
+        if (!isFilteringByIsDeleted)
+            data = data.Where(x => x.IsDeleted == false);
+
+        return Ok(data);
     }
 
-    public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
-        ControllerBase
-        where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-        where Entity : ShiftEntity<Entity>
-        where UpdateDTO : ShiftEntityDTO
-        where ListDTO : ShiftEntityDTOBase
+    [HttpGet("{key}")]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
-        [HttpGet]
-        [EnableQueryWithHashIdConverter]
-        public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
+
+        if (asOf.HasValue)
+            asOf = timeZoneService!.ReadOffsettedDate(asOf.Value);
+
+        Entity item;
+
+        try
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-            bool isFilteringByIsDeleted = false;
-            
-            FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
-
-            if (filterClause is not null)
-            {
-                var visitor = new SoftDeleteQueryNodeVisitor();
-
-                var visited = filterClause.Expression.Accept(visitor);
-
-                isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
-            }
-
-            var data = repository.OdataList(showDeletedRows);
-
-            if (!isFilteringByIsDeleted)
-                data = data.Where(x => x.IsDeleted == false);
-
-            return Ok(data);
+            item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), asOf);
         }
-
-        [HttpGet("{key}")]
-        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
-            (string key, [FromQuery] DateTime? asOf)
+        catch (ShiftEntityException ex)
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-            var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
-
-            if (asOf.HasValue)
-                asOf = timeZoneService.ReadOffsettedDate(asOf.Value);
-
-            Entity item;
-
-            try
+            return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
             {
-                item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), asOf);
-            }
-            catch (ShiftEntityException ex)
-            {
-                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = ex.Message,
-                    Additional = ex.AdditionalData,
-                });
-            }
-
-            if (item == null)
-                return NotFound(new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = new Message
-                    {
-                        Title = "Not Found",
-                        Body = $"Can't find entity with ID '{key}'"
-                    },
-                    Additional = repository.AdditionalResponseData
-                });
-
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
-            {
-                Message = repository.ResponseMessage,
-                Additional = repository.AdditionalResponseData
+                Message = ex.Message,
+                Additional = ex.AdditionalData,
             });
         }
 
-        [HttpGet]
-        [EnableQueryWithHashIdConverter]
-        public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
-        {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+        if (item == null)
+            return NotFound(new ShiftEntityResponse<SelectDTO>
+            {
+                Message = new Message
+                {
+                    Title = "Not Found",
+                    Body = $"Can't find entity with ID '{key}'"
+                },
+                Additional = repository.AdditionalResponseData
+            });
 
-            return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<SelectDTO>(key)));
+        return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+        {
+            Message = repository.ResponseMessage,
+            Additional = repository.AdditionalResponseData
+        });
+    }
+
+    [HttpGet]
+    [EnableQueryWithHashIdConverter]
+    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        return Ok(await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<SelectDTO>(key)));
+    }
+
+    [HttpPost]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        if (!ModelState.IsValid)
+        {
+            var response = new ShiftEntityResponse<SelectDTO>
+            {
+                Message = new Message
+                {
+                    Title = "Model Validation Error",
+                    SubMessages = ModelState.Select(x => new Message
+                    {
+                        Title = x.Key,
+                        SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
+                        {
+                            Title = y.ErrorMessage
+                        }).ToList()
+                    }).ToList()
+                },
+                Additional = repository.AdditionalResponseData,
+            };
+
+            return BadRequest(response);
         }
 
-        [HttpPost]
-        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
+        Entity newItem;
+
+        try
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-            if (!ModelState.IsValid)
+            newItem = await repository.CreateAsync(dto, this.GetUserID());
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
             {
-                var response = new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = new Message
-                    {
-                        Title = "Model Validation Error",
-                        SubMessages = ModelState.Select(x => new Message
-                        {
-                            Title = x.Key,
-                            SubMessages = x.Value.Errors.Select(y => new Message
-                            {
-                                Title = y.ErrorMessage
-                            }).ToList()
-                        }).ToList()
-                    },
-                    Additional = repository.AdditionalResponseData,
-                };
-
-                return BadRequest(response);
-            }
-
-            Entity newItem;
-
-            try
-            {
-                newItem = await repository.CreateAsync(dto, this.GetUserID());
-            }
-            catch (ShiftEntityException ex)
-            {
-                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = ex.Message,
-                    Additional = ex.AdditionalData,
-                });
-            }
-
-            repository.Add(newItem);
-
-            await repository.SaveChangesAsync();
-
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
-            {
-                Message = repository.ResponseMessage,
-                Additional = repository.AdditionalResponseData
+                Message = ex.Message,
+                Additional = ex.AdditionalData,
             });
         }
 
-        [HttpPut("{key}")]
-        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+        repository.Add(newItem);
+
+        await repository.SaveChangesAsync();
+
+        return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+            Message = repository.ResponseMessage,
+            Additional = repository.AdditionalResponseData
+        });
+    }
 
-            if (!ModelState.IsValid)
+    [HttpPut("{key}")]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        if (!ModelState.IsValid)
+        {
+            var response = new ShiftEntityResponse<SelectDTO>
             {
-                var response = new ShiftEntityResponse<SelectDTO>
+                Message = new Message
                 {
-                    Message = new Message
+                    Title = "Model Validation Error",
+                    SubMessages = ModelState.Select(x => new Message
                     {
-                        Title = "Model Validation Error",
-                        SubMessages = ModelState.Select(x => new Message
+                        Title = x.Key,
+                        SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
                         {
-                            Title = x.Key,
-                            SubMessages = x.Value.Errors.Select(y => new Message
-                            {
-                                Title = y.ErrorMessage
-                            }).ToList()
+                            Title = y.ErrorMessage
                         }).ToList()
-                    },
-                    Additional = repository.AdditionalResponseData,
-                };
+                    }).ToList()
+                },
+                Additional = repository.AdditionalResponseData,
+            };
 
-                return BadRequest(response);
+            return BadRequest(response);
+        }
+
+        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
+
+        if (item == null)
+            return NotFound(new ShiftEntityResponse<SelectDTO>
+            {
+                Message = new Message
+                {
+                    Title = "Not Found",
+                    Body = $"Can't find entity with ID '{key}'"
+                },
+                Additional = repository.AdditionalResponseData
+            });
+
+        try
+        {
+            if (item.LastSaveDate != dto.LastSaveDate)
+            {
+                throw new ShiftEntityException(
+                    new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
+                    (int) HttpStatusCode.Conflict
+                );
             }
 
-            var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
-
-            if (item == null)
-                return NotFound(new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = new Message
-                    {
-                        Title = "Not Found",
-                        Body = $"Can't find entity with ID '{key}'"
-                    },
-                    Additional = repository.AdditionalResponseData
-                });
-
-            try
+            await repository.UpdateAsync(item, dto, this.GetUserID());
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
             {
-                if (item.LastSaveDate != dto.LastSaveDate)
-                {
-                    throw new ShiftEntityException(
-                        new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
-                        (int) HttpStatusCode.Conflict
-                    );
-                }
+                Message = ex.Message,
+                Additional = ex.AdditionalData,
+            });
+        }
 
-                await repository.UpdateAsync(item, dto, this.GetUserID());
-            }
-            catch (ShiftEntityException ex)
+        await repository.SaveChangesAsync();
+
+        return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+        {
+            Message = repository.ResponseMessage,
+            Additional = repository.AdditionalResponseData,
+        });
+    }
+
+    [HttpDelete("{key}")]
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
+
+        if (item == null)
+            return NotFound(new ShiftEntityResponse<SelectDTO>
             {
-                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
+                Message = new Message
                 {
-                    Message = ex.Message,
-                    Additional = ex.AdditionalData,
-                });
-            }
-
-            await repository.SaveChangesAsync();
-
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
-            {
-                Message = repository.ResponseMessage,
+                    Title = "Not Found",
+                    Body = $"Can't find entity with ID '{key}'",
+                },
                 Additional = repository.AdditionalResponseData,
             });
-        }
 
-        [HttpDelete("{key}")]
-        public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+        try
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-            var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
-
-            if (item == null)
-                return NotFound(new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = new Message
-                    {
-                        Title = "Not Found",
-                        Body = $"Can't find entity with ID '{key}'",
-                    },
-                    Additional = repository.AdditionalResponseData,
-                });
-
-            try
+            await repository.DeleteAsync(item, isHardDelete, this.GetUserID());
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
             {
-                await repository.DeleteAsync(item, isHardDelete, this.GetUserID());
-            }
-            catch (ShiftEntityException ex)
-            {
-                return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
-                {
-                    Message = ex.Message,
-                    Additional = ex.AdditionalData,
-                });
-            }
-
-            await repository.SaveChangesAsync();
-
-            if (item.ReloadAfterSave)
-                item = await repository.FindAsync(item.ID);
-
-            return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
-            {
-                Message = repository.ResponseMessage,
-                Additional = repository.AdditionalResponseData
+                Message = ex.Message,
+                Additional = ex.AdditionalData,
             });
         }
 
-        [NonAction]
-        public virtual async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
+        await repository.SaveChangesAsync();
+
+        if (item.ReloadAfterSave)
+            item = await repository.FindAsync(item.ID);
+
+        return Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
         {
-            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-            var list = repository.OdataList();
-
-            if (oDataQueryOptions.Filter != null)
-                list = oDataQueryOptions.Filter.ApplyTo(list, new()) as IQueryable<ListDTO>;
-
-            if (list != null)
-                return await list.ToListAsync();
-
-            return new List<ListDTO>();
-        }
+            Message = repository.ResponseMessage,
+            Additional = repository.AdditionalResponseData
+        });
     }
+
+    [NonAction]
+    public virtual async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var list = repository.OdataList();
+
+        if (oDataQueryOptions.Filter != null)
+            list = oDataQueryOptions.Filter.ApplyTo(list, new()) as IQueryable<ListDTO>;
+
+        if (list != null)
+            return await list.ToListAsync();
+
+        return new List<ListDTO>();
+    }
+}
+
+public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
+    ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
+    where Entity : ShiftEntity<Entity>, new()
+    where DTO : ShiftEntityDTO
+    where ListDTO : ShiftEntityDTOBase
+{
 }

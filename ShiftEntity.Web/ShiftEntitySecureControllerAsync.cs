@@ -1,33 +1,18 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OData.Formatter;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
-
-public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> :
-    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
-    where Entity : ShiftEntity<Entity>, new()
-    where DTO : ShiftEntityDTO
-    where ListDTO : ShiftEntityDTOBase
-{
-    public ShiftEntitySecureControllerAsync( ReadWriteDeleteAction action) : base(action)
-    {
-    }
-}
 
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
         ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
@@ -55,8 +40,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
     [Authorize]
     [HttpGet("{key}")]
-    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle
-        (string key, [FromQuery] DateTime? asOf)
+    public override async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
 
@@ -108,5 +92,17 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
             return Forbid();
 
         return await base.Delete(key, isHardDelete);
+    }
+}
+
+public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> :
+    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
+    where Entity : ShiftEntity<Entity>, new()
+    where DTO : ShiftEntityDTO
+    where ListDTO : ShiftEntityDTOBase
+{
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action) : base(action)
+    {
     }
 }
