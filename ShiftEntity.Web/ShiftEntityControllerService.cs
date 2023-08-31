@@ -37,7 +37,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
         });
     }
 
-    public IQueryable<ListDTO> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
+    public IQueryable<ListDTO> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -54,7 +54,12 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
             isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
         }
 
-        var data = repository.OdataList(showDeletedRows);
+        var queryable = repository.GetIQueryableForOData(showDeletedRows);
+
+        if (where is not null)
+            queryable = queryable.Where(where);
+
+        var data = repository.OdataList(showDeletedRows, queryable);
 
         if (!isFilteringByIsDeleted)
             data = data.Where(x => x.IsDeleted == false);

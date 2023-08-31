@@ -15,9 +15,12 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         {
         }
 
-        public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false)
+        public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false, IQueryable<EntityType>? queryable = null)
         {
-            return mapper.ProjectTo<ListDTO>(GetIQueryable(showDeletedRows).AsNoTracking());
+            if (queryable is null)
+                queryable = GetIQueryableForOData(showDeletedRows);
+
+            return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
         }
 
         public virtual ValueTask<ViewDTO> ViewAsync(EntityType entity)
@@ -146,7 +149,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return GetIQueryable(asOf, includes);
         }
 
-        protected IQueryable<EntityType> GetIQueryable(bool showDeletedRows = false)
+        public IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
         {
             var query = dbSet.AsQueryable();
 

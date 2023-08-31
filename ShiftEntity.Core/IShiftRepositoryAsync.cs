@@ -37,7 +37,7 @@ namespace ShiftSoftware.ShiftEntity.Core
     }
 
     public interface IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
-        IShiftOdataList<ListDTO>,
+        IShiftOdataList<Entity, ListDTO>,
         IShiftEntityFind<Entity>,
         IShiftEntityPrepareForSyncAsync<Entity>,
         IShiftEntityViewAsync<Entity, SelectDTO>,

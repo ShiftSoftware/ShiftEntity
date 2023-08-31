@@ -14,6 +14,10 @@ using Microsoft.OData;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using Microsoft.AspNetCore.Authorization;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
+using ShiftSoftware.ShiftEntity.Web.Extensions;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -42,7 +46,41 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return Ok(this.shiftEntityControllerService.Get(oDataQueryOptions, showDeletedRows));
+        System.Linq.Expressions.Expression<Func<Entity, bool>> where = x => true;
+
+        List<long?>? accessibleRegions = null;   //Read from TypeAuth
+        List<long?>? accessibleCompanies = null; //Read from TypeAuth
+        List<long?>? accessibleBranches = null;  //Read from TypeAuth
+
+        where = x =>
+            ((accessibleRegions == null || x.RegionID == null) ? true : accessibleRegions.Contains(x.RegionID)) &&
+            ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
+            ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
+
+        return Ok(this.shiftEntityControllerService.Get(oDataQueryOptions, showDeletedRows, where));
+    }
+
+    private bool HasDefaultDataLevelAccess(TypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
+    {
+        if (entity?.RegionID is not null)
+        {
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, access, ShiftEntityHashIds.Encode<RegionDTO>(entity.RegionID.Value), this.HttpContext.GetHashedRegionID()))
+                return false;
+        }
+
+        if (entity?.CompanyID is not null)
+        {
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, access, ShiftEntityHashIds.Encode<CompanyDTO>(entity.CompanyID.Value), this.HttpContext.GetHashedCompanyID()))
+                return false;
+        }
+
+        if (entity?.CompanyBranchID is not null)
+        {
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, access, ShiftEntityHashIds.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value), this.HttpContext.GetHashedCompanyBranchID()))
+                return false;
+        }
+
+        return true;
     }
 
     [Authorize]
@@ -54,7 +92,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return (await this.shiftEntityControllerService.GetSingle(key, asOf)).ActionResult;
+        var result = (await this.shiftEntityControllerService.GetSingle(key, asOf));
+
+        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Read))
+            return Forbid();
+
+        return result.ActionResult;
     }
 
     [Authorize]
@@ -79,7 +122,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        return (await this.shiftEntityControllerService.Post(dto)).ActionResult;
+        var result = await this.shiftEntityControllerService.Post(dto);
+
+        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
+            return Forbid();
+
+        return result.ActionResult;
     }
 
     [Authorize]
@@ -91,7 +139,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        return (await this.shiftEntityControllerService.Put(key, dto)).ActionResult;
+        var result = await this.shiftEntityControllerService.Put(key, dto);
+
+        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
+            return Forbid();
+
+        return result.ActionResult;
     }
 
     [Authorize]
@@ -103,7 +156,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanDelete(action))
             return Forbid();
 
-        return (await this.shiftEntityControllerService.Delete(key, isHardDelete)).ActionResult;
+        var result = await this.shiftEntityControllerService.Delete(key, isHardDelete);
+
+        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Delete))
+            return Forbid();
+
+        return result.ActionResult;
     }
 }
 
