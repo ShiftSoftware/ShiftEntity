@@ -9,7 +9,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Web", "ShiftEnt
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Model", "ShiftEntity.Model\ShiftEntity.Model.csproj", "{F7361EAD-67D4-4BFE-8759-02EE3EB61722}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.EFCore", "ShiftEntity.EFCore\ShiftEntity.EFCore.csproj", "{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.EFCore", "ShiftEntity.EFCore\ShiftEntity.EFCore.csproj", "{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.CosmosDbSync", "ShiftEntity.CosmosDbSync\ShiftEntity.CosmosDbSync.csproj", "{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +35,10 @@ Global
 		{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
