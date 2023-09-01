@@ -6,10 +6,10 @@ pool:
 
 steps:
 
- - script: dotnet build ShiftEntity.EFCore.SqlServer --configuration release
+ - script: dotnet build ShiftEntity.EFCore --configuration release
    displayName: 'dotnet build'
 
- - script: dotnet pack ShiftEntity.EFCore.SqlServer --configuration release --output $(Build.ArtifactStagingDirectory)
+ - script: dotnet pack ShiftEntity.EFCore --configuration release --output $(Build.ArtifactStagingDirectory)
    displayName: 'dotnet pack'
 
  - task: NuGetCommand@2

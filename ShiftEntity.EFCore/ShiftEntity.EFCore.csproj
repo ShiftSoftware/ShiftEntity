@@ -41,7 +41,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 	</ItemGroup>
 
 </Project>
