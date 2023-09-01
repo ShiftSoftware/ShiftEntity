@@ -15,31 +15,24 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
-internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
+public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> : ControllerBase
     where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
     where Entity : ShiftEntity<Entity>
     where UpdateDTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
-    private readonly ControllerBase controllerBase;
-
-    public ShiftEntityControllerService(ControllerBase controllerBase)
-    {
-        this.controllerBase = controllerBase;
-    }
-
     private ActionResult<ShiftEntityResponse<SelectDTO>> HandleException(ShiftEntityException ex)
     {
-        return this.controllerBase.StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
+        return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
         {
             Message = ex.Message,
             Additional = ex.AdditionalData,
         });
     }
 
-    public IQueryable<ListDTO> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    public IQueryable<ListDTO> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, bool showDeletedRows = false, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         bool isFilteringByIsDeleted = false;
 
@@ -69,16 +62,16 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
     public async Task<List<RevisionDTO>> GetRevisions(string key)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         return await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
     }
 
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTime? asOf)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var timeZoneService = this.controllerBase.HttpContext.RequestServices.GetService<TimeZoneService>();
+        var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
 
         if (asOf.HasValue)
             asOf = timeZoneService!.ReadOffsettedDate(asOf.Value);
@@ -96,7 +89,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
         if (item == null)
         {
-            return new(this.controllerBase.NotFound(new ShiftEntityResponse<SelectDTO>
+            return new(NotFound(new ShiftEntityResponse<SelectDTO>
             {
                 Message = new Message
                 {
@@ -107,7 +100,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
             }), null);
         }
 
-        return new(this.controllerBase.Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+        return new(Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
@@ -116,16 +109,16 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
     public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Post(CreateDTO dto)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        if (!this.controllerBase.ModelState.IsValid)
+        if (!ModelState.IsValid)
         {
             var response = new ShiftEntityResponse<SelectDTO>
             {
                 Message = new Message
                 {
                     Title = "Model Validation Error",
-                    SubMessages = this.controllerBase.ModelState.Select(x => new Message
+                    SubMessages = ModelState.Select(x => new Message
                     {
                         Title = x.Key,
                         SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
@@ -137,14 +130,14 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
                 Additional = repository.AdditionalResponseData,
             };
 
-            return new(this.controllerBase.BadRequest(response), null);
+            return new(BadRequest(response), null);
         }
 
         Entity newItem;
 
         try
         {
-            newItem = await repository.CreateAsync(dto, this.controllerBase.GetUserID());
+            newItem = await repository.CreateAsync(dto, this.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -155,7 +148,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
         await repository.SaveChangesAsync();
 
-        return new(this.controllerBase.Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
+        return new(Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(newItem))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
@@ -164,16 +157,16 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
     public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Put(string key, UpdateDTO dto)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        if (!this.controllerBase.ModelState.IsValid)
+        if (!ModelState.IsValid)
         {
             var response = new ShiftEntityResponse<SelectDTO>
             {
                 Message = new Message
                 {
                     Title = "Model Validation Error",
-                    SubMessages = this.controllerBase.ModelState.Select(x => new Message
+                    SubMessages = ModelState.Select(x => new Message
                     {
                         Title = x.Key,
                         SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
@@ -185,13 +178,13 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
                 Additional = repository.AdditionalResponseData,
             };
 
-            return new(this.controllerBase.BadRequest(response), null);
+            return new(BadRequest(response), null);
         }
 
         var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
 
         if (item == null)
-            return new(this.controllerBase.NotFound(new ShiftEntityResponse<SelectDTO>
+            return new(NotFound(new ShiftEntityResponse<SelectDTO>
             {
                 Message = new Message
                 {
@@ -211,7 +204,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
                 );
             }
 
-            await repository.UpdateAsync(item, dto, this.controllerBase.GetUserID());
+            await repository.UpdateAsync(item, dto, this.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -220,7 +213,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
         await repository.SaveChangesAsync();
 
-        return new(this.controllerBase.Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+        return new(Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData,
@@ -229,12 +222,12 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
     public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Delete(string key, bool isHardDelete = false)
     {
-        var repository = this.controllerBase.HttpContext.RequestServices.GetRequiredService<Repository>();
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
 
         if (item == null)
-            return new(this.controllerBase.NotFound(new ShiftEntityResponse<SelectDTO>
+            return new(NotFound(new ShiftEntityResponse<SelectDTO>
             {
                 Message = new Message
                 {
@@ -246,7 +239,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, this.controllerBase.GetUserID());
+            await repository.DeleteAsync(item, isHardDelete, this.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -258,7 +251,7 @@ internal class ShiftEntityControllerService<Repository, Entity, ListDTO, SelectD
         if (item.ReloadAfterSave)
             item = await repository.FindAsync(item.ID);
 
-        return new(this.controllerBase.Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
+        return new(Ok(new ShiftEntityResponse<SelectDTO>(await repository.ViewAsync(item))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
