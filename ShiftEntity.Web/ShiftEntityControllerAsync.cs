@@ -34,38 +34,38 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
 
     public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
-        return Ok(base.Get(oDataQueryOptions, showDeletedRows));
+        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows));
     }
 
     [HttpGet("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
-        return (await base.GetSingle(key, asOf)).ActionResult;
+        return (await base.GetSingleItem(key, asOf)).ActionResult;
     }
 
     [HttpGet]
     [EnableQueryWithHashIdConverter]
     public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
     {
-        return Ok(await base.GetRevisions(key));
+        return Ok(await base.GetRevisionListing(key));
     }
 
     [HttpPost]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
     {
-        return (await base.Post(dto)).ActionResult;
+        return (await base.PostItem(dto)).ActionResult;
     }
 
     [HttpPut("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
-        return (await base.Put(key, dto)).ActionResult;
+        return (await base.PutItem(key, dto)).ActionResult;
     }
 
     [HttpDelete("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
-        return (await base.Delete(key, isHardDelete)).ActionResult;
+        return (await base.DeleteItem(key, isHardDelete)).ActionResult;
     }
 
     [NonAction]

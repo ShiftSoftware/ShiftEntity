@@ -55,7 +55,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
             ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
             ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        return Ok(base.Get(oDataQueryOptions, showDeletedRows, where));
+        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, where));
     }
 
     private bool HasDefaultDataLevelAccess(TypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
@@ -90,7 +90,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        var result = (await base.GetSingle(key, asOf));
+        var result = (await base.GetSingleItem(key, asOf));
 
         if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Read))
             return Forbid();
@@ -108,7 +108,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        return Ok(await base.GetRevisions(key));
+        return Ok(await base.GetRevisionListing(key));
     }
 
     [Authorize]
@@ -120,7 +120,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        var result = await base.Post(dto);
+        var result = await base.PostItem(dto);
 
         if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
             return Forbid();
@@ -137,7 +137,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        var result = await base.Put(key, dto);
+        var result = await base.PutItem(key, dto);
 
         if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
             return Forbid();
@@ -154,7 +154,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanDelete(action))
             return Forbid();
 
-        var result = await base.Delete(key, isHardDelete);
+        var result = await base.DeleteItem(key, isHardDelete);
 
         if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Delete))
             return Forbid();

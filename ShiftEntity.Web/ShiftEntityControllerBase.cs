@@ -21,6 +21,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
     where UpdateDTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
+    [NonAction]
     private ActionResult<ShiftEntityResponse<SelectDTO>> HandleException(ShiftEntityException ex)
     {
         return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse<SelectDTO>
@@ -30,7 +31,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
         });
     }
 
-    public IQueryable<ListDTO> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, bool showDeletedRows = false, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    [NonAction]
+    public IQueryable<ListDTO> GetOdataListing(ODataQueryOptions<ListDTO> oDataQueryOptions, bool showDeletedRows = false, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -60,14 +62,16 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
         return data;
     }
 
-    public async Task<List<RevisionDTO>> GetRevisions(string key)
+    [NonAction]
+    public async Task<List<RevisionDTO>> GetRevisionListing(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         return await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
     }
 
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTime? asOf)
+    [NonAction]
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTime? asOf)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -107,7 +111,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
         }), item);
     }
 
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Post(CreateDTO dto)
+    [NonAction]
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> PostItem(CreateDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -155,7 +160,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
         }), newItem);
     }
 
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Put(string key, UpdateDTO dto)
+    [NonAction]
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> PutItem(string key, UpdateDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -219,8 +225,9 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
             Additional = repository.AdditionalResponseData,
         }), item);
     }
-
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> Delete(string key, bool isHardDelete = false)
+    
+    [NonAction]
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete = false)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
