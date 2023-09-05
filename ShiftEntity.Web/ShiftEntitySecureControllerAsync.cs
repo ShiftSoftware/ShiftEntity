@@ -40,15 +40,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
-
+        
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
         System.Linq.Expressions.Expression<Func<Entity, bool>> where = x => true;
 
-        List<long?>? accessibleRegions = null;   //Read from TypeAuth
-        List<long?>? accessibleCompanies = null; //Read from TypeAuth
-        List<long?>? accessibleBranches = null;  //Read from TypeAuth
+        var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID());
+        var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID());
+        var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID());
+
+        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<RegionDTO>(x)).ToList();
+        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyDTO>(x)).ToList();
+        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyBranchDTO>(x)).ToList();
 
         where = x =>
             ((accessibleRegions == null || x.RegionID == null) ? true : accessibleRegions.Contains(x.RegionID)) &&
