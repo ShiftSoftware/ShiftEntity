@@ -56,35 +56,6 @@ internal class CosmosDBService<EntityType>
         }
     }
 
-    private PartitionKey? GetPartitionKey2(object item)
-    {
-        string? partitionKeyName = null;
-        
-        var attribute = (SyncPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
-
-        if (attribute is null || attribute?.PropertyName is null)
-            return null;
-
-        partitionKeyName = attribute.PropertyName;
-
-        var property = item.GetType().GetProperty(partitionKeyName);
-        if (property is null)
-            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object for partition key");
-
-        Type propertyType = property.PropertyType;
-        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
-
-        var value = property.GetValue(item);
-
-        if (propertyType == typeof(bool?) || propertyType == typeof(bool))
-            return new PartitionKey(Convert.ToBoolean(value));
-        else if (propertyType == typeof(string))
-            return new PartitionKey(Convert.ToString(value));
-        else
-            return new PartitionKey(Convert.ToDouble(value));
-    }
-
     private (PartitionKey? partitionKey, string? value, PartitionKeyTypes type) GetPartitionKey(object item)
     {
         string? partitionKeyName = null;
