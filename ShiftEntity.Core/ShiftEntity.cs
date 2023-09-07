@@ -35,7 +35,7 @@ public abstract class ShiftEntity<EntityType>
 
     public void UpdateSyncDate()
     {
-        LastSyncDate = DateTime.UtcNow;
+        LastSyncDate = LastSaveDate;
     }
 
     public void MarkAsDeleted()
