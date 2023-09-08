@@ -64,46 +64,45 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             this.dbSet = dbSet;
         }
 
-        public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
+        //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
+        //{
+        //    return GetIQueryable(asOf, includes)
+        //        .FirstOrDefault(x =>
+        //            EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+        //        );
+        //}
+
+        //public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        //{
+        //    List<string> includes = new();
+
+        //    foreach (var i in includeOperations)
+        //    {
+        //        IncludeOperations<EntityType> operation = new();
+        //        i.Invoke(operation);
+        //        includes.Add(operation.Includes);
+        //    }
+
+        //    return Find(id, asOf, includes);
+        //}
+
+        private async Task<EntityType> FindAsync
+            (long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, List<string>? includes = null)
         {
-            return GetIQueryable(asOf, includes)
-                .FirstOrDefault(x =>
-                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-                );
-        }
-
-        public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
-
-            foreach (var i in includeOperations)
-            {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
-            }
-
-            return Find(id, asOf, includes);
-        }
-
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, List<string> includes = null)
-        {
-            var q = GetIQueryable(asOf, includes);
+            var q = GetIQueryable(asOf, includes, where);
 
             return await q.FirstOrDefaultAsync(x =>
                     EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
                 );
         }
 
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null)
+        public virtual async Task<EntityType> FindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null)
         {
-            return await FindAsync(id, asOf, new List<string> { });
+            return await FindAsync(id, asOf, where, new List<string> { });
         }
 
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        public async Task<EntityType> FindAsync
+            (long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
         {
             List<string> includes = new();
 
@@ -114,10 +113,10 @@ namespace ShiftSoftware.ShiftEntity.EFCore
                 includes.Add(operation.Includes);
             }
 
-            return await FindAsync(id, asOf, includes);
+            return await FindAsync(id, asOf, where, includes);
         }
 
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
+        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where)
         {
             IQueryable<EntityType> iQueryable;
 
@@ -132,22 +131,25 @@ namespace ShiftSoftware.ShiftEntity.EFCore
                     iQueryable = iQueryable.Include(include);
             }
 
+            if (where is not null)
+                iQueryable = iQueryable.Where(where);
+            
             return iQueryable;
         }
 
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
+        //private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        //{
+        //    List<string> includes = new();
 
-            foreach (var i in includeOperations)
-            {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
-            };
+        //    foreach (var i in includeOperations)
+        //    {
+        //        IncludeOperations<EntityType> operation = new();
+        //        i.Invoke(operation);
+        //        includes.Add(operation.Includes);
+        //    };
 
-            return GetIQueryable(asOf, includes);
-        }
+        //    return GetIQueryable(asOf, includes);
+        //}
 
         public IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
         {

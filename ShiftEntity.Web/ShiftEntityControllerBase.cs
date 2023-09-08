@@ -71,7 +71,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTime? asOf)
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTime? asOf, System.Linq.Expressions.Expression<Func<Entity, bool>>? where)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -84,7 +84,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), asOf);
+            item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), asOf, where);
         }
         catch (ShiftEntityException ex)
         {
