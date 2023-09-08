@@ -18,6 +18,7 @@ using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
+using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -29,9 +30,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     where ListDTO : ShiftEntityDTOBase
 {
     private readonly ReadWriteDeleteAction action;
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action)
+    
+    private readonly Func<DynamicActionSearch, Expression<Func<Entity, bool>>>? odataDynamicAction;
+
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Func<DynamicActionSearch, Expression<Func<Entity, bool>>>? odataDynamicAction = null)
     {
         this.action = action;
+        this.odataDynamicAction = odataDynamicAction;
     }
 
     [HttpGet]
@@ -44,7 +49,8 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        System.Linq.Expressions.Expression<Func<Entity, bool>> where = x => true;
+        Expression<Func<Entity, bool>> where = 
+            this.odataDynamicAction is null ? (x => true) : this.odataDynamicAction.Invoke(new DynamicActionSearch(typeAuthService));
 
         var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID());
         var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID());
@@ -54,12 +60,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyDTO>(x)).ToList();
         List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyBranchDTO>(x)).ToList();
 
-        where = x =>
+        Expression<Func<Entity, bool>> companyWhere = x =>
             ((accessibleRegions == null || x.RegionID == null) ? true : accessibleRegions.Contains(x.RegionID)) &&
             ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
             ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, where));
+        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, where.AndAlso(companyWhere)));
     }
 
     private bool HasDefaultDataLevelAccess(TypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
@@ -174,7 +180,31 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
     where DTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action) : base(action)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Func<DynamicActionSearch, Expression<Func<Entity, bool>>>? odataDynamicAction = null) : base(action, odataDynamicAction)
     {
+        
+    }
+}
+
+public class DynamicActionSearch
+{
+    private readonly TypeAuthService typeAuthService;
+    public DynamicActionSearch(TypeAuthService typeAuthService)
+    {
+        this.typeAuthService = typeAuthService;
+    }
+
+    public (bool WildCard, List<long> AccessibleIds) GetAccessibleIds<T>(DynamicAction action)
+    {
+        var accessibleItems = this.typeAuthService.GetAccessibleItems(action, x => x == TypeAuth.Core.Access.Read);
+
+        var decodedIds = new List<long>();
+
+        if (!accessibleItems.WildCard)
+        {
+            decodedIds = accessibleItems.AccessibleIds.Select(x => ShiftEntityHashIds.Decode<T>(x)).ToList();
+        }
+
+        return (accessibleItems.WildCard, decodedIds);
     }
 }
