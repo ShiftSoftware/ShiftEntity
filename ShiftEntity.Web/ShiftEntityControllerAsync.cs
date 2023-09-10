@@ -53,7 +53,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
     [HttpPost]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
     {
-        return (await base.PostItem(dto)).ActionResult;
+        return (await base.PostItem(dto, null)).ActionResult;
     }
 
     [HttpPut("{key}")]

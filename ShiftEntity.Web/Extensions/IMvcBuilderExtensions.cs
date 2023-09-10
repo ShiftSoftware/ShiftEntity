@@ -1,4 +1,5 @@
 ﻿using EntityFrameworkCore.Triggered;
+using EntityFrameworkCore.Triggered.Transactions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,7 @@ public static class IMvcBuilderExtensions
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserAndCompanyInfoTrigger<>));
         builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
+        builder.Services.AddTransient(typeof(IBeforeCommitTrigger<>), typeof(BeforeCommitTrigger<>));
 
         return builder;
     }

@@ -23,6 +23,9 @@ public abstract class ShiftEntity<EntityType>
     [NotMapped]
     public bool ReloadAfterSave { get; set; }
 
+    [NotMapped]
+    internal Action<EntityType> BeforeCommitValidation { get; set; }
+
     public ShiftEntity()
     {
 

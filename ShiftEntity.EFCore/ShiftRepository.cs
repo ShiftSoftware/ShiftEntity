@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
+using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
@@ -206,9 +208,32 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             dbSet.Add(entity);
         }
 
-        public virtual async Task SaveChangesAsync()
+        public virtual async Task SaveChangesAsync(bool wrapInTransaction = false)
         {
-            await db.SaveChangesAsync();
+            if (wrapInTransaction)
+            {
+                using var tx = db.Database.BeginTransaction();
+                var triggerService = db.GetService<ITriggerService>(); // ITriggerService is responsible for creating now trigger sessions (see below)
+                var triggerSession = triggerService.CreateSession(db); // A trigger session keeps track of all changes that are relevant within that session. e.g. RaiseAfterSaveTriggers will only raise triggers on changes it discovered within this session (through RaiseBeforeSaveTriggers)
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                    await triggerSession.RaiseBeforeCommitTriggers();
+                    await tx.CommitAsync();
+                    await triggerSession.RaiseAfterCommitTriggers();
+                }
+                catch
+                {
+                    await triggerSession.RaiseBeforeRollbackTriggers();
+                    await tx.RollbackAsync();
+                    await triggerSession.RaiseAfterRollbackTriggers();
+                    throw;
+                }
+
+            }
+            else
+                await db.SaveChangesAsync();
         }
 
         public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null)
