@@ -161,7 +161,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> PutItem(string key, UpdateDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> PutItem(string key, UpdateDTO dto, System.Linq.Expressions.Expression<Func<Entity, bool>>? where)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -187,7 +187,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
             return new(BadRequest(response), null);
         }
 
-        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
+        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), null, where);
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<SelectDTO>
@@ -227,11 +227,11 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
     }
     
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete = false)
+    public async Task<(ActionResult<ShiftEntityResponse<SelectDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete, System.Linq.Expressions.Expression<Func<Entity, bool>>? where)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key));
+        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<SelectDTO>(key), null, where);
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<SelectDTO>

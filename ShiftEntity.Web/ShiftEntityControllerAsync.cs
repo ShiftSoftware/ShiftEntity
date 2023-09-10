@@ -59,13 +59,13 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
     [HttpPut("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
-        return (await base.PutItem(key, dto)).ActionResult;
+        return (await base.PutItem(key, dto, null)).ActionResult;
     }
 
     [HttpDelete("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
-        return (await base.DeleteItem(key, isHardDelete)).ActionResult;
+        return (await base.DeleteItem(key, isHardDelete, null)).ActionResult;
     }
 
     [NonAction]
