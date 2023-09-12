@@ -1,19 +1,19 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.EFCore;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
 internal class DbContextProvider
 {
     private readonly Type dbContextType;
     private readonly DbContextOptions dbOptions;
 
-    public DbContextProvider(Type dbContextType,Action<DbContextOptionsBuilder> dbOptionsBuilder)
+    public DbContextProvider(Type dbContextType, Action<DbContextOptionsBuilder> dbOptionsBuilder)
     {
         DbContextOptionsBuilder optionsBuilder = new();
         dbOptionsBuilder.Invoke(optionsBuilder);
 
-        this.dbOptions = optionsBuilder.Options;
+        dbOptions = optionsBuilder.Options;
         this.dbContextType = dbContextType;
     }
 

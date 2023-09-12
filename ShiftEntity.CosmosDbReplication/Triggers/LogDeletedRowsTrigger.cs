@@ -1,12 +1,12 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType>
     where EntityType : ShiftEntity<EntityType>
@@ -26,12 +26,12 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
         {
             var entityType = context.Entity.GetType();
 
-            var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null)!;
+            var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
 
-            if (syncAttribute != null)
+            if (replicationAttribute != null)
             {
-                var partitionKeyAttribute = (SyncPartitionKeyAttribute)syncAttribute.CosmosDbItemType.GetCustomAttributes(true)
-                    .LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
+                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.CosmosDbItemType.GetCustomAttributes(true)
+                    .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
                 var entity = context.Entity;
                 object partitionKey = null;
@@ -39,7 +39,7 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
 
                 if (partitionKeyAttribute is not null && partitionKeyAttribute?.PropertyName is not null)
                 {
-                    var property = syncAttribute.CosmosDbItemType.GetProperty(partitionKeyAttribute.PropertyName);
+                    var property = replicationAttribute.CosmosDbItemType.GetProperty(partitionKeyAttribute.PropertyName);
                     if (property is null)
                         throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object");
 
@@ -47,9 +47,9 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                     if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
                         throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
 
-                    
 
-                    object item = mapper.Map(entity, typeof(EntityType), syncAttribute.CosmosDbItemType);
+
+                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.CosmosDbItemType);
 
                     partitionKey = property.GetValue(item);
 
@@ -70,13 +70,13 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                 };
 
                 foreach (var dbContext in dbContexts)
-                
+
                     if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
                     {
                         dbContext.Entry(deleteRowLog).State = Microsoft.EntityFrameworkCore.EntityState.Added;
                     }
-                }
             }
+        }
 
         return Task.CompletedTask;
     }

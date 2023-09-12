@@ -5,12 +5,12 @@
 		<LangVersion>latest</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbSync</RootNamespace>
+		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbReplication</RootNamespace>
 		<Authors>Shift Software</Authors>
-		<Product>ShiftSoftware.ShiftEntity.CosmosDbSync</Product>
+		<Product>ShiftSoftware.ShiftEntity.CosmosDbReplication</Product>
 		<Version>0.0.1</Version>
-		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbSync</AssemblyName>
-		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbSync</PackageId>
+		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbReplication</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbReplication</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
@@ -18,7 +18,7 @@
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
-		<Title>ShiftSoftware.ShiftEntity.CosmosDbSync</Title>
+		<Title>ShiftSoftware.ShiftEntity.CosmosDbReplication</Title>
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>

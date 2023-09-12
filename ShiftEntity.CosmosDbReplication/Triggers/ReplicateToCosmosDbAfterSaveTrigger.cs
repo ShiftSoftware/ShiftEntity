@@ -1,28 +1,25 @@
 ﻿using EntityFrameworkCore.Triggered;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
-using System.ComponentModel.Design;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 
-internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
+internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
     where EntityType : ShiftEntity<EntityType>
 {
     private readonly ShiftEntityCosmosDbOptions options;
     private readonly CosmosDBService<EntityType> cosmosDBService;
-    private readonly IShiftEntityPrepareForReplicationAsync<EntityType> prepareForSync;
+    private readonly IShiftEntityPrepareForReplicationAsync<EntityType> prepareForReplication;
 
-    public SyncToCosmosDbAfterSaveTrigger(
+    public ReplicateToCosmosDbAfterSaveTrigger(
         ShiftEntityCosmosDbOptions options,
         CosmosDBService<EntityType> cosmosDBService,
-        IShiftEntityPrepareForReplicationAsync<EntityType> prepareForSync)
+        IShiftEntityPrepareForReplicationAsync<EntityType> prepareForReplication)
     {
         this.options = options;
         this.cosmosDBService = cosmosDBService;
-        this.prepareForSync = prepareForSync;
+        this.prepareForReplication = prepareForReplication;
     }
 
     //Make the trigger excute the last one
@@ -31,37 +28,37 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
     public async Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
         var entityType = context.Entity.GetType();
-        
-        var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null)!;
 
-        if (syncAttribute != null)
+        var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
+
+        if (replicationAttribute != null)
         {
             _ = Task.Run(async () =>
             {
-                var configurations = GetConfigurations(syncAttribute, entityType.Name);
-                var entity = await prepareForSync.PrepareForSyncAsync(context.Entity, ConvertChangeTypeToSyncChangeType(context.ChangeType));
+                var configurations = GetConfigurations(replicationAttribute, entityType.Name);
+                var entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
 
                 if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
-                    _ = cosmosDBService.UpsertAsync(entity, syncAttribute.CosmosDbItemType,
+                    _ = cosmosDBService.UpsertAsync(entity, replicationAttribute.CosmosDbItemType,
                         configurations.collection, configurations.databaseName, configurations.connectionString);
                 else if (context.ChangeType == ChangeType.Deleted)
-                    _ = cosmosDBService.DeleteAsync(entity, syncAttribute.CosmosDbItemType,
+                    _ = cosmosDBService.DeleteAsync(entity, replicationAttribute.CosmosDbItemType,
                         configurations.collection, configurations.databaseName, configurations.connectionString);
             });
         }
     }
 
     private (string collection, string connectionString, string databaseName) GetConfigurations
-        (ShiftEntitySyncAttribute syncAttribute, string entityName)
+        (ShiftEntityReplicationAttribute replicationAttribute, string entityName)
     {
         string container;
         string connectionString;
         string databaseName;
         CosmosDBAccount? account;
 
-        container = syncAttribute.ContainerName ?? entityName;
+        container = replicationAttribute.ContainerName ?? entityName;
 
-        if (syncAttribute.CosmosDbAccountName is null)
+        if (replicationAttribute.CosmosDbAccountName is null)
         {
             if (!options.Accounts.Any(x => x.IsDefault))
                 throw new ArgumentException("No account specified");
@@ -73,29 +70,29 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
         }
         else
         {
-            account = options.Accounts.FirstOrDefault(x => x.Name.ToLower() == syncAttribute.CosmosDbAccountName.ToLower());
+            account = options.Accounts.FirstOrDefault(x => x.Name.ToLower() == replicationAttribute.CosmosDbAccountName.ToLower());
             if (account is null)
-                throw new ArgumentException($"Can not find any account by name '{syncAttribute.CosmosDbAccountName}'");
+                throw new ArgumentException($"Can not find any account by name '{replicationAttribute.CosmosDbAccountName}'");
             else
                 connectionString = account.ConnectionString;
         }
 
-        if (syncAttribute.CosmosDbDatabaseName is null && account.DefaultDatabaseName is null)
+        if (replicationAttribute.CosmosDbDatabaseName is null && account.DefaultDatabaseName is null)
             throw new ArgumentException("No database specified");
         else
-            databaseName = syncAttribute.CosmosDbDatabaseName! ?? account.DefaultDatabaseName!;
+            databaseName = replicationAttribute.CosmosDbDatabaseName! ?? account.DefaultDatabaseName!;
 
         return (container, connectionString, databaseName);
     }
 
-    private SyncChangeType ConvertChangeTypeToSyncChangeType(ChangeType changeType)
+    private ReplicationChangeType ConvertChangeTypeToReplicationChangeType(ChangeType changeType)
     {
         if (changeType == ChangeType.Added)
-            return SyncChangeType.Added;
-        else if(changeType == ChangeType.Deleted)
-            return SyncChangeType.Deleted;
+            return ReplicationChangeType.Added;
+        else if (changeType == ChangeType.Deleted)
+            return ReplicationChangeType.Deleted;
         else if (changeType == ChangeType.Modified)
-            return SyncChangeType.Modified;
+            return ReplicationChangeType.Modified;
         else
             throw new ArgumentException($"Change type {changeType} is not supported");
     }

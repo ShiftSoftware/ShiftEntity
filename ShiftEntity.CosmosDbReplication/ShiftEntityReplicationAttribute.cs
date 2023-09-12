@@ -1,10 +1,9 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync;
 
-
-[AttributeUsage(AttributeTargets.Class, AllowMultiple =false)]
-public class ShiftEntitySyncAttribute : Attribute
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+public class ShiftEntityReplicationAttribute : Attribute
 {
     /// <summary>
     /// There should be an auto-mapper mapping from the entity to this type
@@ -28,10 +27,10 @@ public class ShiftEntitySyncAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public class ShiftEntitySyncAttribute<ItemType> : ShiftEntitySyncAttribute
+public class ShiftEntityReplicationAttribute<ItemType> : ShiftEntityReplicationAttribute
 {
-    public ShiftEntitySyncAttribute()
+    public ShiftEntityReplicationAttribute()
     {
-        base.CosmosDbItemType= typeof(ItemType);
+        CosmosDbItemType = typeof(ItemType);
     }
 }

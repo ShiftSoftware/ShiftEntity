@@ -10,7 +10,7 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
     public long ID { get; internal set; }
     public DateTime CreateDate { get; internal set; }
     public DateTime LastSaveDate { get; internal set; }
-    public DateTime? LastSyncDate { get; internal set; }
+    public DateTime? LastReplicationDate { get; internal set; }
     public long? CreatedByUserID { get; internal set; }
     public long? LastSavedByUserID { get; internal set; }
     public bool IsDeleted { get; internal set; }
@@ -35,9 +35,9 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
         this.ID = id;
     }
 
-    public void UpdateSyncDate()
+    public void UpdateReplicationDate()
     {
-        LastSyncDate = LastSaveDate;
+        LastReplicationDate = LastSaveDate;
     }
 
     public void MarkAsDeleted()
