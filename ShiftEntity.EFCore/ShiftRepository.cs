@@ -13,7 +13,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         where DB : ShiftDbContext
         where EntityType : ShiftEntity<EntityType>
     {
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet, mapper)
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, mapper, shiftRepositoryBuilder)
         {
         }
 
@@ -44,7 +44,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
     {
         public readonly DB db;
         public readonly IMapper mapper;
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet)
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, shiftRepositoryBuilder)
         {
             this.db = db;
             this.mapper = mapper;
@@ -60,10 +60,19 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         public Message ResponseMessage { get; set; }
         public Dictionary<string, object> AdditionalResponseData { get; set; }
 
-        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet)
+        public ShiftRepositoryOptions<EntityType>? ShiftRepositoryOptions { get; set; }
+
+        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
         {
             this.db = db;
             this.dbSet = dbSet;
+
+            if (shiftRepositoryBuilder is not null)
+            {
+                this.ShiftRepositoryOptions = new ShiftRepositoryOptions<EntityType>();
+
+                shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
+            }
         }
 
         //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
@@ -88,9 +97,24 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         //    return Find(id, asOf, includes);
         //}
 
-        private async Task<EntityType> FindAsync
+        private async Task<EntityType> BaseFindAsync
             (long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, List<string>? includes = null)
         {
+            if (includes is null)
+            {
+                if (ShiftRepositoryOptions is not null)
+                {
+                    includes = new();
+
+                    foreach (var i in ShiftRepositoryOptions.IncludeOperations)
+                    {
+                        IncludeOperations<EntityType> operation = new();
+                        i.Invoke(operation);
+                        includes.Add(operation.Includes);
+                    }
+                }
+            }
+
             var q = GetIQueryable(asOf, includes, where);
 
             return await q.FirstOrDefaultAsync(x =>
@@ -100,7 +124,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
 
         public virtual async Task<EntityType> FindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null)
         {
-            return await FindAsync(id, asOf, where, new List<string> { });
+            return await BaseFindAsync(id, asOf, where, null);
         }
 
         public async Task<EntityType> FindAsync
@@ -115,7 +139,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
                 includes.Add(operation.Includes);
             }
 
-            return await FindAsync(id, asOf, where, includes);
+            return await BaseFindAsync(id, asOf, where, includes);
         }
 
         private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where)
