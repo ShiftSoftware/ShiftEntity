@@ -6,10 +6,6 @@ using Microsoft.OData.Edm;
 using ShiftSoftware.ShiftEntity.Model.HashId;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 

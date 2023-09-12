@@ -2,7 +2,7 @@
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftEntityPrepareForSyncAsync<EntityType> where EntityType : ShiftEntity<EntityType>
+public interface IShiftEntityPrepareForReplicationAsync<EntityType> where EntityType : ShiftEntity<EntityType>
 {
     public ValueTask<EntityType> PrepareForSyncAsync(EntityType entity, SyncChangeType changeType)
     {

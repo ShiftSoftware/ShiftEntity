@@ -80,7 +80,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
         if (asOf.HasValue)
             asOf = timeZoneService!.ReadOffsettedDate(asOf.Value);
 
-        Entity item;
+        Entity? item;
 
         try
         {

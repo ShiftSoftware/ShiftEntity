@@ -164,7 +164,7 @@ internal class CosmosDBService<EntityType>
 
                 if(log is not null)
                 {
-                    log.LastSyncDate = DateTime.UtcNow;
+                    log.LastReplicationDate = DateTime.UtcNow;
                     await dbContext.SaveChangesAsync();
                 }
             }

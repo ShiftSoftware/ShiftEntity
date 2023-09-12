@@ -43,10 +43,10 @@ public static class IMvcBuilderExtensions
 
     private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly=null)
     {
-        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly(); // Adjust this as needed
+        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
         // Find all types in the assembly that implement IRepository<>
-        var repositoryTypes = repositoryAssembly.GetTypes()
+        var repositoryTypes = repositoryAssembly!.GetTypes()
             .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)));
 
         // Register each IRepository<> implementation with its corresponding interface

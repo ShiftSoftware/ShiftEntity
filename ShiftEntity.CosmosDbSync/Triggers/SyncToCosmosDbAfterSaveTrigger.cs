@@ -13,12 +13,12 @@ internal class SyncToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<En
 {
     private readonly ShiftEntityCosmosDbOptions options;
     private readonly CosmosDBService<EntityType> cosmosDBService;
-    private readonly IShiftEntityPrepareForSyncAsync<EntityType> prepareForSync;
+    private readonly IShiftEntityPrepareForReplicationAsync<EntityType> prepareForSync;
 
     public SyncToCosmosDbAfterSaveTrigger(
         ShiftEntityCosmosDbOptions options,
         CosmosDBService<EntityType> cosmosDBService,
-        IShiftEntityPrepareForSyncAsync<EntityType> prepareForSync)
+        IShiftEntityPrepareForReplicationAsync<EntityType> prepareForSync)
     {
         this.options = options;
         this.cosmosDBService = cosmosDBService;

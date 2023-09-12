@@ -4,8 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public abstract class ShiftEntity<EntityType>
-    where EntityType : class
+public abstract class ShiftEntity<EntityType> where EntityType : class
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long ID { get; internal set; }
@@ -24,7 +23,7 @@ public abstract class ShiftEntity<EntityType>
     public bool ReloadAfterSave { get; set; }
 
     [NotMapped]
-    internal Action<EntityType> BeforeCommitValidation { get; set; }
+    internal Action<EntityType>? BeforeCommitValidation { get; set; }
 
     public ShiftEntity()
     {

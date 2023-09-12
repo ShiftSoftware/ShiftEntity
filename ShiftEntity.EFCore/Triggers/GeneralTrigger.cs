@@ -3,8 +3,7 @@ using ShiftSoftware.ShiftEntity.Core;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Triggers;
 
-internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity>
-    where Entity : ShiftEntity<Entity>
+internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>
 {
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {

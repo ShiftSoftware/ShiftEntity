@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-
+﻿
 namespace ShiftSoftware.ShiftEntity.Model;
 
 public class ShiftEntityResponse
@@ -27,7 +26,7 @@ public class Message
 
     public string? Body { get; set; }
 
-    public List<Message> SubMessages { get; set; }
+    public List<Message>? SubMessages { get; set; }
 
     public Message() { }
 

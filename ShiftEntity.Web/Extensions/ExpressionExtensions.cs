@@ -16,7 +16,7 @@ public static class ExpressionExtensions
         var rightVisitor = new ReplaceExpressionVisitor(expr2.Parameters[0], parameter);
         var right = rightVisitor.Visit(expr2.Body);
 
-        return Expression.Lambda<Func<T, bool>>(Expression.AndAlso(left, right), parameter);
+        return Expression.Lambda<Func<T, bool>>(Expression.AndAlso(left!, right!), parameter);
     }
 
     public static Expression<Func<T, bool>> Or<T>(this Expression<Func<T, bool>> expr1, Expression<Func<T, bool>> expr2)
@@ -29,7 +29,7 @@ public static class ExpressionExtensions
         var rightVisitor = new ReplaceExpressionVisitor(expr2.Parameters[0], parameter);
         var right = rightVisitor.Visit(expr2.Body);
 
-        return Expression.Lambda<Func<T, bool>>(Expression.Or(left, right), parameter);
+        return Expression.Lambda<Func<T, bool>>(Expression.Or(left!, right!), parameter);
     }
 
     public class ReplaceExpressionVisitor : ExpressionVisitor
@@ -43,7 +43,7 @@ public static class ExpressionExtensions
             _newValue = newValue;
         }
 
-        public override Expression Visit(Expression node)
+        public override Expression? Visit(Expression? node)
         {
             if (node == _oldValue)
                 return _newValue;

@@ -57,8 +57,8 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         internal DbSet<EntityType> dbSet;
         ShiftDbContext db;
 
-        public Message ResponseMessage { get; set; }
-        public Dictionary<string, object> AdditionalResponseData { get; set; }
+        public Message? ResponseMessage { get; set; }
+        public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
         public ShiftRepositoryOptions<EntityType>? ShiftRepositoryOptions { get; set; }
 

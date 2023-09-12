@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
-using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
