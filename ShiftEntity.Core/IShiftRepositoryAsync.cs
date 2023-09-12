@@ -48,7 +48,7 @@ namespace ShiftSoftware.ShiftEntity.Core
         where ListDTO : ShiftEntityDTOBase
     {
         void Add(Entity entity);
-        Task SaveChangesAsync(bool wrapInTransaction = false);
+        Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false);
 
         Message ResponseMessage { get; set; }
         Dictionary<string, object> AdditionalResponseData { get; set; }

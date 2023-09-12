@@ -97,8 +97,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         //    return Find(id, asOf, includes);
         //}
 
-        private async Task<EntityType> BaseFindAsync
-            (long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, List<string>? includes = null)
+        private async Task<EntityType?> BaseFindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, List<string>? includes = null)
         {
             if (includes is null)
             {
@@ -117,9 +116,14 @@ namespace ShiftSoftware.ShiftEntity.EFCore
 
             var q = GetIQueryable(asOf, includes, where);
 
-            return await q.FirstOrDefaultAsync(x =>
-                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-                );
+            var entity = await q.FirstOrDefaultAsync(x =>
+                EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+            );
+
+            if (entity is not null && includes?.Count > 0)
+                entity.ReloadAfterSave = true;
+
+            return entity;
         }
 
         public virtual async Task<EntityType> FindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null)
@@ -229,12 +233,17 @@ namespace ShiftSoftware.ShiftEntity.EFCore
 
         public virtual void Add(EntityType entity)
         {
+            if (this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.IncludeOperations.Count > 0)
+            {
+                entity.ReloadAfterSave = true;
+            }
+
             dbSet.Add(entity);
         }
 
-        public virtual async Task SaveChangesAsync(bool wrapInTransaction = false)
+        public virtual async Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false)
         {
-            if (wrapInTransaction)
+            if (raiseBeforeCommitTriggers)
             {
                 using var tx = db.Database.BeginTransaction();
                 var triggerService = db.GetService<ITriggerService>(); // ITriggerService is responsible for creating now trigger sessions (see below)
