@@ -97,24 +97,23 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         //    return Find(id, asOf, includes);
         //}
 
-        private async Task<EntityType?> BaseFindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, List<string>? includes = null)
+        private async Task<EntityType?> BaseFindAsync(long id, DateTime? asOf = null)
         {
-            if (includes is null)
-            {
-                if (ShiftRepositoryOptions is not null)
-                {
-                    includes = new();
+            List<string>? includes = null;
 
-                    foreach (var i in ShiftRepositoryOptions.IncludeOperations)
-                    {
-                        IncludeOperations<EntityType> operation = new();
-                        i.Invoke(operation);
-                        includes.Add(operation.Includes);
-                    }
+            if (ShiftRepositoryOptions is not null)
+            {
+                includes = new();
+
+                foreach (var i in ShiftRepositoryOptions.IncludeOperations)
+                {
+                    IncludeOperations<EntityType> operation = new();
+                    i.Invoke(operation);
+                    includes.Add(operation.Includes);
                 }
             }
 
-            var q = GetIQueryable(asOf, includes, where);
+            var q = GetIQueryable(asOf, includes);
 
             var entity = await q.FirstOrDefaultAsync(x =>
                 EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
@@ -126,27 +125,12 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return entity;
         }
 
-        public virtual async Task<EntityType> FindAsync(long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null)
+        public async Task<EntityType?> FindAsync(long id, DateTime? asOf = null)
         {
-            return await BaseFindAsync(id, asOf, where, null);
+            return await BaseFindAsync(id, asOf);
         }
 
-        public async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
-
-            foreach (var i in includeOperations)
-            {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
-            }
-
-            return await BaseFindAsync(id, asOf, where, includes);
-        }
-
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes, System.Linq.Expressions.Expression<Func<EntityType, bool>>? where)
+        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes)
         {
             IQueryable<EntityType> iQueryable;
 
@@ -161,9 +145,6 @@ namespace ShiftSoftware.ShiftEntity.EFCore
                     iQueryable = iQueryable.Include(include);
             }
 
-            if (where is not null)
-                iQueryable = iQueryable.Where(where);
-            
             return iQueryable;
         }
 
