@@ -130,7 +130,7 @@ public static class IMvcBuilderExtensions
         //Configre OData
         builder.AddOData(oDataoptions =>
         {
-            oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
+            //oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
 
             if (shiftEntityODataOptions._Count)
                 oDataoptions.Count();
