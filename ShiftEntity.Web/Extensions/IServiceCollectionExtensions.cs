@@ -1,7 +1,5 @@
 ﻿using Microsoft.AspNetCore.OData.Formatter.Serialization;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using ShiftSoftware.ShiftEntity.Web.Services;
 
 namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 

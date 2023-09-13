@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
+using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
@@ -11,7 +13,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         where DB : ShiftDbContext
         where EntityType : ShiftEntity<EntityType>
     {
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet, mapper)
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, mapper, shiftRepositoryBuilder)
         {
         }
 
@@ -42,7 +44,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
     {
         public readonly DB db;
         public readonly IMapper mapper;
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper) : base(db, dbSet)
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, shiftRepositoryBuilder)
         {
             this.db = db;
             this.mapper = mapper;
@@ -55,69 +57,80 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         internal DbSet<EntityType> dbSet;
         ShiftDbContext db;
 
-        public Message ResponseMessage { get; set; }
-        public Dictionary<string, object> AdditionalResponseData { get; set; }
+        public Message? ResponseMessage { get; set; }
+        public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet)
+        public ShiftRepositoryOptions<EntityType>? ShiftRepositoryOptions { get; set; }
+
+        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
         {
             this.db = db;
             this.dbSet = dbSet;
-        }
 
-        public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
-        {
-            return GetIQueryable(asOf, includes)
-                .FirstOrDefault(x =>
-                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-                );
-        }
-
-        public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
-
-            foreach (var i in includeOperations)
+            if (shiftRepositoryBuilder is not null)
             {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
+                this.ShiftRepositoryOptions = new ShiftRepositoryOptions<EntityType>();
+
+                shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
+            }
+        }
+
+        //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
+        //{
+        //    return GetIQueryable(asOf, includes)
+        //        .FirstOrDefault(x =>
+        //            EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+        //        );
+        //}
+
+        //public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        //{
+        //    List<string> includes = new();
+
+        //    foreach (var i in includeOperations)
+        //    {
+        //        IncludeOperations<EntityType> operation = new();
+        //        i.Invoke(operation);
+        //        includes.Add(operation.Includes);
+        //    }
+
+        //    return Find(id, asOf, includes);
+        //}
+
+        private async Task<EntityType?> BaseFindAsync(long id, DateTime? asOf = null)
+        {
+            List<string>? includes = null;
+
+            if (ShiftRepositoryOptions is not null)
+            {
+                includes = new();
+
+                foreach (var i in ShiftRepositoryOptions.IncludeOperations)
+                {
+                    IncludeOperations<EntityType> operation = new();
+                    i.Invoke(operation);
+                    includes.Add(operation.Includes);
+                }
             }
 
-            return Find(id, asOf, includes);
-        }
-
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, List<string> includes = null)
-        {
             var q = GetIQueryable(asOf, includes);
 
-            return await q.FirstOrDefaultAsync(x =>
-                    EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-                );
+            var entity = await q.FirstOrDefaultAsync(x =>
+                EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+            );
+
+            if (entity is not null && includes?.Count > 0)
+                entity.ReloadAfterSave = true;
+
+            return entity;
         }
 
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null)
+        public async Task<EntityType?> FindAsync(long id, DateTime? asOf = null)
         {
-            return await FindAsync(id, asOf, new List<string> { });
+            return await BaseFindAsync(id, asOf);
         }
 
-        public virtual async Task<EntityType> FindAsync
-            (long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
-
-            foreach (var i in includeOperations)
-            {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
-            }
-
-            return await FindAsync(id, asOf, includes);
-        }
-
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string> includes)
+        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes)
         {
             IQueryable<EntityType> iQueryable;
 
@@ -135,19 +148,19 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return iQueryable;
         }
 
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
-        {
-            List<string> includes = new();
+        //private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
+        //{
+        //    List<string> includes = new();
 
-            foreach (var i in includeOperations)
-            {
-                IncludeOperations<EntityType> operation = new();
-                i.Invoke(operation);
-                includes.Add(operation.Includes);
-            };
+        //    foreach (var i in includeOperations)
+        //    {
+        //        IncludeOperations<EntityType> operation = new();
+        //        i.Invoke(operation);
+        //        includes.Add(operation.Includes);
+        //    };
 
-            return GetIQueryable(asOf, includes);
-        }
+        //    return GetIQueryable(asOf, includes);
+        //}
 
         public IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
         {
@@ -201,12 +214,40 @@ namespace ShiftSoftware.ShiftEntity.EFCore
 
         public virtual void Add(EntityType entity)
         {
+            if (this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.IncludeOperations.Count > 0)
+            {
+                entity.ReloadAfterSave = true;
+            }
+
             dbSet.Add(entity);
         }
 
-        public virtual async Task SaveChangesAsync()
+        public virtual async Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false)
         {
-            await db.SaveChangesAsync();
+            if (raiseBeforeCommitTriggers)
+            {
+                using var tx = db.Database.BeginTransaction();
+                var triggerService = db.GetService<ITriggerService>(); // ITriggerService is responsible for creating now trigger sessions (see below)
+                var triggerSession = triggerService.CreateSession(db); // A trigger session keeps track of all changes that are relevant within that session. e.g. RaiseAfterSaveTriggers will only raise triggers on changes it discovered within this session (through RaiseBeforeSaveTriggers)
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                    await triggerSession.RaiseBeforeCommitTriggers();
+                    await tx.CommitAsync();
+                    await triggerSession.RaiseAfterCommitTriggers();
+                }
+                catch
+                {
+                    await triggerSession.RaiseBeforeRollbackTriggers();
+                    await tx.RollbackAsync();
+                    await triggerSession.RaiseAfterRollbackTriggers();
+                    throw;
+                }
+
+            }
+            else
+                await db.SaveChangesAsync();
         }
 
         public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null)

@@ -1,12 +1,6 @@
-﻿using Microsoft.AspNetCore.OData.Formatter;
-using Microsoft.AspNetCore.OData.Formatter.Serialization;
-using Microsoft.OData.Edm;
-using Microsoft.OData;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json.Converters;
 using System;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;

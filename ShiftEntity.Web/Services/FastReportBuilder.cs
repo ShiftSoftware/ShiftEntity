@@ -206,7 +206,7 @@ public class FastReportBuilder
         public string? DataBand { get; set; }
         public List<object> Data { get; set; }
         public int MaxNestingLevel { get; set; }
-        public string FilterExpression { get; set; }
+        public string? FilterExpression { get; set; }
 
         public ReportDataSet(string name, string? dataBand, List<object> data, int maxNestingLevel, string? filterExpression)
         {

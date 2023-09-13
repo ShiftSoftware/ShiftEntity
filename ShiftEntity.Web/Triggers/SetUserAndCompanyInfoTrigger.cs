@@ -2,19 +2,14 @@
 using Microsoft.AspNetCore.Http;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Web.Extensions;
-using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Security.Claims;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Triggers;
 
-internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
-    where Entity : ShiftEntity<Entity>
+internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>
 {
     private readonly IHttpContextAccessor? http;
 

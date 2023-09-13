@@ -1,10 +1,5 @@
 ﻿using Microsoft.OData.Edm;
 using Microsoft.OData.ModelBuilder;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -53,8 +48,8 @@ public class ShiftEntityODataOptions
     }
 
     public ODataConventionModelBuilder ODataConvention { get; private set; }
-    public IEdmModel EdmModel { get;private set; }
-    public string RoutePrefix { get; set; }
+    public IEdmModel? EdmModel { get;private set; }
+    public string? RoutePrefix { get; set; }
 
 
     /// <summary>

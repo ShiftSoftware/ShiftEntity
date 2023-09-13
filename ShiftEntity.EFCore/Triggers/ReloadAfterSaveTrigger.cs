@@ -4,8 +4,7 @@ using ShiftSoftware.ShiftEntity.Core;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Triggers;
 
-internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity>
-    where Entity : ShiftEntity<Entity>
+internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity> where Entity : ShiftEntity<Entity>
 {
     private readonly IShiftEntityFind<Entity>? shiftEntityFind;
     private readonly IMapper mapper;

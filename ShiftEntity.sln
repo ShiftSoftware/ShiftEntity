@@ -11,7 +11,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Model", "ShiftE
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.EFCore", "ShiftEntity.EFCore\ShiftEntity.EFCore.csproj", "{88986FBD-11D9-4B1F-A7A8-3C8DE132E5C1}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.CosmosDbSync", "ShiftEntity.CosmosDbSync\ShiftEntity.CosmosDbSync.csproj", "{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.CosmosDbReplication", "ShiftEntity.CosmosDbReplication\ShiftEntity.CosmosDbReplication.csproj", "{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
