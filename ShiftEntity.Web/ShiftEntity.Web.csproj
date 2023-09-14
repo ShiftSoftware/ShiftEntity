@@ -6,7 +6,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Web</Product>
-		<Version>2023.09.14</Version>
+		<Version>2023.09.14.20</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.Web</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Web</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
@@ -34,8 +34,8 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.20" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.16.0" />
 		<PackageReference Include="Scrutor" Version="4.2.2" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="2023.09.14" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
-		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="2023.09.14" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="2023.09.14.20" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
+		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="2023.09.14.20" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
 	</ItemGroup>
 
 	<ItemGroup>

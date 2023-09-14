@@ -7,7 +7,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.EFCore</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftSoftware.ShiftEntity.EFCore</Product>
-		<Version>2023.09.14</Version>
+		<Version>2023.09.14.20</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.EFCore</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.EFCore</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
