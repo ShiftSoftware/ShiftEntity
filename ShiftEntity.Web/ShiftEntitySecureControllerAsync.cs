@@ -172,9 +172,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
         if (dynamicActionFilterBuilder?.DynamicActionExpressionBuilder is not null)
         {
-            var dynamicActionExpression = dynamicActionFilterBuilder.DynamicActionExpressionBuilder.Invoke(new DynamicActionExpressionBuilder(this.HttpContext.RequestServices, x => x == access, this.GetUserID()));
+            var expressionBuilder = new DynamicActionExpressionBuilder(this.HttpContext.RequestServices, x => x == access, this.GetUserID());
 
-            dynamicActionWhere = dynamicActionWhere is null ? dynamicActionExpression : dynamicActionWhere.Or(dynamicActionExpression);
+            var dynamicActionExpression = dynamicActionFilterBuilder.DynamicActionExpressionBuilder.Invoke(expressionBuilder);
+
+            dynamicActionWhere = dynamicActionWhere is null ? dynamicActionExpression : (expressionBuilder.CombineWithExistingFiltersWith == Operator.Or ? dynamicActionWhere.Or(dynamicActionExpression) : dynamicActionWhere.AndAlso(dynamicActionExpression));
         }
 
         return dynamicActionWhere;
