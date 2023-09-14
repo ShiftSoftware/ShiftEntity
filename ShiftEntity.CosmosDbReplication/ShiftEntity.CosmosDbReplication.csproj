@@ -8,7 +8,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbReplication</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftSoftware.ShiftEntity.CosmosDbReplication</Product>
-		<Version>0.0.1</Version>
+		<Version>2023.09.14</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbReplication</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbReplication</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
