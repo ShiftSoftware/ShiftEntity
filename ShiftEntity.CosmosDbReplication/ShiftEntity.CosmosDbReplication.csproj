@@ -1,4 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\..\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\ShiftFrameworkGlobalSettings.props')" />
 
 	<PropertyGroup>
 		<TargetFramework>net6.0</TargetFramework>
@@ -8,7 +9,7 @@
 		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbReplication</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftSoftware.ShiftEntity.CosmosDbReplication</Product>
-		<Version>2023.09.14.20</Version>
+		<Version>$(ShiftFrameworkVersion)</Version>
 		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbReplication</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbReplication</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>

@@ -13,6 +13,7 @@ steps:
    displayName: 'dotnet pack'
 
  - task: NuGetCommand@2
+   condition: contains(variables['Build.SourceBranch'], 'refs/tags/release') 
    inputs:
     command: 'push'
     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
