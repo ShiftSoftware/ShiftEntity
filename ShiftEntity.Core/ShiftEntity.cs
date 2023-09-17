@@ -44,4 +44,29 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
     {
         this.IsDeleted = true;
     }
+
+    public void MarkAsDeleted(long? userId)
+    {
+        MarkAsDeleted();
+        Update(userId);
+    }
+
+    public EntityType Create(long? userId, long? id = null)
+    {
+        if(id != null)
+            this.ID = id.Value;
+
+        this.CreatedByUserID = userId;
+        this.LastSavedByUserID = userId;
+        this.IsDeleted = false;
+
+        return (this as EntityType)!;
+    }
+
+    public EntityType Update(long? userId)
+    {
+        this.LastSavedByUserID = userId;
+
+        return (this as EntityType)!;
+    }
 }
