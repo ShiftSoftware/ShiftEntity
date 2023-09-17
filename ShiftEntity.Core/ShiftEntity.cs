@@ -45,12 +45,22 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
         this.IsDeleted = true;
     }
 
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
     public void MarkAsDeleted(long? userId)
     {
         MarkAsDeleted();
         Update(userId);
     }
 
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="id"></param>
+    /// <returns></returns>
     public EntityType Create(long? userId, long? id = null)
     {
         if(id != null)
@@ -63,6 +73,11 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
         return (this as EntityType)!;
     }
 
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <returns></returns>
     public EntityType Update(long? userId)
     {
         this.LastSavedByUserID = userId;
