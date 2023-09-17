@@ -1,6 +1,7 @@
 ﻿using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
@@ -39,10 +40,10 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
                 var entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
 
                 if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
-                    _ = cosmosDBService.UpsertAsync(entity, replicationAttribute.CosmosDbItemType,
+                    _ = cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
                         configurations.collection, configurations.databaseName, configurations.connectionString);
                 else if (context.ChangeType == ChangeType.Deleted)
-                    _ = cosmosDBService.DeleteAsync(entity, replicationAttribute.CosmosDbItemType,
+                    _ = cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
                         configurations.collection, configurations.databaseName, configurations.connectionString);
             });
         }
@@ -58,7 +59,7 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
 
         container = replicationAttribute.ContainerName ?? entityName;
 
-        if (replicationAttribute.CosmosDbAccountName is null)
+        if (replicationAttribute.AccountName is null)
         {
             if (!options.Accounts.Any(x => x.IsDefault))
                 throw new ArgumentException("No account specified");
@@ -70,17 +71,17 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         }
         else
         {
-            account = options.Accounts.FirstOrDefault(x => x.Name.ToLower() == replicationAttribute.CosmosDbAccountName.ToLower());
+            account = options.Accounts.FirstOrDefault(x => x.Name.ToLower() == replicationAttribute.AccountName.ToLower());
             if (account is null)
-                throw new ArgumentException($"Can not find any account by name '{replicationAttribute.CosmosDbAccountName}'");
+                throw new ArgumentException($"Can not find any account by name '{replicationAttribute.AccountName}'");
             else
                 connectionString = account.ConnectionString;
         }
 
-        if (replicationAttribute.CosmosDbDatabaseName is null && account.DefaultDatabaseName is null)
+        if (replicationAttribute.DatabaseName is null && account.DefaultDatabaseName is null)
             throw new ArgumentException("No database specified");
         else
-            databaseName = replicationAttribute.CosmosDbDatabaseName! ?? account.DefaultDatabaseName!;
+            databaseName = replicationAttribute.DatabaseName! ?? account.DefaultDatabaseName!;
 
         return (container, connectionString, databaseName);
     }

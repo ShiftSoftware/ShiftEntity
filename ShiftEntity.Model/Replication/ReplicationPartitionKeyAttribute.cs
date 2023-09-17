@@ -1,5 +1,6 @@
-﻿
-namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
+﻿using System;
+
+namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
 /// <summary>
 /// The property name must be the same name of the partition key of cosmos db container, 

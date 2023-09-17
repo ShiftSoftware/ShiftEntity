@@ -3,6 +3,7 @@ using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
@@ -28,12 +29,12 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
 
             if (replicationAttribute != null)
             {
-                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.CosmosDbItemType.GetCustomAttributes(true)
+                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.ItemType.GetCustomAttributes(true)
                     .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
                 if (partitionKeyAttribute is not null && partitionKeyAttribute?.PropertyName is not null)
                 {
-                    var property = replicationAttribute.CosmosDbItemType.GetProperty(partitionKeyAttribute.PropertyName);
+                    var property = replicationAttribute.ItemType.GetProperty(partitionKeyAttribute.PropertyName);
                     if (property is null)
                         throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object for partition key");
 
@@ -44,8 +45,8 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
                     var unmodifiedEntity = context.UnmodifiedEntity;
                     var entity = context.Entity;
 
-                    object unmodifiefItem = mapper.Map(unmodifiedEntity, typeof(EntityType), replicationAttribute.CosmosDbItemType);
-                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.CosmosDbItemType);
+                    object unmodifiefItem = mapper.Map(unmodifiedEntity, typeof(EntityType), replicationAttribute.ItemType);
+                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
 
                     var unmodifiedPartitionKey = property.GetValue(unmodifiefItem);
                     var partitionKey = property.GetValue(item);

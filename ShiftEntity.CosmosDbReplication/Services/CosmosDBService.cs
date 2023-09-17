@@ -3,6 +3,7 @@ using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Dynamic;
 using System.Reflection;
 
