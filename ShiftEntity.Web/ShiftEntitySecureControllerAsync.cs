@@ -18,7 +18,6 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
-using Microsoft.AspNetCore.Http;
 using ShiftSoftware.TypeAuth.Core;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -32,17 +31,17 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 {
     private readonly ReadWriteDeleteAction action;
 
-    private readonly DynamicActionFilterOptions<Entity>? dynamicActionFilterOptions;
+    private readonly DynamicActionFilterBuilder<Entity>? dynamicActionFilterBuilder;
 
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterOptions<Entity>>? dynamicActionFilterOptions = null)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null)
     {
         this.action = action;
 
-        if (dynamicActionFilterOptions is not null)
+        if (dynamicActionFilterBuilder is not null)
         {
-            this.dynamicActionFilterOptions = new();
+            this.dynamicActionFilterBuilder = new();
 
-            dynamicActionFilterOptions.Invoke(this.dynamicActionFilterOptions);
+            dynamicActionFilterBuilder.Invoke(this.dynamicActionFilterBuilder);
         }
     }
 
@@ -69,7 +68,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
             ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
             ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read);
+        var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
 
         var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
 
@@ -100,46 +99,84 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         return true;
     }
 
-    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(TypeAuthService typeAuthService, Access access)
+    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(TypeAuthService typeAuthService, Access access, long? loggedInUserId)
     {
-        //var dynamicAccess = true;
-
-        //if (dynamicActionFilterOptions?.SimpleDynamicActionFilter is not null)
-        //    dynamicAccess = typeAuthService.Can(dynamicActionFilterOptions.SimpleDynamicActionFilter, access, key);
-
-        //if (dynamicActionFilterOptions?.SingleDynamicActionResolver is not null)
-        //{
-        //    if (dynamicActionFilterOptions?.SimpleDynamicActionFilter is not null)
-        //        dynamicAccess = dynamicAccess || dynamicActionFilterOptions.SingleDynamicActionResolver(new DynamicActionResolver(this.HttpContext))(entity);
-        //    else
-        //        dynamicAccess = dynamicActionFilterOptions!.SingleDynamicActionResolver(new DynamicActionResolver(this.HttpContext))(entity);
-        //}
-
-        //return dynamicAccess;
-
         Expression<Func<Entity, bool>>? dynamicActionWhere = null;
 
-        if (dynamicActionFilterOptions?.SimpleDynamicActionFilter is not null)
+        if (dynamicActionFilterBuilder?.DynamicActionFilters is not null)
         {
-            var accessibleIds = typeAuthService.GetAccessibleItems(dynamicActionFilterOptions.SimpleDynamicActionFilter, x => x == access);
-
-            if (accessibleIds.WildCard)
+            foreach (var filter in dynamicActionFilterBuilder.DynamicActionFilters)
             {
-                dynamicActionWhere = x => true;
-            }
-            else
-            {
-                var ids = accessibleIds.AccessibleIds.Select(ShiftEntityHashIds.Decode<ListDTO>).ToList();
+                var accessibleIds = typeAuthService.GetAccessibleItems(filter.DynamicAction, x => x == access);
 
-                dynamicActionWhere = x => ids.Contains(x.ID);
+                Expression<Func<Entity, bool>>? filterWhereExpression;
+
+                if (accessibleIds.WildCard)
+                {
+                    filterWhereExpression = x => true;
+                }
+                else
+                {
+                    Type genericListType = typeof(List<>).MakeGenericType(filter.TKey);
+
+                    var ids = Activator.CreateInstance(genericListType)!;
+
+                    if (filter.TKey == typeof(long))
+                    {
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : long.Parse(x)).ToList();
+                    }
+                    else if (filter.TKey == typeof(long?))
+                    {
+                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : long.Parse(x))).ToList();
+                    }
+                    else if (filter.TKey == typeof(int))
+                    {
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int) ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x)).ToList();
+                    }
+                    else if (filter.TKey == typeof(int?))
+                    {
+                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x))).ToList();
+                    }
+
+                    var containsMethod = ids.GetType().GetMethod(nameof(List<object>.Contains))!;
+
+                    var idsExpression = Expression.Constant(ids, ids.GetType());
+
+                    // Build expression for ids.Contains(x.ID)
+                    var containsCall = Expression.Call(idsExpression, containsMethod, filter.InvocationExpression);
+
+                    Expression finalContains = !filter.ShowNulls ? containsCall : Expression.OrElse(containsCall, Expression.Equal(filter.InvocationExpression, Expression.Constant(null)));
+
+                    if (filter.CreatedByUserIDKeySelector is not null)
+                    {
+                        // Build expression for x.CreatedByUserID == loggedInUserId
+                        var createdByKeySelectorInvoke = Expression.Invoke(filter.CreatedByUserIDKeySelector, filter.ParameterExpression);
+                        //var createdByUserIdProperty = Expression.Property(parameter, nameof(ShiftEntity<Entity>.CreatedByUserID));
+
+                        var loggedInUserIdExpression = Expression.Constant(loggedInUserId, typeof(long?));
+
+                        var equalityComparison = Expression.Equal(createdByKeySelectorInvoke, loggedInUserIdExpression);
+
+                        // Combine the two expressions with an OR condition
+                        var orElse = Expression.OrElse(finalContains, equalityComparison);
+
+                        filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(orElse, filter.ParameterExpression); // x => ids.Contains(x.ID) || x.CreatedByUserID == loggedInUserId;
+                    }
+                    else
+                        filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(finalContains, filter.ParameterExpression); // x => ids.Contains(x.ID);
+                }
+
+                dynamicActionWhere = dynamicActionWhere is null ? filterWhereExpression : dynamicActionWhere.AndAlso(filterWhereExpression);
             }
         }
 
-        if (dynamicActionFilterOptions?.ListingDynamicActionResolver is not null)
+        if (dynamicActionFilterBuilder?.DynamicActionExpressionBuilder is not null)
         {
-            var listingWhere = dynamicActionFilterOptions.ListingDynamicActionResolver.Invoke(new DynamicActionResolver(this.HttpContext));
+            var expressionBuilder = new DynamicActionExpressionBuilder(this.HttpContext.RequestServices, x => x == access, this.GetUserID());
 
-            dynamicActionWhere = dynamicActionWhere is null ? listingWhere : dynamicActionWhere.Or(listingWhere);
+            var dynamicActionExpression = dynamicActionFilterBuilder.DynamicActionExpressionBuilder.Invoke(expressionBuilder);
+
+            dynamicActionWhere = dynamicActionWhere is null ? dynamicActionExpression : (expressionBuilder.CombineWithExistingFiltersWith == Operator.Or ? dynamicActionWhere.Or(dynamicActionExpression) : dynamicActionWhere.AndAlso(dynamicActionExpression));
         }
 
         return dynamicActionWhere;
@@ -154,10 +191,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanRead(action))
             return Forbid();
 
-        var result = (await base.GetSingleItem(key, asOf, GetDynamicActionExpression(typeAuthService, Access.Read)));
+        var result = await base.GetSingleItem(key, asOf, entity =>
+        {
+            var expression = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
 
-        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Read))
-            return Forbid();
+            if (expression is not null)
+            {
+                if (!expression.Compile()(entity))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
+
+            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Read))
+                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+        });
 
         return result.ActionResult;
     }
@@ -184,10 +230,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        var result = await base.PostItem(dto);
+        var result = await base.PostItem(dto, entity =>
+        {
+            var expression = GetDynamicActionExpression(typeAuthService, Access.Write, this.HttpContext.GetUserID());
 
-        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
-            return Forbid();
+            if (expression is not null)
+            {
+                if (!expression.Compile()(entity))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
+
+            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
+                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+        });
 
         return result.ActionResult;
     }
@@ -201,10 +256,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanWrite(action))
             return Forbid();
 
-        var result = await base.PutItem(key, dto);
+        var result = await base.PutItem(key, dto, entity =>
+        {
+            var expression = GetDynamicActionExpression(typeAuthService, Access.Write, this.HttpContext.GetUserID());
 
-        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Write))
-            return Forbid();
+            if (expression is not null)
+            {
+                if (!expression.Compile()(entity))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
+
+            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
+                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+        });
 
         return result.ActionResult;
     }
@@ -218,10 +282,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         if (!typeAuthService.CanDelete(action))
             return Forbid();
 
-        var result = await base.DeleteItem(key, isHardDelete);
+        var result = await base.DeleteItem(key, isHardDelete, entity =>
+        {
+            var expression = GetDynamicActionExpression(typeAuthService, Access.Delete, this.HttpContext.GetUserID());
 
-        if (!HasDefaultDataLevelAccess(typeAuthService, result.Entity, TypeAuth.Core.Access.Delete))
-            return Forbid();
+            if (expression is not null)
+            {
+                if (!expression.Compile()(entity))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
+
+            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Delete))
+                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+        });
 
         return result.ActionResult;
     }
@@ -234,55 +307,8 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> 
     where DTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterOptions<Entity>>? dynamicActionFilterOptions = null) : base(action, dynamicActionFilterOptions)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null) : base(action, dynamicActionFilterBuilder)
     {
 
     }
-}
-
-public class DynamicActionResolver
-{
-    private readonly HttpContext httpContext;
-    private readonly IServiceProvider serviceProvider;
-    public DynamicActionResolver(HttpContext httpContext)
-    {
-        this.httpContext = httpContext;
-        this.serviceProvider = httpContext.RequestServices;
-    }
-    public (bool WildCard, List<long> AccessibleIds) GetAccessibleIds<T>(DynamicAction action, string? selfId = null)
-    {
-        var accessibleItems = this.serviceProvider.GetRequiredService<TypeAuthService>().GetAccessibleItems(action, x => x == TypeAuth.Core.Access.Read, selfId);
-
-        var decodedIds = new List<long>();
-
-        if (!accessibleItems.WildCard)
-        {
-            decodedIds = accessibleItems.AccessibleIds.Select(x => ShiftEntityHashIds.Decode<T>(x)).ToList();
-        }
-
-        return (accessibleItems.WildCard, decodedIds);
-    }
-
-    public T? GetRequiredService<T>()
-    {
-        return this.serviceProvider.GetRequiredService<T>();
-    }
-
-    public long? GetUserId()
-    {
-        return httpContext.GetUserID();
-    }
-}
-
-public class DynamicActionFilterOptions<Entity>
-{
-    /// <summary>
-    /// Pass a Dynamic Action and the controller will use it on the ID field of the entity. If you need advanced filtering, use <typeparamref name="ListingDynamicActionResolver"/> instead
-    /// </summary>
-    public DynamicAction? SimpleDynamicActionFilter { get; set; }
-
-    /// <summary>
-    /// Used for more advanced filtering where filtering the ID by <typeparamref name="SimpleDynamicActionFilter"/> is not sufficient.
-    /// </summary>
-    public Func<DynamicActionResolver, Expression<Func<Entity, bool>>>? ListingDynamicActionResolver { get; set; }
 }

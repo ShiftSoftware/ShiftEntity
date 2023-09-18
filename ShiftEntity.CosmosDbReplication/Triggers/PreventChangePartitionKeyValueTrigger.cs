@@ -1,16 +1,11 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Triggers;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTrigger<EntityType>, ITriggerPriority
     where EntityType : ShiftEntity<EntityType>
@@ -26,20 +21,20 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
 
     public Task BeforeSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
-        if (context.ChangeType==ChangeType.Modified)
+        if (context.ChangeType == ChangeType.Modified)
         {
             var entityType = context.Entity.GetType();
 
-            var syncAttribute = (ShiftEntitySyncAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntitySyncAttribute != null)!;
+            var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
 
-            if (syncAttribute != null)
+            if (replicationAttribute != null)
             {
-                var partitionKeyAttribute = (SyncPartitionKeyAttribute)syncAttribute.CosmosDbItemType.GetCustomAttributes(true)
-                    .LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
+                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.ItemType.GetCustomAttributes(true)
+                    .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
                 if (partitionKeyAttribute is not null && partitionKeyAttribute?.PropertyName is not null)
                 {
-                    var property = syncAttribute.CosmosDbItemType.GetProperty(partitionKeyAttribute.PropertyName);
+                    var property = replicationAttribute.ItemType.GetProperty(partitionKeyAttribute.PropertyName);
                     if (property is null)
                         throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object for partition key");
 
@@ -50,13 +45,13 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
                     var unmodifiedEntity = context.UnmodifiedEntity;
                     var entity = context.Entity;
 
-                    object unmodifiefItem = mapper.Map(unmodifiedEntity, typeof(EntityType), syncAttribute.CosmosDbItemType);
-                    object item = mapper.Map(entity, typeof(EntityType), syncAttribute.CosmosDbItemType);
+                    object unmodifiefItem = mapper.Map(unmodifiedEntity, typeof(EntityType), replicationAttribute.ItemType);
+                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
 
                     var unmodifiedPartitionKey = property.GetValue(unmodifiefItem);
                     var partitionKey = property.GetValue(item);
 
-                    if (!object.Equals(unmodifiedPartitionKey, partitionKey))
+                    if (!Equals(unmodifiedPartitionKey, partitionKey))
                         throw new PartitionKeyChangedException("The value of partition key is changed");
                 }
             }

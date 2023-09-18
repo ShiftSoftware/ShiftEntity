@@ -1,4 +1,5 @@
 ﻿using EntityFrameworkCore.Triggered;
+using EntityFrameworkCore.Triggered.Transactions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData;
 using Microsoft.EntityFrameworkCore;
@@ -35,16 +36,17 @@ public static class IMvcBuilderExtensions
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserAndCompanyInfoTrigger<>));
         builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
+        builder.Services.AddTransient(typeof(IBeforeCommitTrigger<>), typeof(BeforeCommitTrigger<>));
 
         return builder;
     }
 
     private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly=null)
     {
-        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly(); // Adjust this as needed
+        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
         // Find all types in the assembly that implement IRepository<>
-        var repositoryTypes = repositoryAssembly.GetTypes()
+        var repositoryTypes = repositoryAssembly!.GetTypes()
             .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)));
 
         // Register each IRepository<> implementation with its corresponding interface
@@ -130,7 +132,7 @@ public static class IMvcBuilderExtensions
         //Configre OData
         builder.AddOData(oDataoptions =>
         {
-            oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
+            //oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
 
             if (shiftEntityODataOptions._Count)
                 oDataoptions.Count();

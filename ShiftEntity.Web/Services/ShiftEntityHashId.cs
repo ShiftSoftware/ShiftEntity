@@ -8,12 +8,22 @@ public static class ShiftEntityHashIds
 {
     public static long Decode<T>(string key)
     {
+        return Decode(key, typeof(T));
+    }
+
+    public static string Encode<T>(long id)
+    {
+        return Encode(id, typeof(T));
+    }
+
+    public static long Decode(string key, System.Type type)
+    {
         //This is actually redundant, The same logic exists in hashId.Decode.
         //But this is here for performance and to avoid the overhead of creating a new hashId object.
         if (!HashId.Enabled)
             return long.Parse(key);
 
-        var hashId = typeof(T).GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
+        var hashId = type.GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
                 .Cast<JsonHashIdConverterAttribute>()
                 .FirstOrDefault()?.Hashids;
 
@@ -23,14 +33,14 @@ public static class ShiftEntityHashIds
         return hashId.Decode(key);
     }
 
-    public static string Encode<T>(long id)
+    public static string Encode(long id, System.Type type)
     {
         //This is actually redundant, The same logic exists in hashId.Decode.
         //But this is here for performance and to avoid the overhead of creating a new hashId object.
         if (!HashId.Enabled)
             return id.ToString();
 
-        var hashId = typeof(T).GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
+        var hashId = type.GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
                 .Cast<JsonHashIdConverterAttribute>()
                 .FirstOrDefault()?.Hashids;
 

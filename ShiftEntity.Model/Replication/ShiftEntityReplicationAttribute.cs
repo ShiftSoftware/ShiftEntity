@@ -1,15 +1,15 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using System;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync;
+namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
 
-[AttributeUsage(AttributeTargets.Class, AllowMultiple =false)]
-public class ShiftEntitySyncAttribute : Attribute
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+public class ShiftEntityReplicationAttribute : Attribute
 {
     /// <summary>
     /// There should be an auto-mapper mapping from the entity to this type
     /// </summary>
-    public Type CosmosDbItemType { get; set; }
+    public Type ItemType { get; set; }
 
     /// <summary>
     /// If null, gets the entity name
@@ -19,19 +19,19 @@ public class ShiftEntitySyncAttribute : Attribute
     /// <summary>
     /// If null, gets the default database of the selected account
     /// </summary>
-    public string? CosmosDbDatabaseName { get; set; }
+    public string? DatabaseName { get; set; }
 
     /// <summary>
     /// Name of the account that registerd, if null gets the default account
     /// </summary>
-    public string? CosmosDbAccountName { get; set; }
+    public string? AccountName { get; set; }
 }
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public class ShiftEntitySyncAttribute<ItemType> : ShiftEntitySyncAttribute
+public class ShiftEntityReplicationAttribute<ItemType> : ShiftEntityReplicationAttribute
 {
-    public ShiftEntitySyncAttribute()
+    public ShiftEntityReplicationAttribute()
     {
-        base.CosmosDbItemType= typeof(ItemType);
+        base.ItemType = typeof(ItemType);
     }
 }

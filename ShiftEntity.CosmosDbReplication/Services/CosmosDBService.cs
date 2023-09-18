@@ -1,15 +1,13 @@
 ﻿using AutoMapper;
-using AutoMapper.Configuration.Annotations;
 using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Exceptions;
-using ShiftSoftware.ShiftEntity.CosmosDbSync.Extensions;
-using System.Data.Common;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Dynamic;
 using System.Reflection;
-using System.Xml.Schema;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbSync.Services;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
 internal class CosmosDBService<EntityType>
     where EntityType : ShiftEntity<EntityType>
@@ -17,7 +15,7 @@ internal class CosmosDBService<EntityType>
     private readonly IMapper mapper;
     private readonly IEnumerable<DbContextProvider> dbContextProviders;
 
-    public CosmosDBService(IMapper mapper,IEnumerable<DbContextProvider> dbContextProviders)
+    public CosmosDBService(IMapper mapper, IEnumerable<DbContextProvider> dbContextProviders)
     {
         this.mapper = mapper;
         this.dbContextProviders = dbContextProviders;
@@ -47,12 +45,12 @@ internal class CosmosDBService<EntityType>
             response = await container.UpsertItemAsync(item);
         else
             response = await container.UpsertItemAsync(item, partitionKey.partitionKey.Value);
-            
+
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateLastSyncDateAsync(entity);
+            await UpdateLastReplicationDateAsync(entity);
         }
     }
 
@@ -60,7 +58,7 @@ internal class CosmosDBService<EntityType>
     {
         string? partitionKeyName = null;
 
-        var attribute = (SyncPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as SyncPartitionKeyAttribute != null)!;
+        var attribute = (ReplicationPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
         if (attribute is null || attribute?.PropertyName is null)
             return (null, null, PartitionKeyTypes.None);
@@ -96,7 +94,7 @@ internal class CosmosDBService<EntityType>
         }
     }
 
-    private async Task UpdateLastSyncDateAsync(EntityType entity)
+    private async Task UpdateLastReplicationDateAsync(EntityType entity)
     {
         foreach (var provider in dbContextProviders)
         {
@@ -104,9 +102,9 @@ internal class CosmosDBService<EntityType>
 
             if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
             {
-                entity.UpdateSyncDate();
+                entity.UpdateReplicationDate();
                 dbContext.Attach(entity);
-                dbContext.Entry(entity).Property(x => x.LastSyncDate).IsModified = true;
+                dbContext.Entry(entity).Property(x => x.LastReplicationDate).IsModified = true;
                 await dbContext.SaveChangesAsync();
             }
         }
@@ -139,12 +137,12 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateDeleteRowLogLastSynncDateAsync(entity, partitionKey.value, partitionKey.type);
+            await UpdateDeleteRowLogLastReplicationDateAsync(entity, partitionKey.value, partitionKey.type);
         }
     }
 
-    private async Task UpdateDeleteRowLogLastSynncDateAsync(EntityType entity, 
-        string? partitionKeyValue, 
+    private async Task UpdateDeleteRowLogLastReplicationDateAsync(EntityType entity,
+        string? partitionKeyValue,
         PartitionKeyTypes partitionKeyType)
     {
         var entityName = entity.GetType().Name;
@@ -162,9 +160,9 @@ internal class CosmosDBService<EntityType>
                     x.EntityName == entityName
                 );
 
-                if(log is not null)
+                if (log is not null)
                 {
-                    log.LastSyncDate = DateTime.UtcNow;
+                    log.LastReplicationDate = DateTime.UtcNow;
                     await dbContext.SaveChangesAsync();
                 }
             }

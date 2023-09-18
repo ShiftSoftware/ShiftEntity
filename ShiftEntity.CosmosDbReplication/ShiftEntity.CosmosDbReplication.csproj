@@ -1,16 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\..\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\ShiftFrameworkGlobalSettings.props')" />
 
 	<PropertyGroup>
 		<TargetFramework>net6.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbSync</RootNamespace>
+		<RootNamespace>ShiftSoftware.ShiftEntity.CosmosDbReplication</RootNamespace>
 		<Authors>Shift Software</Authors>
-		<Product>ShiftSoftware.ShiftEntity.CosmosDbSync</Product>
-		<Version>0.0.1</Version>
-		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbSync</AssemblyName>
-		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbSync</PackageId>
+		<Product>ShiftSoftware.ShiftEntity.CosmosDbReplication</Product>
+		<Version>$(ShiftFrameworkVersion)</Version>
+		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbReplication</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbReplication</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
@@ -18,7 +19,7 @@
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
-		<Title>ShiftSoftware.ShiftEntity.CosmosDbSync</Title>
+		<Title>ShiftSoftware.ShiftEntity.CosmosDbReplication</Title>
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>
@@ -33,7 +34,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Include="Images\icon.png" />
+		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 	</ItemGroup>
 

@@ -6,10 +6,10 @@ pool:
 
 steps:
 
- - script: dotnet build ShiftEntity.Model --configuration release
+ - script: dotnet build ShiftEntity.CosmosDbReplication --configuration release
    displayName: 'dotnet build'
 
- - script: dotnet pack ShiftEntity.Model --configuration release --output $(Build.ArtifactStagingDirectory)
+ - script: dotnet pack ShiftEntity.CosmosDbReplication --configuration release --output $(Build.ArtifactStagingDirectory)
    displayName: 'dotnet pack'
 
  - task: NuGetCommand@2

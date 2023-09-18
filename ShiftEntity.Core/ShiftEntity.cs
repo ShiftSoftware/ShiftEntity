@@ -4,14 +4,13 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public abstract class ShiftEntity<EntityType>
-    where EntityType : class
+public abstract class ShiftEntity<EntityType> where EntityType : class
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long ID { get; internal set; }
     public DateTime CreateDate { get; internal set; }
     public DateTime LastSaveDate { get; internal set; }
-    public DateTime? LastSyncDate { get; internal set; }
+    public DateTime? LastReplicationDate { get; internal set; }
     public long? CreatedByUserID { get; internal set; }
     public long? LastSavedByUserID { get; internal set; }
     public bool IsDeleted { get; internal set; }
@@ -23,6 +22,9 @@ public abstract class ShiftEntity<EntityType>
     [NotMapped]
     public bool ReloadAfterSave { get; set; }
 
+    [NotMapped]
+    internal Action<EntityType>? BeforeCommitValidation { get; set; }
+
     public ShiftEntity()
     {
 
@@ -33,13 +35,53 @@ public abstract class ShiftEntity<EntityType>
         this.ID = id;
     }
 
-    public void UpdateSyncDate()
+    public void UpdateReplicationDate()
     {
-        LastSyncDate = LastSaveDate;
+        LastReplicationDate = LastSaveDate;
     }
 
     public void MarkAsDeleted()
     {
         this.IsDeleted = true;
+    }
+
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
+    public void MarkAsDeleted(long? userId)
+    {
+        MarkAsDeleted();
+        Update(userId);
+    }
+
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="id"></param>
+    /// <returns></returns>
+    public EntityType Create(long? userId, long? id = null)
+    {
+        if(id != null)
+            this.ID = id.Value;
+
+        this.CreatedByUserID = userId;
+        this.LastSavedByUserID = userId;
+        this.IsDeleted = false;
+
+        return (this as EntityType)!;
+    }
+
+    /// <summary>
+    /// This is useful in non asp.net core projects
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <returns></returns>
+    public EntityType Update(long? userId)
+    {
+        this.LastSavedByUserID = userId;
+
+        return (this as EntityType)!;
     }
 }
