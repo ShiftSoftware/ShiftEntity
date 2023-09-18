@@ -1,0 +1,19 @@
+<VSTemplate Version="3.0.0" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" Type="Item">
+  <TemplateData>
+	<DefaultName>Shift.cs</DefaultName>
+	<Name>Shift Entity List DTO</Name>
+	<TemplateID>ShiftSoftware.ShiftEntity.ListDTO</TemplateID>
+	<TemplateGroupID>ShiftSoftware</TemplateGroupID>
+	<Description>Basic Shift Entity List DTO Class</Description>
+	<ProjectType>CSharp</ProjectType>
+	<NumberOfParentCategoriesToRollUp>1</NumberOfParentCategoriesToRollUp>
+	<LanguageTag>CSharp</LanguageTag>
+	<SortOrder>3</SortOrder>
+	<Icon>__TemplateIcon.png</Icon>
+  </TemplateData>
+  <TemplateContent>
+	  <References >
+	  </References>
+	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$ListDTO.cs" ReplaceParameters="true">ShiftEntityListDTO.cs.cs</ProjectItem>
+  </TemplateContent>
+</VSTemplate>

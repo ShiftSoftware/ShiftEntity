@@ -1,0 +1,19 @@
+<VSTemplate Version="3.0.0" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" Type="Item">
+  <TemplateData>
+	<DefaultName>Shift.cs</DefaultName>
+	<Name>Shift Entity</Name>
+	<TemplateID>ShiftSoftware.ShiftEntity.Entity</TemplateID>
+	<TemplateGroupID>ShiftSoftware</TemplateGroupID>
+	<Description>Basic Shift Entity Class</Description>
+	<ProjectType>CSharp</ProjectType>
+	<NumberOfParentCategoriesToRollUp>1</NumberOfParentCategoriesToRollUp>
+	<LanguageTag>CSharp</LanguageTag>
+	<SortOrder>4</SortOrder>
+	<Icon>__TemplateIcon.png</Icon>
+  </TemplateData>
+  <TemplateContent>
+	  <References >
+	  </References>
+	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$.cs" ReplaceParameters="true">ShiftEntity.cs</ProjectItem>
+  </TemplateContent>
+</VSTemplate>

@@ -18,3 +18,6 @@
 /ShiftEntity.EFCore/obj
 /ShiftEntity.CosmosDbSync/obj
 /ShiftEntity.CosmosDbSync/bin
+/ShiftEntity.EFCore.SqlServer/bin/Debug/net6.0
+/ShiftEntity.EFCore.SqlServer/obj/Debug/net6.0
+/ShiftEntity.EFCore.SqlServer/obj
