@@ -6,14 +6,11 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 internal class DbContextProvider
 {
     private readonly Type dbContextType;
-    private readonly DbContextOptions dbOptions;
+    private readonly object dbOptions;
 
-    public DbContextProvider(Type dbContextType, Action<DbContextOptionsBuilder> dbOptionsBuilder)
+    public DbContextProvider(Type dbContextType, object  dbOptions)
     {
-        DbContextOptionsBuilder optionsBuilder = new();
-        dbOptionsBuilder.Invoke(optionsBuilder);
-
-        dbOptions = optionsBuilder.Options;
+        this.dbOptions = dbOptions;
         this.dbContextType = dbContextType;
     }
 

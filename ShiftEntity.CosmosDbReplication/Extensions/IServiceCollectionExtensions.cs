@@ -11,7 +11,7 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
 
 public static class IServiceCollectionExtensions
 {
-    private static IServiceCollection RegisterIShiftEntityPrepareForReplication(this IServiceCollection service, Assembly? repositoriesAssembly = null)
+    private static IServiceCollection RegisterIShiftEntityPrepareForReplication(this IServiceCollection services, Assembly? repositoriesAssembly = null)
     {
         Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
@@ -24,11 +24,11 @@ public static class IServiceCollectionExtensions
             var interfaceType = repositoryType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>));
             if (interfaceType != null)
             {
-                service.AddScoped(interfaceType, repositoryType);
+                services.AddScoped(interfaceType, repositoryType);
             }
         }
 
-        return service;
+        return services;
     }
 
     public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
@@ -74,7 +74,7 @@ public static class IServiceCollectionExtensions
         {
             services.AddScoped(typeof(ShiftDbContext), x => x.GetRequiredService(shiftDbContext.ShiftDbContextType));
             services.AddSingleton(
-                new DbContextProvider(shiftDbContext.ShiftDbContextType, shiftDbContext.DbContextOptionsBuilder));
+                new DbContextProvider(shiftDbContext.ShiftDbContextType, shiftDbContext.DbContextOptions));
         }
 
         return services;
