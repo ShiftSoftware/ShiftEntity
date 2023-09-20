@@ -226,7 +226,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, C
             if (item.LastSaveDate != dto.LastSaveDate)
             {
                 throw new ShiftEntityException(
-                    new Message("Conflict", "This item has been modified by another process since you last loaded it. Please reload the item and try again."),
+                    new Message("Conflict", $"The submitted item version ({dto.LastSaveDate}) has been modified by another process. It does not match the loaded item version ({item.LastSaveDate}). Please reload the item and try again."),
                     (int)HttpStatusCode.Conflict
                 );
             }
