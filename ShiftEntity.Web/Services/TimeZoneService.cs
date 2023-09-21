@@ -23,12 +23,16 @@ public class TimeZoneService
 
     public DateTime ReadOffsettedDate(DateTimeOffset dateTime)
     {
-        return new DateTime(dateTime.Subtract(this.GetTimeZoneOffset()).Ticks, DateTimeKind.Utc);
+        return dateTime.UtcDateTime;
+
+        //return new DateTime(dateTime.Subtract(this.GetTimeZoneOffset()).UtcTicks, DateTimeKind.Utc);
     }
 
     public DateTime WriteOffsettedDate(DateTimeOffset dateTime)
     {
-        return new DateTime(dateTime.Add(this.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified);
+        return dateTime.Add(this.GetTimeZoneOffset()).DateTime;
+
+        //return new DateTime(dateTime.Add(this.GetTimeZoneOffset()).Ticks, DateTimeKind.Unspecified);
     }
 }
 
