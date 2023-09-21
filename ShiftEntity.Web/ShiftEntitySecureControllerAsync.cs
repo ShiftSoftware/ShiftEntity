@@ -50,7 +50,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [Authorize]
     public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -76,7 +76,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, finalWhere));
     }
 
-    private bool HasDefaultDataLevelAccess(TypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
+    private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
         if (entity?.RegionID is not null)
         {
@@ -99,7 +99,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         return true;
     }
 
-    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(TypeAuthService typeAuthService, Access access, long? loggedInUserId)
+    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(ITypeAuthService typeAuthService, Access access, long? loggedInUserId)
     {
         Expression<Func<Entity, bool>>? dynamicActionWhere = null;
 
@@ -186,7 +186,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [HttpGet("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -213,7 +213,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [EnableQueryWithHashIdConverter]
     public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -225,7 +225,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [HttpPost]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -251,7 +251,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [HttpPut("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -277,7 +277,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [HttpDelete("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanDelete(action))
             return Forbid();
