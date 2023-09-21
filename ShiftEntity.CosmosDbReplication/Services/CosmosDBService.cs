@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
@@ -105,7 +106,7 @@ internal class CosmosDBService<EntityType>
                 entity.UpdateReplicationDate();
                 dbContext.Attach(entity);
                 dbContext.Entry(entity).Property(x => x.LastReplicationDate).IsModified = true;
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesWithoutTriggersAsync();
             }
         }
     }
@@ -163,7 +164,7 @@ internal class CosmosDBService<EntityType>
                 if (log is not null)
                 {
                     log.LastReplicationDate = DateTime.UtcNow;
-                    await dbContext.SaveChangesAsync();
+                    await dbContext.SaveChangesWithoutTriggersAsync();
                 }
             }
         }
