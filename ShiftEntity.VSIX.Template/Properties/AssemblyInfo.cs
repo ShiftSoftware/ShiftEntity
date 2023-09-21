@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("ShiftEntity.VSIX.Template")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("Shift Entity Item Templates")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("Shift Software")]
 [assembly: AssemblyProduct("ShiftEntity.VSIX.Template")]
-[assembly: AssemblyCopyright("")]
+[assembly: AssemblyCopyright("2023")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 

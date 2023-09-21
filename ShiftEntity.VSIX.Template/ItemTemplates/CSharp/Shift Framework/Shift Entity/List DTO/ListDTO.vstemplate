@@ -14,6 +14,6 @@
   <TemplateContent>
 	  <References >
 	  </References>
-	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$ListDTO.cs" ReplaceParameters="true">ShiftEntityListDTO.cs.cs</ProjectItem>
+	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$ListDTO.cs" ReplaceParameters="true">ShiftEntityListDTO.cs</ProjectItem>
   </TemplateContent>
 </VSTemplate>

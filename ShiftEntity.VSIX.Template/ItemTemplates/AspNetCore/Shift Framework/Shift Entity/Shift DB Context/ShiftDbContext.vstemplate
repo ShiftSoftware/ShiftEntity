@@ -1,19 +1,25 @@
 <VSTemplate Version="3.0.0" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" Type="Item">
   <TemplateData>
 	<DefaultName>Shift.cs</DefaultName>
-	<Name>Shift Repository</Name>
+	<Name>Shift DB Context</Name>
 	<TemplateID>ShiftSoftware.ShiftEntity.DBContext</TemplateID>
 	<TemplateGroupID>ShiftSoftware</TemplateGroupID>
-	<Description>Basic Shift Repository</Description>
+	<Description>Basic Shift DB Context</Description>
 	<ProjectType>CSharp</ProjectType>
 	<NumberOfParentCategoriesToRollUp>1</NumberOfParentCategoriesToRollUp>
 	<LanguageTag>CSharp</LanguageTag>
-	<SortOrder>1</SortOrder>
+	<AppliesTo>DotNetCoreRazor</AppliesTo>
+	<SortOrder>6</SortOrder>
 	<Icon>__TemplateIcon.png</Icon>
   </TemplateData>
   <TemplateContent>
 	  <References >
+		  <Reference>
+			  <Assembly >
+				  Microsoft.EntityFrameworkCore
+			  </Assembly>
+		  </Reference>
 	  </References>
-	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$Repository.cs" ReplaceParameters="true">ShiftRepository.cs</ProjectItem>
+	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$.cs" ReplaceParameters="true">ShiftDbContext.cs</ProjectItem>
   </TemplateContent>
 </VSTemplate>

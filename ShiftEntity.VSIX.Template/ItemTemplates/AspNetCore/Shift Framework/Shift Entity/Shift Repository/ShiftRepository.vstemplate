@@ -1,19 +1,20 @@
 <VSTemplate Version="3.0.0" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" Type="Item">
   <TemplateData>
 	<DefaultName>Shift.cs</DefaultName>
-	<Name>Shift Entity Secure Controller Async</Name>
-	<TemplateID>ShiftSoftware.ShiftEntity.SecureControllerAsync</TemplateID>
+	<Name>Shift Repository</Name>
+	<TemplateID>ShiftSoftware.ShiftEntity.DBContext</TemplateID>
 	<TemplateGroupID>ShiftSoftware</TemplateGroupID>
-	<Description>Basic Shift Entity Secure Controller Async</Description>
+	<Description>Basic Shift Repository</Description>
 	<ProjectType>CSharp</ProjectType>
 	<NumberOfParentCategoriesToRollUp>1</NumberOfParentCategoriesToRollUp>
 	<LanguageTag>CSharp</LanguageTag>
-	<SortOrder>4</SortOrder>
+	<SortOrder>7</SortOrder>
+	<AppliesTo>DotNetCoreRazor</AppliesTo>
 	<Icon>__TemplateIcon.png</Icon>
   </TemplateData>
   <TemplateContent>
 	  <References >
 	  </References>
-	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$Controller.cs" ReplaceParameters="true">ShiftEntitySecureControllerAsync.cs</ProjectItem>
+	<ProjectItem SubType=""  ItemType="Code" TargetFileName="$fileinputname$Repository.cs" ReplaceParameters="true">ShiftRepository.cs</ProjectItem>
   </TemplateContent>
 </VSTemplate>

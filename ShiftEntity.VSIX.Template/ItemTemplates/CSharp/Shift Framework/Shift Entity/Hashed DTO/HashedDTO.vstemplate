@@ -1,7 +1,7 @@
 <VSTemplate Version="3.0.0" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" Type="Item">
   <TemplateData>
 	<DefaultName>Shift.cs</DefaultName>
-	<Name>Hashed Shift Entity DTO</Name>
+	<Name>Shift Entity DTO Hashed</Name>
 	<TemplateID>ShiftSoftware.ShiftEntity.HashedDTO</TemplateID>
 	<TemplateGroupID>ShiftSoftware</TemplateGroupID>
 	<Description>Shift Entity DTO Class with Hashed ID property</Description>
