@@ -14,6 +14,6 @@ steps:
   inputs:
     connectedServiceName: 'marketplaceServiceConnection'
     vsixFile: '$(Build.ArtifactStagingDirectory)/bin/Release/ShiftEntity.VSIX.Template.vsix'
-    manifestFile: '$(Build.ArtifactStagingDirectory)/bin/Release/manifest.json'
+    manifestFile: '$(Build.ArtifactStagingDirectory)/bin/Release/publishManifest.json'
     publisherId: 'shiftsoftware'
 
