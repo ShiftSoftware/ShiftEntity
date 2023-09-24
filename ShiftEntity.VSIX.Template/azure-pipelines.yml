@@ -5,20 +5,15 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-# - task: NuGetCommand@2
-#   inputs:
-#     command: 'restore'
-#     restoreSolution: '**/ShiftEntity.VSIX.Template.csproj'
-#     feedsToUse: 'select'
 
 - task: DownloadGitHubNugetPackage@1
   inputs:
     packageName: 'Microsoft.VSSDK.BuildTools'
-    version: '17.7.2192'
+    version: '17.7.2196'
 - task: DownloadGitHubNugetPackage@1
   inputs:
     packageName: 'Microsoft.VisualStudio.SDK'
-    version: '17.0.32112.339'
+    version: '17.7.37357'
 
 - script: dotnet build ShiftEntity.VSIX.Template --configuration release
   displayName: 'dotnet build'
