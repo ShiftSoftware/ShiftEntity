@@ -6,6 +6,12 @@ pool:
 
 steps:
 
+- task: TfxInstaller@4
+  displayName: 'Use Node CLI for Azure DevOps'
+  inputs:
+    version: '0.x'
+    checkLatest: true
+    
 - task: PackageAzureDevOpsExtension@4
   displayName: 'Package Extension: $(Build.SourcesDirectory)'
   name: 'packageStep'
