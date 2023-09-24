@@ -1,0 +1,20 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+
+- script: dotnet build ShiftEntity.VSIX.Template --configuration release
+  displayName: 'dotnet build'
+
+- task: PublishAzureDevOpsExtension@4
+  displayName: "Publish Extension to Visual Studio Marketplace"
+  inputs:
+    connectTo: 'VsTeam'
+    connectedServiceName: 'marketplaceServiceConnection'
+    fileType: 'vsix'
+    vsixFile: '*.vsix'
+    extensionVisibility: 'public'
+
