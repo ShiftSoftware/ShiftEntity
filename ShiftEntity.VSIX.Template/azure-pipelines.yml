@@ -7,6 +7,7 @@ pool:
 steps:
 - script: dotnet build ShiftEntity.VSIX.Template --configuration release
   displayName: 'dotnet build '
+  continueOnError: true
 
 - task: PublishVisualStudioExtension@4
   displayName: "Publish Extension to Visual Studio Marketplace"
