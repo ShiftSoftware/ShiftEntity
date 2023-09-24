@@ -10,8 +10,7 @@ steps:
   inputs:
     command: 'restore'
     projects: '**/ShiftEntity.VSIX.Template.csproj'
-    feedsToUse: 'config'
-    externalFeedCredentials: 'NuGet.org'
+    feedsToUse: 'select'
 
 - script: dotnet build ShiftEntity.VSIX.Template --configuration release
   displayName: 'dotnet build'
