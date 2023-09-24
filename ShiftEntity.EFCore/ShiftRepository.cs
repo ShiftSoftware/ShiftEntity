@@ -9,6 +9,16 @@ using Thinktecture;
 
 namespace ShiftSoftware.ShiftEntity.EFCore
 {
+    public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> : ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO, ViewAndUpsertDTO>
+        where DB : ShiftDbContext
+        where EntityType : ShiftEntity<EntityType>, new()
+        where ListDTO : ShiftEntityDTOBase
+    {
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, mapper, shiftRepositoryBuilder)
+        {
+        }
+    }
+
     public class ShiftRepository<DB, EntityType, ListDTO, ViewDTO, UpsertDTO> : 
         ShiftRepository<DB, EntityType>, IShiftRepositoryAsync<EntityType, ListDTO, ViewDTO, UpsertDTO>
         where DB : ShiftDbContext
