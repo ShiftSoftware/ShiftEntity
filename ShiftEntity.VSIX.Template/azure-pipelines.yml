@@ -6,14 +6,12 @@ pool:
 
 steps:
 
-- task: DownloadGitHubNugetPackage@1
+- task: DotNetCoreCLI@2
   inputs:
-    packageName: 'Microsoft.VSSDK.BuildTools'
-    version: '17.7.2196'
-- task: DownloadGitHubNugetPackage@1
-  inputs:
-    packageName: 'Microsoft.VisualStudio.SDK'
-    version: '17.7.37357'
+    command: 'restore'
+    projects: '**/ShiftEntity.VSIX.Template.csproj'
+    feedsToUse: 'config'
+    externalFeedCredentials: 'NuGet.org'
 
 - script: dotnet build ShiftEntity.VSIX.Template --configuration release
   displayName: 'dotnet build'
