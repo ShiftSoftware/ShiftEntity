@@ -5,6 +5,11 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: '**/ShiftEntity.VSIX.Template.csproj'
+    feedsToUse: 'select'
 
 - script: dotnet build ShiftEntity.VSIX.Template --configuration release
   displayName: 'dotnet build'
