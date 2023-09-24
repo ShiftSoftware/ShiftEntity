@@ -5,7 +5,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-- script: dotnet build ShiftEntity.VSIX.Template --configuration release --output $(Build.SourceDirectory)/bin/Release
+- script: dotnet build ShiftEntity.VSIX.Template --configuration release --output $(Build.SourcesDirectory)/bin/Release
   displayName: 'dotnet build '
   continueOnError: true
 
@@ -13,7 +13,7 @@ steps:
   displayName: "Publish Extension to Visual Studio Marketplace"
   inputs:
     connectedServiceName: 'marketplaceServiceConnection'
-    vsixFile: '$(Build.SourceDirectory)/bin/Release/ShiftEntity.VSIX.Template.vsix'
-    manifestFile: '$(Build.SourceDirectory)/bin/Release/publishManifest.json'
+    vsixFile: '$(Build.SourcesDirectory)/bin/Release/ShiftEntity.VSIX.Template.vsix'
+    manifestFile: '$(Build.SourcesDirectory)/bin/Release/publishManifest.json'
     publisherId: 'shiftsoftware'
 
