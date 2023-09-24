@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="ShiftEntity.VSIX.Template.75faaf7e-c1af-40ec-ac10-8d022af74bfd" Version="1.0" Language="en-US" Publisher="Shift Software" />
+        <Identity Id="ShiftEntity.VSIX.Template.75faaf7e-c1af-40ec-ac10-8d022af74bfd" Version="1.1" Language="en-US" Publisher="Shift Software" />
         <DisplayName>Shift Framework: Shift Entity Item Templates</DisplayName>
         <Description xml:space="preserve">Shift Framework's Shift Entity Item Templates</Description>
         <License>LICENSE.txt</License>
