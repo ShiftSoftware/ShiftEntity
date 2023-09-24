@@ -13,7 +13,7 @@ steps:
   displayName: "Publish Extension to Visual Studio Marketplace"
   inputs:
     connectedServiceName: 'marketplaceServiceConnection'
-    vsixFile: '$(Build.SourcesDirectory)/bin/Release/ShiftEntity.VSIX.Template.vsix'
-    manifestFile: '$(Build.SourcesDirectory)/bin/Release/publishManifest.json'
+    vsixFile: '$(Build.SourcesDirectory)/ShiftEntity.VSIX.Template/bin/Release/ShiftEntity.VSIX.Template.vsix'
+    manifestFile: '$(Build.SourcesDirectory)/ShiftEntity.VSIX.Template/bin/Release/publishManifest.json'
     publisherId: 'shiftsoftware'
 
