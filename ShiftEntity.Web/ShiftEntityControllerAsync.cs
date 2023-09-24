@@ -84,12 +84,3 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
         return new List<ListDTO>();
     }
 }
-
-public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO> :
-    ShiftEntityControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
-    where Entity : ShiftEntity<Entity>, new()
-    where DTO : ShiftEntityDTO
-    where ListDTO : ShiftEntityDTOBase
-{
-}

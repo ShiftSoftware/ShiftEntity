@@ -6,17 +6,17 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftRepositoryAsync<Entity, ListDTO, DTO> :
-    IShiftRepositoryAsync<Entity, ListDTO, DTO, DTO, DTO>
+public interface IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, UpsertDTO> :
+    IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, UpsertDTO, UpsertDTO>
     where Entity : ShiftEntity<Entity>, new()
     where ListDTO : ShiftEntityDTOBase
 {
-    ValueTask<Entity> IShiftEntityCreateAsync<Entity, DTO>.CreateAsync(DTO dto, long? userId)
+    ValueTask<Entity> IShiftEntityCreateAsync<Entity, UpsertDTO>.CreateAsync(UpsertDTO dto, long? userId)
     {
         return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId);
     }
 
-    ValueTask<Entity> IShiftEntityUpdateAsync<Entity, DTO>.UpdateAsync(Entity entity, DTO dto, long? userId)
+    ValueTask<Entity> IShiftEntityUpdateAsync<Entity, UpsertDTO>.UpdateAsync(Entity entity, UpsertDTO dto, long? userId)
     {
         return UpsertAsync(entity, dto, ActionTypes.Update, userId);
     }
@@ -30,17 +30,17 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, DTO> :
     /// <param name="userId"></param>
     /// <returns></returns>
     /// <exception cref="NotImplementedException"></exception>
-    public ValueTask<Entity> UpsertAsync(Entity entity, DTO dto, ActionTypes actionType, long? userId = null)
+    public ValueTask<Entity> UpsertAsync(Entity entity, UpsertDTO dto, ActionTypes actionType, long? userId = null)
     {
         throw new NotImplementedException();
     }
 }
 
-public interface IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
+public interface IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO> :
     IShiftOdataList<Entity, ListDTO>,
     IShiftEntityFind<Entity>,
     IShiftEntityPrepareForReplicationAsync<Entity>,
-    IShiftEntityViewAsync<Entity, SelectDTO>,
+    IShiftEntityViewAsync<Entity, ViewDTO>,
     IShiftEntityCreateAsync<Entity, CreateDTO>,
     IShiftEntityUpdateAsync<Entity, UpdateDTO>,
     IShiftEntityDeleteAsync<Entity>
@@ -50,6 +50,6 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, Up
     void Add(Entity entity);
     Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false);
 
-    Message ResponseMessage { get; set; }
-    Dictionary<string, object> AdditionalResponseData { get; set; }
+    Message? ResponseMessage { get; set; }
+    Dictionary<string, object>? AdditionalResponseData { get; set; }
 }

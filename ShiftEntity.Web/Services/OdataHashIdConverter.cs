@@ -56,10 +56,10 @@ public class EnableQueryWithHashIdConverter : EnableQueryAttribute
 
         var queryStringValue = actionExecutingContext.HttpContext.Request.QueryString.Value;
 
-        if (!string.IsNullOrWhiteSpace(queryStringValue))
-        {
-            var originalUrl = actionExecutingContext.HttpContext.Request.GetEncodedUrl();
+        var originalUrl = actionExecutingContext.HttpContext.Request.GetEncodedUrl();
 
+        if (!string.IsNullOrWhiteSpace(queryStringValue) && queryStringValue.Contains("$filter") && !actionExecutingContext.HttpContext.Request.Path.Value!.EndsWith("revisions"))
+        {
             //This will remove the base url all the way to the odata prefix
             //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
             ///ToDo?$filter=ID eq 'MQaLZ'

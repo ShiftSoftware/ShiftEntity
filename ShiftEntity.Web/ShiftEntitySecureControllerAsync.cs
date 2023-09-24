@@ -22,9 +22,9 @@ using ShiftSoftware.TypeAuth.Core;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
-public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
-    ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
+public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO> :
+    ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO>
     where Entity : ShiftEntity<Entity>
     where UpdateDTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
@@ -50,7 +50,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [Authorize]
     public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -76,7 +76,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, finalWhere));
     }
 
-    private bool HasDefaultDataLevelAccess(TypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
+    private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
         if (entity?.RegionID is not null)
         {
@@ -99,7 +99,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
         return true;
     }
 
-    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(TypeAuthService typeAuthService, Access access, long? loggedInUserId)
+    private Expression<Func<Entity, bool>>? GetDynamicActionExpression(ITypeAuthService typeAuthService, Access access, long? loggedInUserId)
     {
         Expression<Func<Entity, bool>>? dynamicActionWhere = null;
 
@@ -131,7 +131,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
                     }
                     else if (filter.TKey == typeof(int))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int) ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x)).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int)ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x)).ToList();
                     }
                     else if (filter.TKey == typeof(int?))
                     {
@@ -184,9 +184,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
     [Authorize]
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -213,7 +213,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     [EnableQueryWithHashIdConverter]
     public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanRead(action))
             return Forbid();
@@ -223,9 +223,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
     [Authorize]
     [HttpPost]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Post([FromBody] CreateDTO dto)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -249,9 +249,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
     [Authorize]
     [HttpPut("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Put(string key, [FromBody] UpdateDTO dto)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanWrite(action))
             return Forbid();
@@ -275,9 +275,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
 
     [Authorize]
     [HttpDelete("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<TypeAuthService>();
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (!typeAuthService.CanDelete(action))
             return Forbid();
@@ -300,11 +300,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, Selec
     }
 }
 
-public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO> :
-    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, DTO, DTO, DTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, DTO>
+public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, UpsertDTO> :
+    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, UpsertDTO, UpsertDTO, UpsertDTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, UpsertDTO, UpsertDTO>
     where Entity : ShiftEntity<Entity>, new()
-    where DTO : ShiftEntityDTO
+    where UpsertDTO : ShiftEntityDTO
     where ListDTO : ShiftEntityDTOBase
 {
     public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null) : base(action, dynamicActionFilterBuilder)
