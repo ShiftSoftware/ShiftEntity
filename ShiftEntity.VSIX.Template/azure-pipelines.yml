@@ -11,13 +11,14 @@ steps:
   inputs:
     version: '0.x'
     checkLatest: true
-    
+
 - task: PackageAzureDevOpsExtension@4
   displayName: 'Package Extension: $(Build.SourcesDirectory)'
   name: 'packageStep'
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
-    outputPath: '$(Build.ArtifactStagingDirectory)\vsts-developer-tools-build-tasks.vsix'
+    patternManifest: 
+    outputPath: '$(Build.ArtifactStagingDirectory)\ShiftEntity.VSIX.Template.vsix'
     updateTasksVersion: false
     extensionVisibility: 'public'
 
