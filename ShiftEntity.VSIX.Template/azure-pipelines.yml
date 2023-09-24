@@ -18,7 +18,7 @@ steps:
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
     patternManifest: 
-    outputPath: '$(Build.ArtifactStagingDirectory)\ShiftEntity.VSIX.Template.vsix'
+    outputPath: '$(Build.ArtifactStagingDirectory)/ShiftEntity.VSIX.Template.vsix'
     updateTasksVersion: false
     extensionVisibility: 'public'
 
