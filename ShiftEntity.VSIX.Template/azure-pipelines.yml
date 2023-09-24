@@ -4,30 +4,20 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
 steps:
 
-- task: TfxInstaller@4
-  displayName: 'Use Node CLI for Azure DevOps'
-  inputs:
-    version: '0.x'
-    checkLatest: true
+- script: dotnet build ShiftEntity.VSIX.Template --configuration release
+  displayName: 'dotnet build '
 
-- task: PackageAzureDevOpsExtension@4
-  displayName: 'Package Extension: $(Build.SourcesDirectory)'
-  name: 'packageStep'
-  inputs:
-    rootFolder: '$(Build.SourcesDirectory)'
-    patternManifest: 
-    outputPath: '$(Build.ArtifactStagingDirectory)/ShiftEntity.VSIX.Template.vsix'
-    updateTasksVersion: false
-    extensionVisibility: 'public'
-
-- task: PublishAzureDevOpsExtension@4
+- task: PublishVisualStudioExtension@4
   displayName: "Publish Extension to Visual Studio Marketplace"
   inputs:
-    connectTo: 'VsTeam'
     connectedServiceName: 'marketplaceServiceConnection'
-    fileType: 'vsix'
-    vsixFile: '*.vsix'
-    extensionVisibility: 'public'
+    vsixFile: '$(Build.ArtifactStagingDirectory)/bin/Release/ShiftEntity.VSIX.Template.vsix'
+    manifestFile: 'manifest.json'
+    publisherId: 'shiftsoftware'
 
