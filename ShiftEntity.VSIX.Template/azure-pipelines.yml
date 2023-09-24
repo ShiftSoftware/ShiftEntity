@@ -6,14 +6,14 @@ pool:
 
 steps:
 
-- task: DotNetCoreCLI@2
+- task: PackageAzureDevOpsExtension@4
+  displayName: 'Package Extension: $(Build.SourcesDirectory)'
+  name: 'packageStep'
   inputs:
-    command: 'restore'
-    projects: '**/ShiftEntity.VSIX.Template.csproj'
-    feedsToUse: 'select'
-
-- script: dotnet build ShiftEntity.VSIX.Template --configuration release
-  displayName: 'dotnet build'
+    rootFolder: '$(Build.SourcesDirectory)'
+    outputPath: '$(Build.ArtifactStagingDirectory)\vsts-developer-tools-build-tasks.vsix'
+    updateTasksVersion: false
+    extensionVisibility: 'public'
 
 - task: PublishAzureDevOpsExtension@4
   displayName: "Publish Extension to Visual Studio Marketplace"
