@@ -4,10 +4,6 @@ parameters:
     type: string
     displayName: "project to build"
     
-
-pool:
-  vmImage: ubuntu-latest
-
 steps:
 
  - script: dotnet build ${{ parameters.project }} --configuration release
