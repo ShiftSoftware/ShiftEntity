@@ -1,7 +1,8 @@
 parameters:
-- name: "project"
-  default: ""
-  type: string
+  - name: "project"
+    default: ""
+    type: string
+    displayName: "project to build"
     
 
 pool:
