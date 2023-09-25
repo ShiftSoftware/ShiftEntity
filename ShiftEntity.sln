@@ -15,6 +15,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.CosmosDbReplica
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.VSIX.Template", "ShiftEntity.VSIX.Template\ShiftEntity.VSIX.Template.csproj", "{5A03F7EE-29E6-44E2-8A81-FF472974571E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Pipeline Template", "Pipeline Template", "{0C219210-F2B6-4B96-BD02-C38229A07531}"
+	ProjectSection(SolutionItems) = preProject
+		Pipeline Template\pipeline-template.yml = Pipeline Template\pipeline-template.yml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
