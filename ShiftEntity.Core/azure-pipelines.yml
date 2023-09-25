@@ -3,19 +3,28 @@ trigger:
 
 pool:
   vmImage: ubuntu-latest
+  
+extends:
+  template: ../Pipeline Template/pipeline-template.yml
+  parameters:
+   project: ShiftEntity.Core
+   
+    
+# pool:
+#   vmImage: ubuntu-latest
 
-steps:
+# steps:
 
- - script: dotnet build ShiftEntity.Core --configuration release
-   displayName: 'dotnet build'
+#  - script: dotnet build ShiftEntity.Core --configuration release
+#    displayName: 'dotnet build'
 
- - script: dotnet pack ShiftEntity.Core --configuration release --output $(Build.ArtifactStagingDirectory)
-   displayName: 'dotnet pack'
+#  - script: dotnet pack ShiftEntity.Core --configuration release --output $(Build.ArtifactStagingDirectory)
+#    displayName: 'dotnet pack'
 
- - task: NuGetCommand@2
-   condition: contains(variables['Build.SourceBranch'], 'refs/tags/release') 
-   inputs:
-    command: 'push'
-    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
-    nuGetFeedType: 'external'
-    publishFeedCredentials: 'NuGet.org'
+#  - task: NuGetCommand@2
+#    condition: contains(variables['Build.SourceBranch'], 'refs/tags/release') 
+#    inputs:
+#     command: 'push'
+#     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+#     nuGetFeedType: 'external'
+#     publishFeedCredentials: 'NuGet.org'
