@@ -112,6 +112,8 @@ public static class IMvcBuilderExtensions
                 };
             });
 
+        shiftEntityOptions.AutoMapperAssemblies.Add(typeof(EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
+
         builder.Services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
 
         return builder;
