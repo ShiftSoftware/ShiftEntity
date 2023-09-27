@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Web.Services;
 
 namespace ShiftSoftware.ShiftEntity.Web.Extensions;
@@ -9,6 +10,16 @@ public static class MvcJsonOptionsExtensions
     {
         options.JsonSerializerOptions.Converters.Add(new JsonDateTimeConverter(timeZoneService));
         options.JsonSerializerOptions.Converters.Add(new JsonTimeConverter(timeZoneService));
+
+        return options;
+    }
+
+    public static JsonOptions RegisterAzureStorageServiceConverters(this JsonOptions options, AzureStorageService? azureStorageService)
+    {
+        if (azureStorageService == null)
+            return options;
+
+        options.JsonSerializerOptions.Converters.Add(new JsonShiftFileDTOConverter(azureStorageService));
 
         return options;
     }

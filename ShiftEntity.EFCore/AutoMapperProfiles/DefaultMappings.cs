@@ -1,5 +1,6 @@
 ﻿
 using AutoMapper;
+using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System.Text.Json;
 
@@ -20,8 +21,6 @@ internal class ListOfShiftFileDtoToString : ITypeConverter<List<ShiftFileDTO>?, 
     {
         if (source == null)
             return null;
-
-        source.ForEach(x => x.Url = null);
 
         return JsonSerializer.Serialize(source);
     }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.EFCore.Triggers;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
@@ -69,7 +70,8 @@ public static class IMvcBuilderExtensions
             .AddLocalization()
             .TryAddSingleton(shiftEntityOptions);
         builder.Services.TryAddSingleton<TimeZoneService>();
-        
+        builder.Services.TryAddSingleton<AzureStorageService>();
+
         builder.RegisterTriggers();
         builder.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
 
@@ -91,6 +93,7 @@ public static class IMvcBuilderExtensions
             {
                 o.JsonSerializerOptions.PropertyNamingPolicy = null;
                 o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
+                o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
             };
 
             return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);
