@@ -2,6 +2,9 @@
 
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
+///////
+/////// Heads Up: There's a custom JSON converter for this class in ShiftSoftware.ShiftEntity.Core.Services.Make sure you to check the converter when you're updating this
+//////
 public class ShiftFileDTO
 {
     public string? Name { get; set; }
