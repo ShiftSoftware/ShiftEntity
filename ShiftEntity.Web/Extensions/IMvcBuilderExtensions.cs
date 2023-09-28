@@ -70,7 +70,9 @@ public static class IMvcBuilderExtensions
             .AddLocalization()
             .TryAddSingleton(shiftEntityOptions);
         builder.Services.TryAddSingleton<TimeZoneService>();
-        builder.Services.TryAddSingleton<AzureStorageService>();
+
+        if (shiftEntityOptions.azureStorageOptions.Count > 0)
+            builder.Services.TryAddSingleton(new AzureStorageService(shiftEntityOptions.azureStorageOptions));
 
         builder.RegisterTriggers();
         builder.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
@@ -93,7 +95,9 @@ public static class IMvcBuilderExtensions
             {
                 o.JsonSerializerOptions.PropertyNamingPolicy = null;
                 o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
-                o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
+
+                if (shiftEntityOptions.azureStorageOptions.Count > 0)
+                    o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
             };
 
             return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);

@@ -1,35 +1,91 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
-using Microsoft.Extensions.Configuration;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core.Services;
 
+public class AzureStorageOption
+{
+    public string ConnectionString { get; set; } = default!;
+    public string AccountName { get; set; } = default!;
+    public string AccountKey { get; set; } = default!;
+    public string EndPoint { get; set; } = default!;
+    public string DefaultContainerName { get; set; } = default!;
+    public bool IsDefaultAccount { get; set; }
+}
+
 public class AzureStorageService
 {
-    internal BlobServiceClient blobServiceClient;
+    internal Dictionary<string, BlobServiceClient> blobServiceClients = new Dictionary<string, BlobServiceClient>();
 
-    internal string? containerName;
-    internal string? accountName;
-    internal string? endPoint;
-    internal string? accountKey;
+    internal Dictionary<string, AzureStorageOption> azureStorageAccounts = new Dictionary<string, AzureStorageOption>();
 
-    IConfiguration configuration;
+    internal string defaultAccountName = default!;
 
-    public AzureStorageService(IConfiguration configuration)
+    public AzureStorageService(List<AzureStorageOption> azureStorageOption)
     {
-        this.configuration = configuration;
+        foreach (var item in azureStorageOption)
+        {
+            blobServiceClients[item.AccountName] = new BlobServiceClient(item.ConnectionString);
 
-        this.blobServiceClient = blobServiceClient = new BlobServiceClient(this.configuration.GetValue<string>("AzureStorage:ConnectionString"));
+            azureStorageAccounts[item.AccountName] = item;
+        }
 
-        this.containerName = this.configuration.GetValue<string>("AzureStorage:ContainerName");
-        this.accountName = this.configuration.GetValue<string>("AzureStorage:AccountName");
-        this.endPoint = this.configuration.GetValue<string>("AzureStorage:EndPoint");
-        this.accountKey = this.configuration.GetValue<string>("AzureStorage:AccountKey");
+        if (azureStorageOption.Count() == 1)
+            this.defaultAccountName = azureStorageOption[0].AccountName;
+
+        else if (azureStorageOption.Count() > 1)
+        {
+            var defaultAccountNames = azureStorageOption.Where(x => x.IsDefaultAccount).Select(x => x.AccountName);
+
+            if (defaultAccountNames.Count() == 1)
+                this.defaultAccountName = defaultAccountNames.First();
+            else if (defaultAccountNames.Count() == 0)
+                throw new Exception("No Azure Storage Account is marked as default.");
+            else if (defaultAccountNames.Count() > 1)
+                throw new Exception("Only 1 (ONE) Azure Storage Account should be marked as default.");
+        }
+    }
+
+    public async Task<string?> UploadAsync(string fileName, Stream stream, string? containerName = null, string? accountName = null)
+    {
+        if (stream.Length == 0)
+        {
+            return null;
+        }
+
+        accountName = accountName ?? defaultAccountName;
+
+        var account = azureStorageAccounts[accountName];
+        var blobServiceClient = blobServiceClients[accountName];
+
+        if (containerName == null)
+            containerName = account.DefaultContainerName;
+
+        var blobContainerClient = blobServiceClient.GetBlobContainerClient(containerName);
+
+        await blobContainerClient.CreateIfNotExistsAsync();
+
+        var blobName = $"{Guid.NewGuid()}{Path.GetExtension(fileName)}";
+
+        // setting the mimeType to application/octet-stream let's the browser download the file when requesting the url
+        string mimeType = "application/octet-stream";
+
+        stream.Seek(0, SeekOrigin.Begin);
+
+        await blobContainerClient.GetBlobClient(blobName).UploadAsync(stream, new Azure.Storage.Blobs.Models.BlobHttpHeaders { ContentType = mimeType });
+
+        stream.Close();
+
+        return blobName;
     }
 
     public static string GetServiceSasUriForBlob(string blobName, string containerName, string accountName, string accountKey, int expireAfter_Seconds = 3600)
@@ -49,9 +105,26 @@ public class AzureStorageService
         return sasBuilder.ToSasQueryParameters(sharedKeyCredential).ToString();
     }
 
-    public string GetSignedURL(string blobName)
+    public string GetSignedURL(string blobName, string? containerName = null, string? accountName = null)
     {
-        return $"{endPoint}/{containerName}/{blobName}?{GetServiceSasUriForBlob(blobName, containerName!, accountName!, accountKey!)}";
+        accountName = accountName ?? defaultAccountName;
+
+        var account = azureStorageAccounts[accountName];
+
+        if (containerName == null)
+            containerName = account.DefaultContainerName;
+
+        return $"{account.EndPoint}/{containerName}/{blobName}?{GetServiceSasUriForBlob(blobName, containerName!, account.AccountName!, account.AccountKey!)}";
+    }
+
+    public string GetDefaultAccountName()
+    {
+        return defaultAccountName;
+    }
+
+    public string GetDefaultContainerName(string accountName)
+    {
+        return azureStorageAccounts[accountName].DefaultContainerName;
     }
 }
 
@@ -97,7 +170,7 @@ class JsonShiftFileDTOConverter : JsonConverter<ShiftFileDTO>
             if (propertyInfo != null)
             {
                 var propertyType = propertyInfo.PropertyType;
-                
+
                 var propertyValue = JsonSerializer.Deserialize(ref reader, propertyType, options);
 
                 propertyInfo.SetValue(dto, propertyValue);
@@ -116,7 +189,7 @@ class JsonShiftFileDTOConverter : JsonConverter<ShiftFileDTO>
             return;
         }
 
-        value.Url = azureStorageService.GetSignedURL(value.Blob!);
+        value.Url = azureStorageService.GetSignedURL(value.Blob!, value.ContainerName, value.AccountName);
 
         writer.WriteRawValue(JsonSerializer.Serialize(value));
     }
