@@ -2,7 +2,9 @@
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
-
+/// <summary>
+/// It sets the id automatically from the shift entity childes
+/// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public class ShiftEntityReplicationAttribute : Attribute
 {
@@ -27,11 +29,21 @@ public class ShiftEntityReplicationAttribute : Attribute
     public string? AccountName { get; set; }
 }
 
+/// <summary>
+/// It sets the id automatically from the shift entity childes
+/// </summary>
+/// <typeparam name="Item">There should be an auto-mapper mapping from the entity to this Item</typeparam>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public class ShiftEntityReplicationAttribute<ItemType> : ShiftEntityReplicationAttribute
+public class ShiftEntityReplicationAttribute<Item> : ShiftEntityReplicationAttribute
 {
+    /// <summary>
+    /// There should be an auto-mapper mapping from the entity to this type
+    /// </summary>
+    public new Type ItemType { get; private set; }
+
     public ShiftEntityReplicationAttribute()
     {
-        base.ItemType = typeof(ItemType);
+        this.ItemType = typeof(Item);
+        base.ItemType = typeof(Item);
     }
 }

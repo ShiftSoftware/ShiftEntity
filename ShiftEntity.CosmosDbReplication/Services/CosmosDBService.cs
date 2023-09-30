@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
@@ -38,7 +39,7 @@ internal class CosmosDBService<EntityType>
         dynamic item = new ExpandoObject();
         item.id = entity.ID.ToString();
         CopyProperties(dto, item);
-        var partitionKey = GetPartitionKey(dto);
+        var partitionKey = GetPartitionKey(entity, dto);
 
         ItemResponse<ExpandoObject> response;
 
@@ -55,33 +56,92 @@ internal class CosmosDBService<EntityType>
         }
     }
 
-    private (PartitionKey? partitionKey, string? value, PartitionKeyTypes type) GetPartitionKey(object item)
+    private (PartitionKey? partitionKey,
+        (string? value, PartitionKeyTypes type)? level1,
+        (string? value, PartitionKeyTypes type)? level2,
+        (string? value, PartitionKeyTypes type)? level3) GetPartitionKey(EntityType item, object dto)
     {
-        string? partitionKeyName = null;
+        var builder = new PartitionKeyBuilder();
 
         var attribute = (ReplicationPartitionKeyAttribute)item.GetType().GetCustomAttributes(true).LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
-        if (attribute is null || attribute?.PropertyName is null)
-            return (null, null, PartitionKeyTypes.None);
+        if (attribute is null || attribute?.KeyLevelOnePropertyName is null)
+            return (null, null, null, null);
 
-        partitionKeyName = attribute.PropertyName;
+        var keyLevel1 = attribute.KeyLevelOnePropertyName;
+        var keyLevel2 = attribute.KeyLevelTwoPropertyName;
+        var keyLevel3 = attribute.KeyLevelThreePropertyName;
 
-        var property = item.GetType().GetProperty(partitionKeyName);
-        if (property is null)
-            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the object for partition key");
+        var propertyLevel1 = dto.GetType().GetProperty(keyLevel1);
+        if (propertyLevel1 is null)
+            throw new WrongPartitionKeyNameException($"Can not find {keyLevel1} in the object for partition key");
 
+        PropertyInfo? propertyLevel2;
+        if (keyLevel2 is not null)
+        {
+            propertyLevel2 = dto.GetType().GetProperty(keyLevel2);
+            if (propertyLevel2 is null)
+                throw new WrongPartitionKeyNameException($"Can not find {keyLevel2} in the object for partition key");
+        }
+        else
+        {
+            propertyLevel2 = null;
+        }
+
+        PropertyInfo? propertyLevel3;
+        if (keyLevel3 is not null)
+        {
+            propertyLevel3 = dto.GetType().GetProperty(keyLevel3);
+            if (propertyLevel3 is null)
+                throw new WrongPartitionKeyNameException($"Can not find {keyLevel3} in the object for partition key");
+        }
+        else
+        {
+            propertyLevel3 = null;
+        }
+
+        var level1 = GetPartitionKey(propertyLevel1, dto, builder);
+
+        (string? value, PartitionKeyTypes type)? level2;
+        if (propertyLevel2 is not null)
+            level2 = GetPartitionKey(propertyLevel2!, dto, builder);
+        else
+            level2 = null;
+
+        (string? value, PartitionKeyTypes type)? level3;
+        if (propertyLevel3 is not null)
+            level3 = GetPartitionKey(propertyLevel3!, dto, builder);
+        else
+            level3 = null;
+
+        return (builder.Build(), level1, level2, level3);
+    }
+
+    private (string? value, PartitionKeyTypes type) GetPartitionKey(PropertyInfo property,
+        object dto,
+        PartitionKeyBuilder builder)
+    {
         Type propertyType = property.PropertyType;
         if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+            throw new WrongPartitionKeyTypeException($"Only boolean or number or string partition key types allowed for propery {property.Name}");
 
-        var value = property.GetValue(item);
+        var value = property.GetValue(dto);
 
         if (propertyType == typeof(bool?) || propertyType == typeof(bool))
-            return (new PartitionKey(Convert.ToBoolean(value)), Convert.ToString(value), PartitionKeyTypes.Boolean);
+        {
+            builder.Add(Convert.ToBoolean(value));
+            return (Convert.ToString(value), PartitionKeyTypes.Boolean);
+        }
         else if (propertyType == typeof(string))
-            return (new PartitionKey(Convert.ToString(value)), Convert.ToString(value), PartitionKeyTypes.String);
+        {
+            builder.Add(Convert.ToString(value));
+            return (Convert.ToString(value), PartitionKeyTypes.String);
+        }
         else
-            return (new PartitionKey(Convert.ToDouble(value)), Convert.ToString(value), PartitionKeyTypes.Numeric);
+        {
+            builder.Add(Convert.ToDouble(value));
+            return (Convert.ToString(value), PartitionKeyTypes.Numeric);
+        }
     }
 
     private void CopyProperties(object source, dynamic destination)
@@ -125,7 +185,7 @@ internal class CosmosDBService<EntityType>
 
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 
-        var partitionKey = GetPartitionKey(dto);
+        var partitionKey = GetPartitionKey(entity, dto);
 
         ItemResponse<dynamic> response;
 
@@ -138,13 +198,15 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateDeleteRowLogLastReplicationDateAsync(entity, partitionKey.value, partitionKey.type);
+            await UpdateDeleteRowLogLastReplicationDateAsync(entity, partitionKey.level1,
+                partitionKey.level2, partitionKey.level3);
         }
     }
 
     private async Task UpdateDeleteRowLogLastReplicationDateAsync(EntityType entity,
-        string? partitionKeyValue,
-        PartitionKeyTypes partitionKeyType)
+        (string? value, PartitionKeyTypes type)? level1,
+        (string? value, PartitionKeyTypes type)? level2,
+        (string? value, PartitionKeyTypes type)? level3)
     {
         var entityName = entity.GetType().Name;
 
@@ -154,12 +216,23 @@ internal class CosmosDBService<EntityType>
 
             if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
             {
-                var log = dbContext.DeletedRowLogs.SingleOrDefault(x =>
+                var query = dbContext.DeletedRowLogs.Where(x =>
                     x.RowID == entity.ID &&
-                    x.PartitionKeyValue == partitionKeyValue &&
-                    x.PartitionKeyType == partitionKeyType &&
                     x.EntityName == entityName
                 );
+
+                if (level1 is not null)
+                    query = query.Where(x => x.PartitionKeyLevelOneValue == level1!.Value.value &&
+                        x.PartitionKeyLevelOneType == level1!.Value.type);
+
+                if (level2 is not null)
+                    query = query.Where(x => x.PartitionKeyLevelTwoValue == level2!.Value.value &&
+                                           x.PartitionKeyLevelTwoType == level2!.Value.type);
+                if (level3 is not null)
+                    query = query.Where(x => x.PartitionKeyLevelThreeValue == level3!.Value.value &&
+                                                              x.PartitionKeyLevelThreeType == level3!.Value.type);
+
+                var log = await query.SingleOrDefaultAsync();
 
                 if (log is not null)
                 {

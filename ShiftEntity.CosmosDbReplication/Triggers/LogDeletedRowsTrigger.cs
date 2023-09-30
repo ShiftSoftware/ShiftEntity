@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
+using Microsoft.Azure.Cosmos.Linq;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
@@ -31,43 +32,33 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
 
             if (replicationAttribute != null)
             {
-                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.ItemType.GetCustomAttributes(true)
+                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
                     .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
                 var entity = context.Entity;
-                object partitionKey = null;
-                PartitionKeyTypes partitionKeyType = PartitionKeyTypes.None;
+                (string? value, PartitionKeyTypes type) partitionKeyLevelOne = (null, PartitionKeyTypes.None);
+                (string? value, PartitionKeyTypes type) partitionKeyLevelTwo = (null, PartitionKeyTypes.None);
+                (string? value, PartitionKeyTypes type) partitionKeyLevelThree = (null, PartitionKeyTypes.None);
 
-                if (partitionKeyAttribute is not null && partitionKeyAttribute?.PropertyName is not null)
+                if (partitionKeyAttribute is not null)
                 {
-                    var property = replicationAttribute.ItemType.GetProperty(partitionKeyAttribute.PropertyName);
-                    if (property is null)
-                        throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object");
-
-                    Type propertyType = property.PropertyType;
-                    if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-                        throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
-
-
-
                     object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
 
-                    partitionKey = property.GetValue(item);
-
-                    if (propertyType == typeof(bool?) || propertyType == typeof(bool))
-                        partitionKeyType = PartitionKeyTypes.Boolean;
-                    else if (propertyType == typeof(string))
-                        partitionKeyType = PartitionKeyTypes.String;
-                    else
-                        partitionKeyType = PartitionKeyTypes.Numeric;
+                    partitionKeyLevelOne = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelOnePropertyName);
+                    partitionKeyLevelTwo = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelTwoPropertyName);
+                    partitionKeyLevelThree = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelThreePropertyName);
                 }
 
                 var deleteRowLog = new DeletedRowLog
                 {
                     EntityName = context.Entity.GetType().Name,
                     RowID = entity.ID,
-                    PartitionKeyType = partitionKeyType,
-                    PartitionKeyValue = partitionKey?.ToString(),
+                    PartitionKeyLevelOneType = partitionKeyLevelOne.type,
+                    PartitionKeyLevelOneValue = partitionKeyLevelOne.value,
+                    PartitionKeyLevelTwoType = partitionKeyLevelTwo.type,
+                    PartitionKeyLevelTwoValue = partitionKeyLevelTwo.value,
+                    PartitionKeyLevelThreeType = partitionKeyLevelThree.type,
+                    PartitionKeyLevelThreeValue = partitionKeyLevelThree.value,
                 };
 
                 foreach (var dbContext in dbContexts)
@@ -80,5 +71,31 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
         }
 
         return Task.CompletedTask;
+    }
+
+    private (string? value, PartitionKeyTypes type) GetPatitionKey(Type itemType, object item, string? partitionKeyName)
+    {
+        if (partitionKeyName is null)
+            return (null, PartitionKeyTypes.None);
+
+        var property = itemType.GetProperty(partitionKeyName);
+        if (property is null)
+            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the {itemType.Name}");
+
+        Type propertyType = property.PropertyType;
+        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
+            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+
+        PartitionKeyTypes partitionKeyType;
+        var partitionKeyValue = property.GetValue(item);
+
+        if (propertyType == typeof(bool?) || propertyType == typeof(bool))
+            partitionKeyType = PartitionKeyTypes.Boolean;
+        else if (propertyType == typeof(string))
+            partitionKeyType = PartitionKeyTypes.String;
+        else
+            partitionKeyType = PartitionKeyTypes.Numeric;
+
+        return (partitionKeyValue?.ToString(), partitionKeyType);
     }
 }

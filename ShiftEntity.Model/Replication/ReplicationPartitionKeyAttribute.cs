@@ -1,18 +1,23 @@
-﻿using System;
-
-namespace ShiftSoftware.ShiftEntity.Model.Replication;
+﻿namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
 /// <summary>
-/// The property name must be the same name of the partition key of cosmos db container, 
-/// and the name is case sensitive, the property type must be either boolean or string or number.
+/// The key property names must exists in the ItemType class,
+/// and they must be the same as container key names with the same case.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public class ReplicationPartitionKeyAttribute : Attribute
 {
-    public string PropertyName { get; private set; }
+    public string KeyLevelOnePropertyName { get; private set; }
+    public string? KeyLevelTwoPropertyName { get; private set; }
+    public string? KeyLevelThreePropertyName { get; private set; }
 
-    public ReplicationPartitionKeyAttribute(string propertyName)
+    public ReplicationPartitionKeyAttribute(
+        string keyLevelOnePropertyName,
+        string? keyLevelTwoPropertyName = null,
+        string? keyLevelThreePropertyName = null)
     {
-        PropertyName = propertyName;
+        KeyLevelOnePropertyName = keyLevelOnePropertyName;
+        KeyLevelTwoPropertyName = keyLevelTwoPropertyName;
+        KeyLevelThreePropertyName = keyLevelThreePropertyName;
     }
 }

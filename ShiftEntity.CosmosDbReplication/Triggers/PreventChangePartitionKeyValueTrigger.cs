@@ -29,34 +29,54 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
 
             if (replicationAttribute != null)
             {
-                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)replicationAttribute.ItemType.GetCustomAttributes(true)
+                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
                     .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
 
-                if (partitionKeyAttribute is not null && partitionKeyAttribute?.PropertyName is not null)
+
+                if (partitionKeyAttribute is not null)
                 {
-                    var property = replicationAttribute.ItemType.GetProperty(partitionKeyAttribute.PropertyName);
-                    if (property is null)
-                        throw new WrongPartitionKeyNameException($"Can not find {partitionKeyAttribute.PropertyName} in the object for partition key");
 
-                    Type propertyType = property.PropertyType;
-                    if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-                        throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+                    object unmodifiefItem = mapper.Map(context.UnmodifiedEntity, typeof(EntityType), replicationAttribute.ItemType);
+                    object item = mapper.Map(context.Entity, typeof(EntityType), replicationAttribute.ItemType);
 
-                    var unmodifiedEntity = context.UnmodifiedEntity;
-                    var entity = context.Entity;
+                    //Check partition key level one
+                    CheckPartitionKey(item, unmodifiefItem,
+                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelOnePropertyName);
 
-                    object unmodifiefItem = mapper.Map(unmodifiedEntity, typeof(EntityType), replicationAttribute.ItemType);
-                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
+                    //Check partition key level two
+                    CheckPartitionKey(item, unmodifiefItem,
+                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelTwoPropertyName);
 
-                    var unmodifiedPartitionKey = property.GetValue(unmodifiefItem);
-                    var partitionKey = property.GetValue(item);
-
-                    if (!Equals(unmodifiedPartitionKey, partitionKey))
-                        throw new PartitionKeyChangedException("The value of partition key is changed");
+                    //Check partition key level three
+                    CheckPartitionKey(item, unmodifiefItem,
+                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelThreePropertyName);
                 }
             }
         }
 
         return Task.CompletedTask;
+    }
+
+    private void CheckPartitionKey(object item,
+        object unmodifiefItem,
+        Type itemType,
+        string? partitionKeyName)
+    {
+        if (partitionKeyName is not null)
+        {
+            var property = itemType.GetProperty(partitionKeyName);
+            if (property is null)
+                throw new WrongPartitionKeyNameException($"Can not find '{partitionKeyName}' in the '{itemType.Name}' for partition key");
+
+            Type propertyType = property.PropertyType;
+            if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
+                throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
+
+            var unmodifiedPartitionKey = property.GetValue(unmodifiefItem);
+            var partitionKey = property.GetValue(item);
+
+            if (!Equals(unmodifiedPartitionKey, partitionKey))
+                throw new PartitionKeyChangedException($"The value of partition key '{partitionKeyName}' is changed");
+        }
     }
 }
