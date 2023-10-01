@@ -26,7 +26,7 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
     //Make the trigger excute the last one
     public int Priority => int.MaxValue;
 
-    public async Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
+    public Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
         var entityType = context.Entity.GetType();
 
@@ -34,19 +34,22 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
 
         if (replicationAttribute != null)
         {
-            _ = Task.Run(async () =>
-            {
-                var configurations = GetConfigurations(replicationAttribute, entityType.Name);
-                var entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
+            Task.Run(async () =>
+             {
+                 var configurations = GetConfigurations(replicationAttribute, entityType.Name);
+                 var entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
 
-                if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
-                    _ = cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
-                        configurations.collection, configurations.databaseName, configurations.connectionString);
-                else if (context.ChangeType == ChangeType.Deleted)
-                    _ = cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
-                        configurations.collection, configurations.databaseName, configurations.connectionString);
-            });
+                 if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
+                     await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
+                         configurations.collection, configurations.databaseName, configurations.connectionString);
+                 else if (context.ChangeType == ChangeType.Deleted)
+                     await cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
+                         configurations.collection, configurations.databaseName, configurations.connectionString);
+             }).ContinueWith(t => Console.Error.WriteLine(t.Exception),
+                  TaskContinuationOptions.OnlyOnFaulted);
         }
+        
+        return Task.CompletedTask;
     }
 
     private (string collection, string connectionString, string databaseName) GetConfigurations
