@@ -1,6 +1,6 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.HashId;
 
-namespace ShiftSoftware.ShiftEntity.Web;
+namespace ShiftSoftware.ShiftEntity.Core;
 
 public class HashIdOptions
 {

@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.AutoMapperProfiles;
 
-internal class DefaultMappings : Profile
+public class DefaultMappings : Profile
 {
     public DefaultMappings()
     {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace ShiftSoftware.ShiftEntity.Web;
+namespace ShiftSoftware.ShiftEntity.Core;
 
 public class ShiftEntityOptions
 {
@@ -18,14 +18,14 @@ public class ShiftEntityOptions
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
-        this._WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponse;
+        _WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponse;
 
         return this;
     }
 
     public ShiftEntityOptions AddAutoMapper(params Assembly[] assemblies)
     {
-        this.AutoMapperAssemblies.AddRange(assemblies);
+        AutoMapperAssemblies.AddRange(assemblies);
         return this;
     }
 
@@ -40,6 +40,6 @@ public class ShiftEntityOptions
 
     public ShiftEntityOptions()
     {
-        HashId = new ();
+        HashId = new();
     }
 }
