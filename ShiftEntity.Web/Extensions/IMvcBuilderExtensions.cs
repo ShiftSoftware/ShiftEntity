@@ -1,6 +1,4 @@
-﻿using EntityFrameworkCore.Triggered;
-using EntityFrameworkCore.Triggered.Transactions;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -8,74 +6,43 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.EFCore.Extensions;
 using ShiftSoftware.ShiftEntity.Core.Services;
-using ShiftSoftware.ShiftEntity.EFCore.Triggers;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
-using ShiftSoftware.ShiftEntity.Web.Triggers;
 using System;
 using System.Linq;
-using System.Reflection;
 using Thinktecture;
+using ShiftSoftware.ShiftEntity.Web.Triggers;
+using EntityFrameworkCore.Triggered;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Extensions;
 
 public static class IMvcBuilderExtensions
 {
     static bool locked = false;
-    public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
+    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
     {
         ShiftEntityOptions o = new();
 
         shiftEntityOptionsBuilder.Invoke(o);
 
-        return AddShiftEntity(builder, o);
+        return AddShiftEntityWeb(builder, o);
     }
 
-    private static IMvcBuilder RegisterTriggers(this IMvcBuilder builder)
+    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
     {
-        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(GeneralTrigger<>));
-        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>),typeof(SetUserAndCompanyInfoTrigger<>));
-        builder.Services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
-        builder.Services.AddTransient(typeof(IBeforeCommitTrigger<>), typeof(BeforeCommitTrigger<>));
-
-        return builder;
-    }
-
-    private static IMvcBuilder RegisterIShiftEntityFind(this IMvcBuilder builder, Assembly? repositoriesAssembly=null)
-    {
-        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
-
-        // Find all types in the assembly that implement IRepository<>
-        var repositoryTypes = repositoryAssembly!.GetTypes()
-            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)));
-
-        // Register each IRepository<> implementation with its corresponding interface
-        foreach (var repositoryType in repositoryTypes)
-        {
-            var interfaceType = repositoryType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>));
-            if (interfaceType != null)
-            {
-                builder.Services.AddScoped(interfaceType, repositoryType);
-            }
-        }
-
-        return builder;
-    }
-
-    public static IMvcBuilder AddShiftEntity(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
-    {
+        shiftEntityOptions.AutoMapperAssemblies.Add(typeof(EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization()
-            .TryAddSingleton(shiftEntityOptions);
+            .AddShiftEntity(shiftEntityOptions);
+
         builder.Services.TryAddSingleton<TimeZoneService>();
 
-        if (shiftEntityOptions.azureStorageOptions.Count > 0)
-            builder.Services.TryAddSingleton(new AzureStorageService(shiftEntityOptions.azureStorageOptions));
-
-        builder.RegisterTriggers();
-        builder.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
+        builder.Services.RegisterShiftEntityEfCoreTriggers();
+        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
 
         //Add rou number capability to sqlserver
         builder.Services.Decorate<DbContextOptions>((inner, provider) =>
@@ -119,9 +86,6 @@ public static class IMvcBuilderExtensions
                 };
             });
 
-        shiftEntityOptions.AutoMapperAssemblies.Add(typeof(EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
-
-        builder.Services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
 
         return builder;
     }
