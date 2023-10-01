@@ -61,7 +61,7 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
     /// <param name="userId"></param>
     /// <param name="id"></param>
     /// <returns></returns>
-    public EntityType Create(long? userId, long? id = null)
+    public EntityType Create(long? userId, long? id = null, DateTime? createDate = null, DateTime? lastSaveDate = null)
     {
         if(id != null)
             this.ID = id.Value;
@@ -69,6 +69,12 @@ public abstract class ShiftEntity<EntityType> where EntityType : class
         this.CreatedByUserID = userId;
         this.LastSavedByUserID = userId;
         this.IsDeleted = false;
+
+        if(createDate != null)
+            this.CreateDate = createDate.Value;
+
+        if(lastSaveDate != null)
+            this.LastSaveDate = lastSaveDate.Value;
 
         return (this as EntityType)!;
     }
