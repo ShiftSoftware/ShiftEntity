@@ -3,13 +3,14 @@
 namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
 /// <summary>
-/// It sets the id automatically from the shift entity childes
+/// The ItemType should be an Item that contains id property of type string.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public class ShiftEntityReplicationAttribute : Attribute
 {
     /// <summary>
-    /// There should be an auto-mapper mapping from the entity to this type
+    /// There should be an auto-mapper mapping from the entity to this Item, 
+    /// and contains id property of type string.
     /// </summary>
     public Type ItemType { get; set; }
 
@@ -32,12 +33,14 @@ public class ShiftEntityReplicationAttribute : Attribute
 /// <summary>
 /// It sets the id automatically from the shift entity childes
 /// </summary>
-/// <typeparam name="Item">There should be an auto-mapper mapping from the entity to this Item</typeparam>
+/// <typeparam name="Item">There should be an auto-mapper mapping from the entity to this Item, 
+/// and contains id property of type string.</typeparam>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public class ShiftEntityReplicationAttribute<Item> : ShiftEntityReplicationAttribute
 {
     /// <summary>
-    /// There should be an auto-mapper mapping from the entity to this type
+    /// There should be an auto-mapper mapping from the entity to this Item, 
+    /// and contains id property of type string.
     /// </summary>
     public new Type ItemType { get; private set; }
 

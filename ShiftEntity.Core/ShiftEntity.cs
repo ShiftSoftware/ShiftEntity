@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public abstract class ShiftEntity<EntityType> where EntityType : class
+public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> where EntityType : class
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long ID { get; internal set; }

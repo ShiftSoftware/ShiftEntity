@@ -1,4 +1,5 @@
 ﻿using EntityFrameworkCore.Triggered;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.Model.Replication;
@@ -7,16 +8,16 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 
 internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : ShiftEntityBase<EntityType>
 {
     private readonly ShiftEntityCosmosDbOptions options;
     private readonly CosmosDBService<EntityType> cosmosDBService;
-    private readonly IShiftEntityPrepareForReplicationAsync<EntityType> prepareForReplication;
+    private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;
 
     public ReplicateToCosmosDbAfterSaveTrigger(
         ShiftEntityCosmosDbOptions options,
         CosmosDBService<EntityType> cosmosDBService,
-        IShiftEntityPrepareForReplicationAsync<EntityType> prepareForReplication)
+        IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication = null)
     {
         this.options = options;
         this.cosmosDBService = cosmosDBService;
@@ -37,7 +38,10 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             Task.Run(async () =>
              {
                  var configurations = GetConfigurations(replicationAttribute, entityType.Name);
-                 var entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
+
+                 var entity = context.Entity;
+                 if(prepareForReplication is not null)
+                    entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
 
                  if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
                      await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,

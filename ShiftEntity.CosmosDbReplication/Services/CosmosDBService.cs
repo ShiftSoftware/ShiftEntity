@@ -12,7 +12,7 @@ using System.Reflection;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
 internal class CosmosDBService<EntityType>
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : class
 {
     private readonly IMapper mapper;
     private readonly IEnumerable<DbContextProvider> dbContextProviders;
@@ -37,7 +37,6 @@ internal class CosmosDBService<EntityType>
         var container = db.GetContainer(containerName);
 
         dynamic item = new ExpandoObject();
-        item.id = entity.ID.ToString();
         CopyProperties(dto, item);
         var partitionKey = GetPartitionKey(entity, dto);
 
@@ -157,18 +156,40 @@ internal class CosmosDBService<EntityType>
 
     private async Task UpdateLastReplicationDateAsync(EntityType entity)
     {
-        foreach (var provider in dbContextProviders)
-        {
-            using var dbContext = provider.ProvideDbContext();
+        var objectType = entity.GetType();
+        Type genericBaseType = typeof(ShiftEntity<>);
 
-            if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
+        if (IsSubclassOfRawGeneric(genericBaseType, objectType))
+        {
+            foreach (var provider in dbContextProviders)
             {
-                entity.UpdateReplicationDate();
-                dbContext.Attach(entity);
-                dbContext.Entry(entity).Property(x => x.LastReplicationDate).IsModified = true;
-                await dbContext.SaveChangesWithoutTriggersAsync();
+                using var dbContext = provider.ProvideDbContext();
+
+                if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
+                {
+                    var methodInfo = objectType.GetMethod(nameof(ShiftEntity<object>.UpdateReplicationDate));
+                    if(methodInfo is not null)
+                        methodInfo.Invoke(entity, null);
+
+                    //entity.UpdateReplicationDate();
+                    dbContext.Attach(entity);
+                    dbContext.Entry(entity).Property(nameof(ShiftEntity<object>.LastReplicationDate)).IsModified = true;
+                    await dbContext.SaveChangesWithoutTriggersAsync();
+                }
             }
         }
+    }
+
+    static bool IsSubclassOfRawGeneric(Type genericBaseType, Type derivedType)
+    {
+        while (derivedType != null && derivedType != typeof(object))
+        {
+            Type currentType = derivedType.IsGenericType ? derivedType.GetGenericTypeDefinition() : derivedType;
+            if (genericBaseType == currentType)
+                return true;
+            derivedType = derivedType.BaseType;
+        }
+        return false;
     }
 
     internal async Task DeleteAsync(EntityType entity,
@@ -190,25 +211,30 @@ internal class CosmosDBService<EntityType>
         ItemResponse<dynamic> response;
 
         if (partitionKey.partitionKey is null)
-            response = await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), PartitionKey.None);
+            response = await container.DeleteItemAsync<dynamic>(GetId(dto), PartitionKey.None);
         else
-            response = await container.DeleteItemAsync<dynamic>(entity.ID.ToString(), partitionKey.partitionKey.Value);
+            response = await container.DeleteItemAsync<dynamic>(GetId(dto), partitionKey.partitionKey.Value);
 
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateDeleteRowLogLastReplicationDateAsync(entity, partitionKey.level1,
+            await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, partitionKey.level1,
                 partitionKey.level2, partitionKey.level3);
         }
     }
 
     private async Task UpdateDeleteRowLogLastReplicationDateAsync(EntityType entity,
+        Type cosmosDbItemType,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
         (string? value, PartitionKeyTypes type)? level3)
     {
         var entityName = entity.GetType().Name;
+
+        var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
+        long id = 0;
+        long.TryParse(GetId(dto), out id);
 
         foreach (var provider in dbContextProviders)
         {
@@ -217,7 +243,7 @@ internal class CosmosDBService<EntityType>
             if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
             {
                 var query = dbContext.DeletedRowLogs.Where(x =>
-                    x.RowID == entity.ID &&
+                    x.RowID == id &&
                     x.EntityName == entityName
                 );
 
@@ -241,6 +267,20 @@ internal class CosmosDBService<EntityType>
                 }
             }
         }
+    }
+
+    private string? GetId(object obj)
+    {
+        // Get the type of the object
+        Type objectType = obj.GetType();
+
+        // Find the property by name (replace "PropertyName" with your property name)
+        PropertyInfo? propertyInfo = objectType.GetProperty("id");
+
+        if (propertyInfo is not null)
+            return Convert.ToString(propertyInfo.GetValue(obj));
+        else
+            throw new MemberAccessException($"Can not find id property in the {objectType.Name}");
     }
 }
 
