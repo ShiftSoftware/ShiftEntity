@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using ShiftSoftware.ShiftEntity.Model.Enums;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
@@ -8,11 +9,4 @@ public interface IShiftEntityPrepareForReplicationAsync<EntityType> where Entity
     {
         return new ValueTask<EntityType>(entity);
     }
-}
-
-public enum ReplicationChangeType
-{
-    Added,
-    Modified,
-    Deleted,
 }

@@ -1,13 +1,18 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 using ShiftSoftware.ShiftEntity.Model.Replication;
+using System.ComponentModel;
 using System.Dynamic;
 using System.Reflection;
+using System.Windows.Markup;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
@@ -27,32 +32,131 @@ internal class CosmosDBService<EntityType>
         Type cosmosDbItemType,
         string containerName,
         string cosmosDbDatabaseName,
-        string cosmosDbConnectionString)
+        string cosmosDbConnectionString,
+        ReplicationChangeType replicationChangeType)
     {
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 
         //Upsert to cosmosdb
-        using CosmosClient client = new(cosmosDbConnectionString);
+        using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
+            new List<(string, string)> { (cosmosDbDatabaseName, containerName) }, new CosmosClientOptions()
+            {
+                AllowBulkExecution = true
+            });
         var db = client.GetDatabase(cosmosDbDatabaseName);
         var container = db.GetContainer(containerName);
 
-        dynamic item = new ExpandoObject();
-        CopyProperties(dto, item);
         var partitionKey = GetPartitionKey(entity, dto);
 
-        ItemResponse<ExpandoObject> response;
+        ItemResponse<object> response;
 
         if (partitionKey.partitionKey is null)
-            response = await container.UpsertItemAsync(item);
+            response = await container.UpsertItemAsync(dto);
         else
-            response = await container.UpsertItemAsync(item, partitionKey.partitionKey.Value);
+            response = await container.UpsertItemAsync(dto, partitionKey.partitionKey.Value);
 
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
             await UpdateLastReplicationDateAsync(entity);
+
+            if (replicationChangeType == ReplicationChangeType.Modified)
+            {
+                var referenceReplicationAttributes = (ReferenceReplicationAttribute[])entity.GetType()
+                    .GetCustomAttributes(typeof(ReferenceReplicationAttribute), true);
+
+                if (referenceReplicationAttributes is not null)
+                    foreach (var referenceReplicationAttribute in referenceReplicationAttributes)
+                        if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
+                            await UpdateReferences(db, referenceReplicationAttribute, entity, response.Resource);
+            }
         }
+    }
+
+    private async Task UpdateReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
+        EntityType entity, object item)
+    {
+        var container = db.GetContainer(referenceReplicationAttribute.ContainerName);
+
+        var data = mapper.Map(entity, typeof(EntityType), referenceReplicationAttribute.ItemType);
+        var values = GetCompareValues(referenceReplicationAttribute, data);
+
+        var query = $"SELECT * FROM c " + (values.Count>0 ? "WHERE " : "");
+        foreach (var value in values)
+        {
+            query += $"c.{value.Key} = @{value.Key} AND ";
+        }
+        if (values.Count > 0)
+            query = query.Remove(query.Length - 4);
+
+        var parameterizedQuery = new QueryDefinition(
+          query: query
+        );
+
+
+        foreach (var value in values)
+        {
+            parameterizedQuery.WithParameter($"@{value.Key}", value.Value);
+        }
+
+        try
+        {
+            var filteredFeed = container.GetItemQueryIterator<dynamic>(
+                queryDefinition: parameterizedQuery
+            );
+
+            List<dynamic> itemReferences = new();
+            var iterator = container.GetItemLinqQueryable<dynamic>().ToFeedIterator();
+
+            while (filteredFeed.HasMoreResults)
+            {
+                itemReferences.AddRange(await filteredFeed.ReadNextAsync());
+            }
+
+            List<Task<ItemResponse<dynamic>>> tasks = new List<Task<ItemResponse<dynamic>>>();
+
+            int i = 0;
+
+            foreach (var itemReference in itemReferences)
+            {
+                var temp = mapper.Map(itemReference, typeof(DynamicObject), referenceReplicationAttribute.ItemType);
+
+                mapper.Map(entity, temp,
+                    entity.GetType(), referenceReplicationAttribute.ItemType);
+                var id = Convert.ToString(itemReference.id);
+
+                tasks.Add(container.ReplaceItemAsync<dynamic>(temp, id,
+                    null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }));
+            }
+
+            await Task.WhenAll(tasks);
+        }
+        catch (Exception ex)
+        {
+
+            throw;
+        }
+    }
+
+    private Dictionary<string, object?> GetCompareValues(ReferenceReplicationAttribute referenceReplicationAttribute, object item)
+    {
+        Dictionary<string, object?> values = new Dictionary<string, object?>();
+
+        foreach (var name in referenceReplicationAttribute.ComparePropertyNames)
+        {
+            Type itemType = item.GetType();
+
+            // Find the property by name (replace "PropertyName" with your property name)
+            PropertyInfo? propertyInfo = itemType.GetProperty(name);
+
+            if (propertyInfo is not null)
+                values.Add(name, propertyInfo.GetValue(item));
+            else
+                throw new MemberAccessException($"Can not find {name} property in the {itemType.Name}");
+        }
+
+        return values;
     }
 
     private (PartitionKey? partitionKey,
@@ -168,7 +272,7 @@ internal class CosmosDBService<EntityType>
                 if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
                 {
                     var methodInfo = objectType.GetMethod(nameof(ShiftEntity<object>.UpdateReplicationDate));
-                    if(methodInfo is not null)
+                    if (methodInfo is not null)
                         methodInfo.Invoke(entity, null);
 
                     //entity.UpdateReplicationDate();
@@ -200,9 +304,9 @@ internal class CosmosDBService<EntityType>
     {
 
         //Delete from cosmosdb
-        using CosmosClient client = new(cosmosDbConnectionString);
-        var db = client.GetDatabase(cosmosDbDatabaseName);
-        var container = db.GetContainer(containerName);
+        using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
+            new List<(string, string)> { (cosmosDbDatabaseName, containerName) });
+        var container = client.GetContainer(cosmosDbDatabaseName, containerName);
 
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 

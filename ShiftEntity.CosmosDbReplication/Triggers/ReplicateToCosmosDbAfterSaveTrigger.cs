@@ -1,7 +1,7 @@
 ﻿using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
-using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
@@ -39,14 +39,14 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
              {
                  var configurations = replicationAttribute.GetConfigurations(options.Accounts, entityType.Name);
 
+                 var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
                  var entity = context.Entity;
-                 if(prepareForReplication is not null)
-                    entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity,
-                        ConvertChangeTypeToReplicationChangeType(context.ChangeType));
+                 if (prepareForReplication is not null)
+                     entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
 
                  if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
                      await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
-                         configurations.collection, configurations.databaseName, configurations.connectionString);
+                         configurations.collection, configurations.databaseName, configurations.connectionString, changeType);
                  else if (context.ChangeType == ChangeType.Deleted)
                      await cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
                          configurations.collection, configurations.databaseName, configurations.connectionString);
