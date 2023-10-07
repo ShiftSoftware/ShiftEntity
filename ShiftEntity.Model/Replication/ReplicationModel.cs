@@ -5,7 +5,7 @@ using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
-public abstract class ReplicationBaseModel
+public abstract class ReplicationModel : ShiftEntityDTO
 {
     public string id { get; set; }
 }
