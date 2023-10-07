@@ -36,6 +36,7 @@
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftBlazor" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity" />
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.CosmosDbReplication" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Dashboard.Shared" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Model" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftIdentity.Core" />

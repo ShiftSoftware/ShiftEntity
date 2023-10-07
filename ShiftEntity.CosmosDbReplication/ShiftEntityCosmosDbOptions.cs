@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.Model;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
@@ -43,25 +43,25 @@ public class ShiftEntityCosmosDbOptions
     }
 }
 
-public class CosmosDBAccount
-{
-    public string ConnectionString { get; set; }
-    public string Name { get; set; }
-    public bool IsDefault { get; set; }
-    public string? DefaultDatabaseName { get; set; }
+//public class CosmosDBAccount
+//{
+//    public string ConnectionString { get; set; }
+//    public string Name { get; set; }
+//    public bool IsDefault { get; set; }
+//    public string? DefaultDatabaseName { get; set; }
 
-    public CosmosDBAccount()
-    {
-    }
+//    public CosmosDBAccount()
+//    {
+//    }
 
-    public CosmosDBAccount(string connectionString, string name, bool isDefault, string? defaultDatabaseName = null)
-    {
-        ConnectionString = connectionString;
-        Name = name;
-        IsDefault = isDefault;
-        DefaultDatabaseName = defaultDatabaseName;
-    }
-}
+//    public CosmosDBAccount(string connectionString, string name, bool isDefault, string? defaultDatabaseName = null)
+//    {
+//        ConnectionString = connectionString;
+//        Name = name;
+//        IsDefault = isDefault;
+//        DefaultDatabaseName = defaultDatabaseName;
+//    }
+//}
 
 internal class ShiftDbContextStore
 {

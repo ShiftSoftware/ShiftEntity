@@ -5,6 +5,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.Model;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;

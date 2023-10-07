@@ -28,6 +28,43 @@ public class ShiftEntityReplicationAttribute : Attribute
     /// Name of the account that registerd, if null gets the default account
     /// </summary>
     public string? AccountName { get; set; }
+
+    internal (string collection, string connectionString, string databaseName) GetConfigurations
+        (IEnumerable<CosmosDBAccount> accounts, string entityName)
+    {
+        string container;
+        string connectionString;
+        string databaseName;
+        CosmosDBAccount? account;
+
+        container = ContainerName ?? entityName;
+
+        if (AccountName is null)
+        {
+            if (!accounts.Any(x => x.IsDefault))
+                throw new ArgumentException("No account specified");
+            else
+            {
+                account = accounts.FirstOrDefault(x => x.IsDefault);
+                connectionString = account!.ConnectionString;
+            }
+        }
+        else
+        {
+            account = accounts.FirstOrDefault(x => x.Name.ToLower() == AccountName.ToLower());
+            if (account is null)
+                throw new ArgumentException($"Can not find any account by name '{AccountName}'");
+            else
+                connectionString = account.ConnectionString;
+        }
+
+        if (DatabaseName is null && account.DefaultDatabaseName is null)
+            throw new ArgumentException("No database specified");
+        else
+            databaseName = DatabaseName! ?? account.DefaultDatabaseName!;
+
+        return (container, connectionString, databaseName);
+    }
 }
 
 /// <summary>

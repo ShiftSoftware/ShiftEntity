@@ -1,7 +1,7 @@
 ﻿using EntityFrameworkCore.Triggered;
-using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
@@ -37,11 +37,12 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         {
             Task.Run(async () =>
              {
-                 var configurations = GetConfigurations(replicationAttribute, entityType.Name);
+                 var configurations = replicationAttribute.GetConfigurations(options.Accounts, entityType.Name);
 
                  var entity = context.Entity;
                  if(prepareForReplication is not null)
-                    entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, ConvertChangeTypeToReplicationChangeType(context.ChangeType));
+                    entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity,
+                        ConvertChangeTypeToReplicationChangeType(context.ChangeType));
 
                  if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
                      await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
@@ -54,43 +55,6 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         }
         
         return Task.CompletedTask;
-    }
-
-    private (string collection, string connectionString, string databaseName) GetConfigurations
-        (ShiftEntityReplicationAttribute replicationAttribute, string entityName)
-    {
-        string container;
-        string connectionString;
-        string databaseName;
-        CosmosDBAccount? account;
-
-        container = replicationAttribute.ContainerName ?? entityName;
-
-        if (replicationAttribute.AccountName is null)
-        {
-            if (!options.Accounts.Any(x => x.IsDefault))
-                throw new ArgumentException("No account specified");
-            else
-            {
-                account = options.Accounts.FirstOrDefault(x => x.IsDefault);
-                connectionString = account!.ConnectionString;
-            }
-        }
-        else
-        {
-            account = options.Accounts.FirstOrDefault(x => x.Name.ToLower() == replicationAttribute.AccountName.ToLower());
-            if (account is null)
-                throw new ArgumentException($"Can not find any account by name '{replicationAttribute.AccountName}'");
-            else
-                connectionString = account.ConnectionString;
-        }
-
-        if (replicationAttribute.DatabaseName is null && account.DefaultDatabaseName is null)
-            throw new ArgumentException("No database specified");
-        else
-            databaseName = replicationAttribute.DatabaseName! ?? account.DefaultDatabaseName!;
-
-        return (container, connectionString, databaseName);
     }
 
     private ReplicationChangeType ConvertChangeTypeToReplicationChangeType(ChangeType changeType)
