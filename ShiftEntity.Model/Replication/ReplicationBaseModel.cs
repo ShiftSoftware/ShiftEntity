@@ -8,4 +8,6 @@ namespace ShiftSoftware.ShiftEntity.Model.Replication;
 public abstract class ReplicationBaseModel
 {
     public string id { get; set; }
+
+    public bool IsDeleted { get; set; }
 }
