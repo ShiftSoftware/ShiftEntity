@@ -50,8 +50,16 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
                  else if (context.ChangeType == ChangeType.Deleted)
                      await cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
                          configurations.collection, configurations.databaseName, configurations.connectionString);
-             }).ContinueWith(t => Console.Error.WriteLine(t.Exception),
-                  TaskContinuationOptions.OnlyOnFaulted);
+             }).ContinueWith(t =>
+             {
+                 if (t.IsFaulted)
+                 {
+                     Console.ForegroundColor = ConsoleColor.Red; // Set text color to red
+                     Console.Error.Write("Error: ");
+                     Console.ResetColor();
+                     Console.Error.WriteLine(t.Exception);
+                 }
+             });
         }
         
         return Task.CompletedTask;

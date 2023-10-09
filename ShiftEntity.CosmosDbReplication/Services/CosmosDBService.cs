@@ -59,7 +59,7 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateLastReplicationDateAsync(entity);
+            int failCount = 0;
 
             if (replicationChangeType == ReplicationChangeType.Modified)
             {
@@ -69,20 +69,32 @@ internal class CosmosDBService<EntityType>
                 if (referenceReplicationAttributes is not null)
                     foreach (var referenceReplicationAttribute in referenceReplicationAttributes)
                         if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
-                            await UpdateReferences(db, referenceReplicationAttribute, entity, response.Resource);
+                            failCount = +(await UpdateReferences(db, referenceReplicationAttribute, entity, response.Resource));
             }
+
+            if(failCount == 0)
+                await UpdateLastReplicationDateAsync(entity);
         }
     }
 
-    private async Task UpdateReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="db"></param>
+    /// <param name="referenceReplicationAttribute"></param>
+    /// <param name="entity"></param>
+    /// <param name="item"></param>
+    /// <returns>Number of failed items to update</returns>
+    private async Task<int> UpdateReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
         EntityType entity, object item)
     {
+        int failedItemsCount = 0;
         var container = db.GetContainer(referenceReplicationAttribute.ContainerName);
 
         var data = mapper.Map(entity, typeof(EntityType), referenceReplicationAttribute.ItemType);
         var values = GetCompareValues(referenceReplicationAttribute, data);
 
-        var query = $"SELECT * FROM c " + (values.Count>0 ? "WHERE " : "");
+        var query = $"SELECT * FROM c " + (values.Count > 0 ? "WHERE " : "");
         foreach (var value in values)
         {
             query += $"c.{value.Key} = @{value.Key} AND ";
@@ -100,43 +112,44 @@ internal class CosmosDBService<EntityType>
             parameterizedQuery.WithParameter($"@{value.Key}", value.Value);
         }
 
-        try
+        var filteredFeed = container.GetItemQueryIterator<dynamic>(
+            queryDefinition: parameterizedQuery
+        );
+
+        List<dynamic> itemReferences = new();
+        var iterator = container.GetItemLinqQueryable<dynamic>().ToFeedIterator();
+
+        while (filteredFeed.HasMoreResults)
         {
-            var filteredFeed = container.GetItemQueryIterator<dynamic>(
-                queryDefinition: parameterizedQuery
-            );
-
-            List<dynamic> itemReferences = new();
-            var iterator = container.GetItemLinqQueryable<dynamic>().ToFeedIterator();
-
-            while (filteredFeed.HasMoreResults)
-            {
-                itemReferences.AddRange(await filteredFeed.ReadNextAsync());
-            }
-
-            List<Task<ItemResponse<dynamic>>> tasks = new List<Task<ItemResponse<dynamic>>>();
-
-            int i = 0;
-
-            foreach (var itemReference in itemReferences)
-            {
-                var temp = mapper.Map(itemReference, typeof(DynamicObject), referenceReplicationAttribute.ItemType);
-
-                mapper.Map(entity, temp,
-                    entity.GetType(), referenceReplicationAttribute.ItemType);
-                var id = Convert.ToString(itemReference.id);
-
-                tasks.Add(container.ReplaceItemAsync<dynamic>(temp, id,
-                    null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }));
-            }
-
-            await Task.WhenAll(tasks);
+            itemReferences.AddRange(await filteredFeed.ReadNextAsync());
         }
-        catch (Exception ex)
+
+        List<Task> tasks = new List<Task>();
+
+        foreach (var itemReference in itemReferences)
         {
+            var temp = mapper.Map(itemReference, typeof(DynamicObject), referenceReplicationAttribute.ItemType);
 
-            throw;
+            mapper.Map(entity, temp,
+                entity.GetType(), referenceReplicationAttribute.ItemType);
+            var id = Convert.ToString(itemReference.id);
+
+            //tasks.Add(container.ReplaceItemAsync<dynamic>(temp, id,
+            //    null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }));
+
+            tasks.Add(((Task<ItemResponse<dynamic>>)container.ReplaceItemAsync<dynamic>(temp, id,
+                null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }))
+                .ContinueWith(x =>
+                {
+                    if(x.IsFaulted)
+                        failedItemsCount++;
+                }));
+                
         }
+
+        await Task.WhenAll(tasks);
+
+        return failedItemsCount;
     }
 
     private Dictionary<string, object?> GetCompareValues(ReferenceReplicationAttribute referenceReplicationAttribute, object item)
