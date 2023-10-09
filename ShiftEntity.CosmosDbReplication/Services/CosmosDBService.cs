@@ -134,9 +134,6 @@ internal class CosmosDBService<EntityType>
                 entity.GetType(), referenceReplicationAttribute.ItemType);
             var id = Convert.ToString(itemReference.id);
 
-            //tasks.Add(container.ReplaceItemAsync<dynamic>(temp, id,
-            //    null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }));
-
             tasks.Add(((Task<ItemResponse<dynamic>>)container.ReplaceItemAsync<dynamic>(temp, id,
                 null, new ItemRequestOptions { IfMatchEtag = itemReference._etag }))
                 .ContinueWith(x =>
@@ -188,47 +185,43 @@ internal class CosmosDBService<EntityType>
         var keyLevel2 = attribute.KeyLevelTwoPropertyName;
         var keyLevel3 = attribute.KeyLevelThreePropertyName;
 
-        var propertyLevel1 = dto.GetType().GetProperty(keyLevel1);
-        if (propertyLevel1 is null)
-            throw new WrongPartitionKeyNameException($"Can not find {keyLevel1} in the object for partition key");
+        return GetPartitionKey(new List<string> { keyLevel1, keyLevel2!, keyLevel3! }, dto);
+    }
 
-        PropertyInfo? propertyLevel2;
-        if (keyLevel2 is not null)
-        {
-            propertyLevel2 = dto.GetType().GetProperty(keyLevel2);
-            if (propertyLevel2 is null)
-                throw new WrongPartitionKeyNameException($"Can not find {keyLevel2} in the object for partition key");
-        }
-        else
-        {
-            propertyLevel2 = null;
-        }
+    private (PartitionKey? partitionKey,
+        (string? value, PartitionKeyTypes type)? level1,
+        (string? value, PartitionKeyTypes type)? level2,
+        (string? value, PartitionKeyTypes type)? level3) GetPartitionKey(IEnumerable<string> keys, object dto)
+    {
+        var builder = new PartitionKeyBuilder();
+        List<PropertyInfo?> propertyInfos = new List<PropertyInfo?>();
 
-        PropertyInfo? propertyLevel3;
-        if (keyLevel3 is not null)
+        foreach (var key in keys)
         {
-            propertyLevel3 = dto.GetType().GetProperty(keyLevel3);
-            if (propertyLevel3 is null)
-                throw new WrongPartitionKeyNameException($"Can not find {keyLevel3} in the object for partition key");
-        }
-        else
-        {
-            propertyLevel3 = null;
+            if (key is not null)
+            {
+                var propertyInfo = dto.GetType().GetProperty(key);
+                if (propertyInfo is null)
+                    throw new WrongPartitionKeyNameException($"Can not find {key} in the object for partition key");
+                propertyInfos.Add(propertyInfo);
+            }
+            else
+                propertyInfos.Add(null);
         }
 
-        var level1 = GetPartitionKey(propertyLevel1, dto, builder);
+        (string? value, PartitionKeyTypes type)? level1 = null;
+        if (propertyInfos.Count > 0)
+            level1 = GetPartitionKey(propertyInfos[0]!, dto, builder);
 
-        (string? value, PartitionKeyTypes type)? level2;
-        if (propertyLevel2 is not null)
-            level2 = GetPartitionKey(propertyLevel2!, dto, builder);
-        else
-            level2 = null;
+        (string? value, PartitionKeyTypes type)? level2 = null;
+        if (propertyInfos.Count > 1)
+            if (propertyInfos[1] is not null)
+                level2 = GetPartitionKey(propertyInfos[1]!, dto, builder);
 
-        (string? value, PartitionKeyTypes type)? level3;
-        if (propertyLevel3 is not null)
-            level3 = GetPartitionKey(propertyLevel3!, dto, builder);
-        else
-            level3 = null;
+        (string? value, PartitionKeyTypes type)? level3 = null;
+        if (propertyInfos.Count > 2)
+            if (propertyInfos[2] is not null)
+                level3 = GetPartitionKey(propertyInfos[2]!, dto, builder);
 
         return (builder.Build(), level1, level2, level3);
     }
@@ -318,8 +311,12 @@ internal class CosmosDBService<EntityType>
 
         //Delete from cosmosdb
         using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
-            new List<(string, string)> { (cosmosDbDatabaseName, containerName) });
-        var container = client.GetContainer(cosmosDbDatabaseName, containerName);
+            new List<(string, string)> { (cosmosDbDatabaseName, containerName) }, new CosmosClientOptions()
+            {
+                AllowBulkExecution = true
+            });
+        var db = client.GetDatabase(cosmosDbDatabaseName);
+        var container = db.GetContainer(containerName);
 
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
 
@@ -336,8 +333,19 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, partitionKey.level1,
-                partitionKey.level2, partitionKey.level3);
+            int failCount = 0;
+
+            var referenceReplicationAttributes = (ReferenceReplicationAttribute[])entity.GetType()
+                    .GetCustomAttributes(typeof(ReferenceReplicationAttribute), true);
+
+            if (referenceReplicationAttributes is not null)
+                foreach (var referenceReplicationAttribute in referenceReplicationAttributes)
+                    if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
+                        failCount = +(await DeleteReferences(db, referenceReplicationAttribute, entity, response.Resource));
+
+            if (failCount == 0)
+                await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, partitionKey.level1,
+                    partitionKey.level2, partitionKey.level3);
         }
     }
 
@@ -384,6 +392,75 @@ internal class CosmosDBService<EntityType>
                 }
             }
         }
+    }
+
+    private async Task<int> DeleteReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
+        EntityType entity, object item)
+    {
+        int failedItemsCount = 0;
+        var container = db.GetContainer(referenceReplicationAttribute.ContainerName);
+
+        var data = mapper.Map(entity, typeof(EntityType), referenceReplicationAttribute.ItemType);
+        var values = GetCompareValues(referenceReplicationAttribute, data);
+
+        var query = $"SELECT * FROM c " + (values.Count > 0 ? "WHERE " : "");
+        foreach (var value in values)
+        {
+            query += $"c.{value.Key} = @{value.Key} AND ";
+        }
+        if (values.Count > 0)
+            query = query.Remove(query.Length - 4);
+
+        var parameterizedQuery = new QueryDefinition(
+          query: query
+        );
+
+
+        foreach (var value in values)
+        {
+            parameterizedQuery.WithParameter($"@{value.Key}", value.Value);
+        }
+
+        var filteredFeed = container.GetItemQueryIterator<dynamic>(
+            queryDefinition: parameterizedQuery
+        );
+
+        List<dynamic> itemReferences = new();
+        var iterator = container.GetItemLinqQueryable<dynamic>().ToFeedIterator();
+
+        while (filteredFeed.HasMoreResults)
+        {
+            itemReferences.AddRange(await filteredFeed.ReadNextAsync());
+        }
+
+        var containerResponse = await container.ReadContainerAsync();
+        var keys = containerResponse.Resource.PartitionKeyPaths.Select(x => x.Substring(1));
+
+        List<Task> tasks = new List<Task>();
+
+        foreach (var itemReference in itemReferences)
+        {
+            var temp = mapper.Map(itemReference, typeof(DynamicObject), referenceReplicationAttribute.ItemType);
+
+            mapper.Map(entity, temp,
+                entity.GetType(), referenceReplicationAttribute.ItemType);
+            var id = Convert.ToString(itemReference.id);
+
+            var partitionKey = GetPartitionKey(keys, (object)temp);
+
+            tasks.Add(((Task<ItemResponse<dynamic>>)container.DeleteItemAsync<dynamic>(id, partitionKey.partitionKey.Value,
+                new ItemRequestOptions { IfMatchEtag = itemReference._etag }))
+                .ContinueWith(x =>
+                {
+                    if (x.IsFaulted)
+                        failedItemsCount++;
+                }));
+
+        }
+
+        await Task.WhenAll(tasks);
+
+        return failedItemsCount;
     }
 
     private string? GetId(object obj)
