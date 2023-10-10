@@ -1,6 +1,8 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
 using Microsoft.Azure.Cosmos.Linq;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
@@ -11,15 +13,20 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType>
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : ShiftEntityBase<EntityType>
 {
     private readonly IEnumerable<ShiftDbContext> dbContexts;
     private readonly IMapper mapper;
+    private readonly ShiftEntityCosmosDbOptions options;
+    private readonly IServiceProvider serviceProvider;
 
-    public LogDeletedRowsTrigger(IEnumerable<ShiftDbContext> dbContexts, IMapper mapper)
+    public LogDeletedRowsTrigger(IEnumerable<ShiftDbContext> dbContexts, IMapper mapper, 
+        ShiftEntityCosmosDbOptions options, IServiceProvider serviceProvider)
     {
         this.dbContexts = dbContexts;
         this.mapper = mapper;
+        this.options = options;
+        this.serviceProvider = serviceProvider;
     }
 
     public Task BeforeSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
@@ -30,7 +37,7 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
 
             var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
 
-            if (replicationAttribute != null)
+            if (true)
             {
                 var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
                     .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
@@ -40,9 +47,13 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                 (string? value, PartitionKeyTypes type) partitionKeyLevelTwo = (null, PartitionKeyTypes.None);
                 (string? value, PartitionKeyTypes type) partitionKeyLevelThree = (null, PartitionKeyTypes.None);
 
+                var id = "";
+
                 if (partitionKeyAttribute is not null)
                 {
                     object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
+
+                    id = Convert.ToString(item.GetProperty("id"));
 
                     partitionKeyLevelOne = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelOnePropertyName);
                     partitionKeyLevelTwo = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelTwoPropertyName);
@@ -52,7 +63,7 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                 var deleteRowLog = new DeletedRowLog
                 {
                     EntityName = context.Entity.GetType().Name,
-                    RowID = entity.ID,
+                    RowID = long.Parse(id!),
                     PartitionKeyLevelOneType = partitionKeyLevelOne.type,
                     PartitionKeyLevelOneValue = partitionKeyLevelOne.value,
                     PartitionKeyLevelTwoType = partitionKeyLevelTwo.type,
@@ -61,12 +72,12 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                     PartitionKeyLevelThreeValue = partitionKeyLevelThree.value,
                 };
 
-                foreach (var dbContext in dbContexts)
-
-                    if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
-                    {
-                        dbContext.Entry(deleteRowLog).State = Microsoft.EntityFrameworkCore.EntityState.Added;
-                    }
+                foreach (var dbType in options.ShiftDbContextStorage)
+                {
+                    var dbContext = (DbContext)serviceProvider.GetRequiredService(dbType.ShiftDbContextType);
+                        if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
+                            dbContext.Entry(deleteRowLog).State = Microsoft.EntityFrameworkCore.EntityState.Added;
+                }
             }
         }
 

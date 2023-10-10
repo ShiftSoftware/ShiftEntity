@@ -325,9 +325,9 @@ internal class CosmosDBService<EntityType>
         ItemResponse<dynamic> response;
 
         if (partitionKey.partitionKey is null)
-            response = await container.DeleteItemAsync<dynamic>(GetId(dto), PartitionKey.None);
+            response = await container.DeleteItemAsync<dynamic>(Convert.ToString(dto.GetProperty("id")), PartitionKey.None);
         else
-            response = await container.DeleteItemAsync<dynamic>(GetId(dto), partitionKey.partitionKey.Value);
+            response = await container.DeleteItemAsync<dynamic>(Convert.ToString(dto.GetProperty("id")), partitionKey.partitionKey.Value);
 
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created ||
@@ -359,7 +359,7 @@ internal class CosmosDBService<EntityType>
 
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
         long id = 0;
-        long.TryParse(GetId(dto), out id);
+        long.TryParse(Convert.ToString(dto.GetProperty("id")), out id);
 
         foreach (var provider in dbContextProviders)
         {
@@ -463,19 +463,6 @@ internal class CosmosDBService<EntityType>
         return failedItemsCount;
     }
 
-    private string? GetId(object obj)
-    {
-        // Get the type of the object
-        Type objectType = obj.GetType();
-
-        // Find the property by name (replace "PropertyName" with your property name)
-        PropertyInfo? propertyInfo = objectType.GetProperty("id");
-
-        if (propertyInfo is not null)
-            return Convert.ToString(propertyInfo.GetValue(obj));
-        else
-            throw new MemberAccessException($"Can not find id property in the {objectType.Name}");
-    }
 }
 
 

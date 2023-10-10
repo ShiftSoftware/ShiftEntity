@@ -8,7 +8,7 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTrigger<EntityType>, ITriggerPriority
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : ShiftEntityBase<EntityType>
 {
     private readonly IMapper mapper;
 

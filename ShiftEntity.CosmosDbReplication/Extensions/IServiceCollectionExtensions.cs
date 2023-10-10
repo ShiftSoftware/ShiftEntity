@@ -73,7 +73,6 @@ public static class IServiceCollectionExtensions
 
         foreach (var shiftDbContext in options.ShiftDbContextStorage)
         {
-            services.AddScoped(typeof(ShiftDbContext), x => x.GetRequiredService(shiftDbContext.ShiftDbContextType));
             services.AddSingleton(
                 new DbContextProvider(shiftDbContext.ShiftDbContextType, shiftDbContext.DbContextOptions));
         }
