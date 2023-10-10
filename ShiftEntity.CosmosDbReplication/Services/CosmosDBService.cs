@@ -386,7 +386,7 @@ internal class CosmosDBService<EntityType>
 
                 if (log is not null)
                 {
-                    log.LastReplicationDate = DateTime.UtcNow;
+                    dbContext.DeletedRowLogs.Remove(log);
                     await dbContext.SaveChangesWithoutTriggersAsync();
                 }
             }
