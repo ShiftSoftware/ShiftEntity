@@ -27,7 +27,7 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
     //Make the trigger excute the last one
     public int Priority => int.MaxValue;
 
-    public Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
+    public async Task AfterSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
         var entityType = context.Entity.GetType();
 
@@ -35,15 +35,15 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
 
         if (replicationAttribute != null)
         {
-            Task.Run(async () =>
+            var configurations = replicationAttribute.GetConfigurations(options.Accounts, entityType.Name);
+
+            var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
+            var entity = context.Entity;
+            if (prepareForReplication is not null)
+                entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
+
+            _ = Task.Run(async () =>
              {
-                 var configurations = replicationAttribute.GetConfigurations(options.Accounts, entityType.Name);
-
-                 var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
-                 var entity = context.Entity;
-                 if (prepareForReplication is not null)
-                     entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
-
                  if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
                      await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
                          configurations.collection, configurations.databaseName, configurations.connectionString, changeType);
@@ -61,8 +61,6 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
                  }
              });
         }
-        
-        return Task.CompletedTask;
     }
 
     private ReplicationChangeType ConvertChangeTypeToReplicationChangeType(ChangeType changeType)
