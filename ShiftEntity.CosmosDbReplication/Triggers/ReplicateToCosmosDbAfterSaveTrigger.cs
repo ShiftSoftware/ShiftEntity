@@ -46,10 +46,10 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
              {
                  if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
                      await cosmosDBService.UpsertAsync(entity, replicationAttribute.ItemType,
-                         configurations.collection, configurations.databaseName, configurations.connectionString, changeType);
+                         configurations.containerName, configurations.databaseName, configurations.connectionString, changeType);
                  else if (context.ChangeType == ChangeType.Deleted)
                      await cosmosDBService.DeleteAsync(entity, replicationAttribute.ItemType,
-                         configurations.collection, configurations.databaseName, configurations.connectionString);
+                         configurations.containerName, configurations.databaseName, configurations.connectionString);
              }).ContinueWith(t =>
              {
                  if (t.IsFaulted)

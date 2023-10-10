@@ -15,15 +15,13 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType>
     where EntityType : ShiftEntityBase<EntityType>
 {
-    private readonly IEnumerable<ShiftDbContext> dbContexts;
     private readonly IMapper mapper;
     private readonly ShiftEntityCosmosDbOptions options;
     private readonly IServiceProvider serviceProvider;
 
-    public LogDeletedRowsTrigger(IEnumerable<ShiftDbContext> dbContexts, IMapper mapper, 
+    public LogDeletedRowsTrigger(IMapper mapper,
         ShiftEntityCosmosDbOptions options, IServiceProvider serviceProvider)
     {
-        this.dbContexts = dbContexts;
         this.mapper = mapper;
         this.options = options;
         this.serviceProvider = serviceProvider;
@@ -37,7 +35,7 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
 
             var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
 
-            if (true)
+            if (replicationAttribute is not null)
             {
                 var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
                     .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
@@ -60,9 +58,11 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                     partitionKeyLevelThree = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelThreePropertyName);
                 }
 
+                var conf = replicationAttribute.GetConfigurations(options.Accounts, context.Entity.GetType().Name);
+
                 var deleteRowLog = new DeletedRowLog
                 {
-                    EntityName = context.Entity.GetType().Name,
+                    ContainerName = conf.containerName,
                     RowID = long.Parse(id!),
                     PartitionKeyLevelOneType = partitionKeyLevelOne.type,
                     PartitionKeyLevelOneValue = partitionKeyLevelOne.value,

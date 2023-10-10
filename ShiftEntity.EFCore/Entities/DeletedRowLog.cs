@@ -14,6 +14,6 @@ public class DeletedRowLog
     public PartitionKeyTypes PartitionKeyLevelTwoType { get; set; }
     public string? PartitionKeyLevelThreeValue { get; set; } = default!;
     public PartitionKeyTypes PartitionKeyLevelThreeType { get; set; }
-    public string EntityName { get; set; } = default!;
+    public string ContainerName { get; set; } = default!;
     public DateTime? LastReplicationDate { get; set; }
 }

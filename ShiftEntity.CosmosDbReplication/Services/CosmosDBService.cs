@@ -325,9 +325,9 @@ internal class CosmosDBService<EntityType>
         ItemResponse<dynamic> response;
 
         if (partitionKey.partitionKey is null)
-            response = await container.DeleteItemAsync<dynamic>(Convert.ToString(dto.GetProperty("id")), PartitionKey.None);
+            response = await container.DeleteItemAsync<dynamic>(GetId(dto), PartitionKey.None);
         else
-            response = await container.DeleteItemAsync<dynamic>(Convert.ToString(dto.GetProperty("id")), partitionKey.partitionKey.Value);
+            response = await container.DeleteItemAsync<dynamic>(GetId(dto), partitionKey.partitionKey.Value);
 
         if (response.StatusCode == System.Net.HttpStatusCode.OK ||
             response.StatusCode == System.Net.HttpStatusCode.Created ||
@@ -344,22 +344,21 @@ internal class CosmosDBService<EntityType>
                         failCount = +(await DeleteReferences(db, referenceReplicationAttribute, entity, response.Resource));
 
             if (failCount == 0)
-                await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, partitionKey.level1,
-                    partitionKey.level2, partitionKey.level3);
+                await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, containerName,
+                    partitionKey.level1, partitionKey.level2, partitionKey.level3);
         }
     }
 
     private async Task UpdateDeleteRowLogLastReplicationDateAsync(EntityType entity,
         Type cosmosDbItemType,
+        string containerName,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
         (string? value, PartitionKeyTypes type)? level3)
     {
-        var entityName = entity.GetType().Name;
-
         var dto = mapper.Map(entity, typeof(EntityType), cosmosDbItemType);
         long id = 0;
-        long.TryParse(Convert.ToString(dto.GetProperty("id")), out id);
+        long.TryParse(GetId(dto), out id);
 
         foreach (var provider in dbContextProviders)
         {
@@ -369,7 +368,7 @@ internal class CosmosDBService<EntityType>
             {
                 var query = dbContext.DeletedRowLogs.Where(x =>
                     x.RowID == id &&
-                    x.EntityName == entityName
+                    x.ContainerName == containerName
                 );
 
                 if (level1 is not null)
@@ -463,6 +462,19 @@ internal class CosmosDBService<EntityType>
         return failedItemsCount;
     }
 
+    private string? GetId(object obj)
+    {
+        // Get the type of the object
+        Type objectType = obj.GetType();
+
+        // Find the property by name (replace "PropertyName" with your property name)
+        PropertyInfo? propertyInfo = objectType.GetProperty("id");
+
+        if (propertyInfo is not null)
+            return Convert.ToString(propertyInfo.GetValue(obj));
+        else
+            throw new MemberAccessException($"Can not find id property in the {objectType.Name}");
+    }
 }
 
 

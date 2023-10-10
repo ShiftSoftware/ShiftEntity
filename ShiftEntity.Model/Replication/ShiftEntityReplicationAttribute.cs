@@ -29,7 +29,7 @@ public class ShiftEntityReplicationAttribute : Attribute
     /// </summary>
     public string? AccountName { get; set; }
 
-    internal (string collection, string connectionString, string databaseName) GetConfigurations
+    internal (string containerName, string connectionString, string databaseName) GetConfigurations
         (IEnumerable<CosmosDBAccount> accounts, string entityName)
     {
         string container;
