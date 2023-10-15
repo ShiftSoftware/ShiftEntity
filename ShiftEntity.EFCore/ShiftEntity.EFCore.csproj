@@ -29,7 +29,7 @@
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<PackageReference Include="EntityFrameworkCore.Triggered.Transactions" Version="3.2.2" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.20" />
-		<PackageReference Include="Thinktecture.EntityFrameworkCore.SqlServer" Version="4.5.1" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="6.0.20" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -11,7 +11,6 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
-using Thinktecture;
 using ShiftSoftware.ShiftEntity.Web.Triggers;
 using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Web;
@@ -50,7 +49,7 @@ public static class IMvcBuilderExtensions
             var dbContextBuilder = new DbContextOptionsBuilder(inner);
             var slqServerOptionBuilder= new SqlServerDbContextOptionsBuilder(dbContextBuilder);
 
-            slqServerOptionBuilder.AddRowNumberSupport();
+            //slqServerOptionBuilder.AddRowNumberSupport();
 
             return dbContextBuilder.Options;
         });

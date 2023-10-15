@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using Thinktecture;
 
 namespace ShiftSoftware.ShiftEntity.EFCore
 {
@@ -182,16 +181,16 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             {
                 if (showDeletedRows)
                 {
-                    query = dbSet.TemporalAll()
-                    .Where(x => !dbSet.Any(p => p.ID == x.ID))
-                    .Select(x => new
-                    {
-                        Entity = x,
-                        RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
-                    })
-                    .AsSubQuery()
-                    .Where(x => x.RowNumber <= 1)
-                    .Select(x => x.Entity);
+                    //query = dbSet.TemporalAll()
+                    //.Where(x => !dbSet.Any(p => p.ID == x.ID))
+                    //.Select(x => new
+                    //{
+                    //    Entity = x,
+                    //    RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
+                    //})
+                    //.AsSubQuery()
+                    //.Where(x => x.RowNumber <= 1)
+                    //.Select(x => x.Entity);
                 }
             }
 
