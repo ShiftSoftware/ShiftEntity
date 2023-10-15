@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 
-namespace ShiftSoftware.ShiftEntity.Web.Extensions;
+namespace Microsoft.AspNetCore.Mvc;
 
 public static class HttpContextExtensions
 {
@@ -24,36 +24,36 @@ public static class HttpContextExtensions
         if (value is null)
             return null;
 
-        return Services.ShiftEntityHashIds.Decode<T>(value);
+        return ShiftSoftware.ShiftEntity.Web.Services.ShiftEntityHashIds.Decode<T>(value);
     }
 
     internal static string? GetHashedRegionID(this HttpContext httpContext)
     {
-        return GetClaimValue(httpContext, Core.Constants.RegionIdClaim);
+        return GetClaimValue(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.RegionIdClaim);
     }
     internal static long? GetRegionID(this HttpContext httpContext)
     {
-        return GetDecodedClaimValue<ShiftIdentity.Core.DTOs.Region.RegionDTO>(httpContext, Core.Constants.RegionIdClaim);
+        return GetDecodedClaimValue<ShiftSoftware.ShiftIdentity.Core.DTOs.Region.RegionDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.RegionIdClaim);
     }
     internal static string? GetHashedCompanyID(this HttpContext httpContext)
     {
-        return GetClaimValue(httpContext, Core.Constants.CompanyIdClaim);
+        return GetClaimValue(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyIdClaim);
     }
     internal static long? GetCompanyID(this HttpContext httpContext)
     {
-        return GetDecodedClaimValue<ShiftIdentity.Core.DTOs.Company.CompanyDTO>(httpContext, Core.Constants.CompanyIdClaim);
+        return GetDecodedClaimValue<ShiftSoftware.ShiftIdentity.Core.DTOs.Company.CompanyDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyIdClaim);
     }
     internal static string? GetHashedCompanyBranchID(this HttpContext httpContext)
     {
-        return GetClaimValue(httpContext, Core.Constants.CompanyBranchIdClaim);
+        return GetClaimValue(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyBranchIdClaim);
     }
     internal static long? GetCompanyBranchID(this HttpContext httpContext)
     {
-        return GetDecodedClaimValue<ShiftIdentity.Core.DTOs.CompanyBranch.CompanyBranchDTO>(httpContext, Core.Constants.CompanyBranchIdClaim);
+        return GetDecodedClaimValue<ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch.CompanyBranchDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyBranchIdClaim);
     }
 
     internal static long? GetUserID(this HttpContext httpContext)
     {
-        return GetDecodedClaimValue<ShiftIdentity.Core.DTOs.User.UserDTO>(httpContext, ClaimTypes.NameIdentifier);
+        return GetDecodedClaimValue<ShiftSoftware.ShiftIdentity.Core.DTOs.User.UserDTO>(httpContext, ClaimTypes.NameIdentifier);
     }
 }

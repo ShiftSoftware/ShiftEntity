@@ -5,7 +5,6 @@ using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;

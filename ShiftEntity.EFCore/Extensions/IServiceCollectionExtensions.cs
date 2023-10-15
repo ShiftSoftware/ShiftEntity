@@ -2,9 +2,8 @@
 using EntityFrameworkCore.Triggered.Transactions;
 using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.EFCore.Triggers;
-using Microsoft.Extensions.DependencyInjection;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {

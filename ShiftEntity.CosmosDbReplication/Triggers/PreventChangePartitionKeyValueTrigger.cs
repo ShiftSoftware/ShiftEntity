@@ -2,7 +2,6 @@
 using EntityFrameworkCore.Triggered;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
-using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;

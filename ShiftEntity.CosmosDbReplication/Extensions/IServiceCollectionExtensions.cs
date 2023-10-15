@@ -1,14 +1,13 @@
 ﻿using EntityFrameworkCore.Triggered;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
-using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
 using System.Reflection;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {

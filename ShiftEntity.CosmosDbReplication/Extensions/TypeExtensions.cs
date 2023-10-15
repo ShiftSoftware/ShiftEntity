@@ -1,5 +1,5 @@
 ﻿
-namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
+namespace System;
 
 internal static class TypeExtensions
 {

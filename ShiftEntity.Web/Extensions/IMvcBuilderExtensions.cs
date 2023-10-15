@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.EFCore.Extensions;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
@@ -15,9 +14,10 @@ using System.Linq;
 using Thinktecture;
 using ShiftSoftware.ShiftEntity.Web.Triggers;
 using EntityFrameworkCore.Triggered;
-using ShiftSoftware.ShiftEntity.Core.Extensions;
+using ShiftSoftware.ShiftEntity.Web;
 
-namespace ShiftSoftware.ShiftEntity.Web.Extensions;
+
+namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IMvcBuilderExtensions
 {
@@ -33,7 +33,7 @@ public static class IMvcBuilderExtensions
 
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
     {
-        shiftEntityOptions.AutoMapperAssemblies.Add(typeof(EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
+        shiftEntityOptions.AutoMapperAssemblies.Add(typeof(ShiftSoftware.ShiftEntity.EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization()
@@ -67,7 +67,7 @@ public static class IMvcBuilderExtensions
                     o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
             };
 
-            return new ConfigureNamedOptions<JsonOptions>(Options.DefaultName, options);
+            return new ConfigureNamedOptions<JsonOptions>(Options.Options.DefaultName, options);
         });
 
 

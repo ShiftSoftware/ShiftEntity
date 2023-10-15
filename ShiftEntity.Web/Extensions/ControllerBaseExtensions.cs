@@ -1,6 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
-
-namespace ShiftSoftware.ShiftEntity.Web.Extensions;
+﻿
+namespace Microsoft.AspNetCore.Mvc;
 
 internal static class ControllerBaseExtensions
 {

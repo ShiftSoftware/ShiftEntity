@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using ShiftSoftware.ShiftEntity.EFCore.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 

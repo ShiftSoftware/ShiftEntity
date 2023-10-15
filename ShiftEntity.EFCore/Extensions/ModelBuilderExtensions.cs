@@ -1,7 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.ShiftEntity.Core;
+﻿using ShiftSoftware.ShiftEntity.Core;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
+namespace Microsoft.EntityFrameworkCore;
 
 public static class ModelBuilderExtensions
 {

@@ -1,7 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
+﻿using Microsoft.EntityFrameworkCore.Infrastructure;
+using ShiftSoftware.ShiftEntity.EFCore;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.Extensions;
+namespace Microsoft.EntityFrameworkCore;
 
 public static class DbContextOptionsBuilderExtensions
 {

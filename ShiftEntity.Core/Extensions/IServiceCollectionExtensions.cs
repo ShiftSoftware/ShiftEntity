@@ -1,12 +1,12 @@
 ﻿
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using System;
 using System.Linq;
 using System.Reflection;
 
-namespace ShiftSoftware.ShiftEntity.Core.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {

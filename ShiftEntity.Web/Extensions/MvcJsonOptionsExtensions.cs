@@ -1,8 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using ShiftSoftware.ShiftEntity.Core.Services;
+﻿using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Web.Services;
 
-namespace ShiftSoftware.ShiftEntity.Web.Extensions;
+namespace Microsoft.AspNetCore.Mvc;
 
 public static class MvcJsonOptionsExtensions
 {

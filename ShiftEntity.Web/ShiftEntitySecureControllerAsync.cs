@@ -13,13 +13,11 @@ using Microsoft.OData;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using Microsoft.AspNetCore.Authorization;
 using ShiftSoftware.TypeAuth.AspNetCore.Services;
-using ShiftSoftware.ShiftEntity.Web.Extensions;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
 using ShiftSoftware.TypeAuth.Core;
-using ShiftSoftware.ShiftEntity.Model.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 

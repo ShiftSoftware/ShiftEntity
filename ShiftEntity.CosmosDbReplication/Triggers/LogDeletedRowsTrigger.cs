@@ -1,12 +1,9 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
-using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
-using ShiftSoftware.ShiftEntity.CosmosDbReplication.Extensions;
-using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 
