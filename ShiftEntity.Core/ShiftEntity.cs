@@ -7,6 +7,8 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> where EntityType : class
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [System.Text.Json.Serialization.JsonPropertyName(nameof(ID))]
+    [Newtonsoft.Json.JsonProperty(nameof(ID))]
     public long ID { get; internal set; }
     public DateTime CreateDate { get; internal set; }
     public DateTime LastSaveDate { get; internal set; }
