@@ -5,6 +5,7 @@ using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
@@ -66,7 +67,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, Cre
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        return await repository.GetRevisionsAsync(ShiftEntityHashIds.Decode<ViewDTO>(key));
+        return await repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewDTO>(key));
     }
 
     [NonAction]
@@ -83,7 +84,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, Cre
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIds.Decode<ViewDTO>(key), asOf);
+            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewDTO>(key), asOf);
         }
         catch (ShiftEntityException ex)
         {
@@ -207,7 +208,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, Cre
             return new(BadRequest(response), null);
         }
 
-        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<ViewDTO>(key));
+        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewDTO>(key));
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<ViewDTO>
@@ -263,7 +264,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, Cre
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var item = await repository.FindAsync(ShiftEntityHashIds.Decode<ViewDTO>(key), null);
+        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewDTO>(key), null);
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<ViewDTO>

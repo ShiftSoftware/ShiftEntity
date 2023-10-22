@@ -1,4 +1,4 @@
-﻿namespace ShiftSoftware.ShiftEntity.Model.HashId;
+﻿namespace ShiftSoftware.ShiftEntity.Model.HashIds;
 
 internal class ServiceHashIdConverter : JsonHashIdConverterAttribute<ServiceHashIdConverter>
 {

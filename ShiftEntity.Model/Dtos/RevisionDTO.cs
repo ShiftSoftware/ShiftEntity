@@ -1,4 +1,4 @@
-﻿using ShiftSoftware.ShiftEntity.Model.HashId;
+﻿using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System.Text.Json.Serialization;
 
 namespace ShiftSoftware.ShiftEntity.Model.Dtos

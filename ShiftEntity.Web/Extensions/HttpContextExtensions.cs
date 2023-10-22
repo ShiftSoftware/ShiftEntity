@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System.Security.Claims;
 
 namespace Microsoft.AspNetCore.Mvc;
@@ -24,7 +25,7 @@ public static class HttpContextExtensions
         if (value is null)
             return null;
 
-        return ShiftSoftware.ShiftEntity.Web.Services.ShiftEntityHashIds.Decode<T>(value);
+        return ShiftEntityHashIdService.Decode<T>(value);
     }
 
     internal static string? GetHashedRegionID(this HttpContext httpContext)

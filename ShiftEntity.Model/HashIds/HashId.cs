@@ -1,6 +1,6 @@
 ﻿using HashidsNet;
 
-namespace ShiftSoftware.ShiftEntity.Model.HashId;
+namespace ShiftSoftware.ShiftEntity.Model.HashIds;
 public static class HashId
 {
     internal static bool acceptUnencodedIds;

@@ -2,7 +2,7 @@
 using System.Text.Json;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Model.HashId;
+namespace ShiftSoftware.ShiftEntity.Model.HashIds;
 
 public class StringJsonHashIdConverter : JsonConverter<string>
 {
