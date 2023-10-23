@@ -115,7 +115,6 @@ internal class CosmosDBService<EntityType>
         );
 
         List<dynamic> itemReferences = new();
-        var iterator = container.GetItemLinqQueryable<dynamic>().ToFeedIterator();
 
         while (filteredFeed.HasMoreResults)
         {
