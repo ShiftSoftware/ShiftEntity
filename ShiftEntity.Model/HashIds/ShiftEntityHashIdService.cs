@@ -1,10 +1,8 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Model.HashId;
-using System.Linq;
 
-namespace ShiftSoftware.ShiftEntity.Web.Services;
+namespace ShiftSoftware.ShiftEntity.Model.HashIds;
 
-public static class ShiftEntityHashIds
+public static class ShiftEntityHashIdService
 {
     public static long Decode<T>(string key)
     {
@@ -16,11 +14,11 @@ public static class ShiftEntityHashIds
         return Encode(id, typeof(T));
     }
 
-    public static long Decode(string key, System.Type type)
+    public static long Decode(string key, Type type)
     {
         //This is actually redundant, The same logic exists in hashId.Decode.
         //But this is here for performance and to avoid the overhead of creating a new hashId object.
-        if (!HashId.Enabled)
+        if (!HashIds.HashId.Enabled)
             return long.Parse(key);
 
         var hashId = type.GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)
@@ -33,11 +31,11 @@ public static class ShiftEntityHashIds
         return hashId.Decode(key);
     }
 
-    public static string Encode(long id, System.Type type)
+    public static string Encode(long id, Type type)
     {
         //This is actually redundant, The same logic exists in hashId.Decode.
         //But this is here for performance and to avoid the overhead of creating a new hashId object.
-        if (!HashId.Enabled)
+        if (!HashIds.HashId.Enabled)
             return id.ToString();
 
         var hashId = type.GetProperty(nameof(ShiftEntityDTOBase.ID))?.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true)

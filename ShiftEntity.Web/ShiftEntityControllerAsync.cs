@@ -38,7 +38,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
     }
 
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
         return (await base.GetSingleItem(key, asOf, null)).ActionResult;
     }

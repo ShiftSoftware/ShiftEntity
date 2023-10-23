@@ -18,6 +18,7 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
 using ShiftSoftware.TypeAuth.Core;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -58,9 +59,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
         var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID());
         var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID());
 
-        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<RegionDTO>(x)).ToList();
-        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyDTO>(x)).ToList();
-        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIds.Decode<CompanyBranchDTO>(x)).ToList();
+        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
+        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
+        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
 
         Expression<Func<Entity, bool>> companyWhere = x =>
             ((accessibleRegions == null || x.RegionID == null) ? true : accessibleRegions.Contains(x.RegionID)) &&
@@ -79,19 +80,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
     {
         if (entity?.RegionID is not null)
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, access, ShiftEntityHashIds.Encode<RegionDTO>(entity.RegionID.Value), this.HttpContext.GetHashedRegionID()))
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, access, ShiftEntityHashIdService.Encode<RegionDTO>(entity.RegionID.Value), this.HttpContext.GetHashedRegionID()))
                 return false;
         }
 
         if (entity?.CompanyID is not null)
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, access, ShiftEntityHashIds.Encode<CompanyDTO>(entity.CompanyID.Value), this.HttpContext.GetHashedCompanyID()))
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, access, ShiftEntityHashIdService.Encode<CompanyDTO>(entity.CompanyID.Value), this.HttpContext.GetHashedCompanyID()))
                 return false;
         }
 
         if (entity?.CompanyBranchID is not null)
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, access, ShiftEntityHashIds.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value), this.HttpContext.GetHashedCompanyBranchID()))
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, access, ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value), this.HttpContext.GetHashedCompanyBranchID()))
                 return false;
         }
 
@@ -122,19 +123,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
                     if (filter.TKey == typeof(long))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : long.Parse(x)).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : long.Parse(x)).ToList();
                     }
                     else if (filter.TKey == typeof(long?))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : long.Parse(x))).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : long.Parse(x))).ToList();
                     }
                     else if (filter.TKey == typeof(int))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int)ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x)).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int)ShiftEntityHashIdService.Decode<ListDTO>(x) : int.Parse(x)).ToList();
                     }
                     else if (filter.TKey == typeof(int?))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOType is null ? ShiftEntityHashIds.Decode<ListDTO>(x) : int.Parse(x))).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : int.Parse(x))).ToList();
                     }
 
                     var containsMethod = ids.GetType().GetMethod(nameof(List<object>.Contains))!;
@@ -183,7 +184,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 

@@ -5,13 +5,13 @@ namespace Microsoft.AspNetCore.Mvc;
 
 public static class MvcJsonOptionsExtensions
 {
-    public static JsonOptions RegisterTimeZoneConverters(this JsonOptions options, TimeZoneService timeZoneService)
-    {
-        options.JsonSerializerOptions.Converters.Add(new JsonDateTimeConverter(timeZoneService));
-        options.JsonSerializerOptions.Converters.Add(new JsonTimeConverter(timeZoneService));
+    //public static JsonOptions RegisterTimeZoneConverters(this JsonOptions options, TimeZoneService timeZoneService)
+    //{
+    //    options.JsonSerializerOptions.Converters.Add(new JsonDateTimeConverter(timeZoneService));
+    //    options.JsonSerializerOptions.Converters.Add(new JsonTimeConverter(timeZoneService));
 
-        return options;
-    }
+    //    return options;
+    //}
 
     public static JsonOptions RegisterAzureStorageServiceConverters(this JsonOptions options, AzureStorageService? azureStorageService)
     {
