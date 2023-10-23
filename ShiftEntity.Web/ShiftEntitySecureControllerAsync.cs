@@ -184,7 +184,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTime? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 

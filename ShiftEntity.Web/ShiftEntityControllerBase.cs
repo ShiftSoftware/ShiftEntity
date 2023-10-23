@@ -71,14 +71,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, Cre
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTime? asOf, Action<Entity>? beforeGetValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTimeOffset? asOf, Action<Entity>? beforeGetValidation)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
+        //var timeZoneService = HttpContext.RequestServices.GetService<TimeZoneService>();
 
-        if (asOf.HasValue)
-            asOf = timeZoneService!.ReadOffsettedDate(asOf.Value);
+        //if (asOf.HasValue)
+        //    asOf = timeZoneService!.ReadOffsettedDate(asOf.Value);
 
         Entity? item;
 

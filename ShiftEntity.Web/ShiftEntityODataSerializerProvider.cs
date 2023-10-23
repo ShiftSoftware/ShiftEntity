@@ -21,7 +21,7 @@ class ShiftEntityODataSerializerProvider : ODataSerializerProvider
     public override IODataEdmTypeSerializer GetEdmTypeSerializer(IEdmTypeReference edmType)
     {
         if (edmType.Definition.TypeKind == EdmTypeKind.Entity)
-            return new ShiftEntityODataResourceSerializer(this, serviceProvider.GetRequiredService<TimeZoneService>());
+            return new ShiftEntityODataResourceSerializer(this/*, serviceProvider.GetRequiredService<TimeZoneService>()*/);
         else
             return base.GetEdmTypeSerializer(edmType);
     }
@@ -29,13 +29,12 @@ class ShiftEntityODataSerializerProvider : ODataSerializerProvider
 
 class ShiftEntityODataResourceSerializer : ODataResourceSerializer
 {
-    private readonly TimeZoneService timeZoneService;
+    //private readonly TimeZoneService timeZoneService;
 
-    public ShiftEntityODataResourceSerializer(ODataSerializerProvider serializerProvider,
-        TimeZoneService timeZoneService) 
+    public ShiftEntityODataResourceSerializer(ODataSerializerProvider serializerProvider/*, TimeZoneService timeZoneService*/) 
         : base(serializerProvider)
     {
-        this.timeZoneService = timeZoneService;
+        //this.timeZoneService = timeZoneService;
     }
 
     public override ODataProperty CreateStructuralProperty(IEdmStructuralProperty structuralProperty, ResourceContext resourceContext)
@@ -53,26 +52,26 @@ class ShiftEntityODataResourceSerializer : ODataResourceSerializer
             }
         }
 
-        if (property?.Value?.GetType() == typeof(DateTimeOffset))
-        {
-            var dateTime = (DateTimeOffset)property.Value;
+        //if (property?.Value?.GetType() == typeof(DateTimeOffset))
+        //{
+        //    var dateTime = (DateTimeOffset)property.Value;
 
-            if (dateTime != default)
-            {
-                //Substracting or adding may result in invalid dates.
-                //For example if the value is Datetime.Min or Datetime.Max
-                try
-                {
-                    dateTime = new DateTimeOffset(timeZoneService.WriteOffsettedDate(dateTime), timeZoneService.GetTimeZoneOffset());
-                }
-                catch
-                {
+        //    if (dateTime != default)
+        //    {
+        //        //Substracting or adding may result in invalid dates.
+        //        //For example if the value is Datetime.Min or Datetime.Max
+        //        try
+        //        {
+        //            dateTime = new DateTimeOffset(timeZoneService.WriteOffsettedDate(dateTime), timeZoneService.GetTimeZoneOffset());
+        //        }
+        //        catch
+        //        {
 
-                }
+        //        }
 
-                property.Value = dateTime;
-            }
-        }
+        //        property.Value = dateTime;
+        //    }
+        //}
 
         return property;
     }

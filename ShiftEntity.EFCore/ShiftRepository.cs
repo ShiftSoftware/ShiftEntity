@@ -108,7 +108,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         //    return Find(id, asOf, includes);
         //}
 
-        private async Task<EntityType?> BaseFindAsync(long id, DateTime? asOf = null)
+        private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null)
         {
             List<string>? includes = null;
 
@@ -136,19 +136,19 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return entity;
         }
 
-        public async Task<EntityType?> FindAsync(long id, DateTime? asOf = null)
+        public async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null)
         {
             return await BaseFindAsync(id, asOf);
         }
 
-        private IQueryable<EntityType> GetIQueryable(DateTime? asOf, List<string>? includes)
+        private IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf, List<string>? includes)
         {
             IQueryable<EntityType> iQueryable;
 
             if (asOf == null)
                 iQueryable = dbSet;
             else
-                iQueryable = dbSet.TemporalAsOf(asOf.Value);
+                iQueryable = dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
 
             if (includes != null)
             {
@@ -215,8 +215,8 @@ namespace ShiftSoftware.ShiftEntity.EFCore
                     .Select(x => new RevisionDTO
                     {
                         ID = x.ID.ToString(),
-                        ValidFrom = x.ValidFrom,
-                        ValidTo = x.ValidTo,
+                        ValidFrom = new DateTimeOffset(x.ValidFrom, TimeSpan.Zero),
+                        ValidTo = new DateTimeOffset(x.ValidTo, TimeSpan.Zero),
                         SavedByUserID = x.SavedByUserID == null ? null : x.SavedByUserID.ToString(),
                     }).ToList();
 

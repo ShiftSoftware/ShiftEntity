@@ -38,7 +38,7 @@ public static class IMvcBuilderExtensions
             .AddLocalization()
             .AddShiftEntity(shiftEntityOptions);
 
-        builder.Services.TryAddSingleton<TimeZoneService>();
+        //builder.Services.TryAddSingleton<TimeZoneService>();
 
         builder.Services.RegisterShiftEntityEfCoreTriggers();
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
@@ -60,7 +60,7 @@ public static class IMvcBuilderExtensions
             Action<JsonOptions> options = (o) =>
             {
                 o.JsonSerializerOptions.PropertyNamingPolicy = null;
-                o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
+                //o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
 
                 if (shiftEntityOptions.azureStorageOptions.Count > 0)
                     o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
@@ -122,8 +122,8 @@ public static class IMvcBuilderExtensions
             oDataoptions.AddRouteComponents(shiftEntityODataOptions.RoutePrefix, shiftEntityODataOptions.EdmModel, serviceCollection =>
             {
                 serviceCollection
-                .AddHttpContextAccessor()
-                .TryAddSingleton<TimeZoneService>();
+                .AddHttpContextAccessor();
+                //.TryAddSingleton<TimeZoneService>();
 
                 serviceCollection.RegisterConverters();
             });

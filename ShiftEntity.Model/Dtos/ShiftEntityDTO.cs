@@ -7,10 +7,10 @@ public abstract class ShiftEntityDTO : ShiftEntityDTOBase
 {
 
     [DataType(DataType.DateTime)]
-    public DateTime CreateDate { get; set; }
+    public DateTimeOffset CreateDate { get; set; }
 
     [DataType(DataType.DateTime)]
-    public DateTime LastSaveDate { get; set; }
+    public DateTimeOffset LastSaveDate { get; set; }
 
     [UserHashIdConverter]
     public string? CreatedByUserID { get; set; }

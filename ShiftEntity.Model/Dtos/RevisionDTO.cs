@@ -8,8 +8,8 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos
         [UserHashIdConverter]
         [JsonIgnore]
         public override string? ID { get; set; }
-        public DateTime? ValidFrom { get; set; }
-        public DateTime? ValidTo { get; set; }
+        public DateTimeOffset? ValidFrom { get; set; }
+        public DateTimeOffset? ValidTo { get; set; }
 
         [UserHashIdConverter]
         public string? SavedByUserID { get; set; }
