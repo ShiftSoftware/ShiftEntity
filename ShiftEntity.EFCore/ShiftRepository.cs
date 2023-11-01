@@ -136,7 +136,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return entity;
         }
 
-        public async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null)
+        public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null)
         {
             return await BaseFindAsync(id, asOf);
         }
@@ -173,7 +173,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         //    return GetIQueryable(asOf, includes);
         //}
 
-        public IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
+        public virtual IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
         {
             var query = dbSet.AsQueryable();
 
