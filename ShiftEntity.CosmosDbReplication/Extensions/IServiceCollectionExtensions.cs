@@ -16,7 +16,8 @@ public static class IServiceCollectionExtensions
         Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
         var repositoryTypes = repositoryAssembly.GetTypes()
-            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>)));
+            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>)) &&
+                !t.IsInterface);
 
         // Register each IRepository<> implementation with its corresponding interface
         foreach (var repositoryType in repositoryTypes)
