@@ -78,7 +78,7 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
 
     public override void Write(Utf8JsonWriter writer, ShiftEntitySelectDTO value, JsonSerializerOptions options)
     {
-        if (value is null)
+        if (value is null || string.IsNullOrWhiteSpace(value.Value))
             writer.WriteNullValue();
         else
         {
