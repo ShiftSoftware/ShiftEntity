@@ -3,9 +3,10 @@
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public class ShiftEntityValueTextAttribute : Attribute
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+public class ShiftEntityKeyAndNameAttribute : Attribute
 {
-    public ShiftEntityValueTextAttribute(string value, string text)
+    public ShiftEntityKeyAndNameAttribute(string value, string text)
     {
         Value = value;
         Text = text;

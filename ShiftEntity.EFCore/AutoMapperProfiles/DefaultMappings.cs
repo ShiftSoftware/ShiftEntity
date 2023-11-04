@@ -50,7 +50,7 @@ internal class ShiftEntityToShiftEntitySelectDTO : ITypeConverter<ShiftEntityBas
 
         if (source != null)
         {
-            var attribute = (ShiftEntityValueTextAttribute?)Attribute.GetCustomAttribute(source.GetType(), typeof(ShiftEntityValueTextAttribute));
+            var attribute = (ShiftEntityKeyAndNameAttribute?)Attribute.GetCustomAttribute(source.GetType(), typeof(ShiftEntityKeyAndNameAttribute));
 
             if (attribute is not null)
             {
