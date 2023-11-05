@@ -5,7 +5,7 @@ using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
-public abstract class ReplicationModel : ShiftEntityDTO
+public abstract class ReplicationModel : ShiftEntityViewAndUpsertDTO
 {
     [System.Text.Json.Serialization.JsonPropertyName(nameof(id))]
     [Newtonsoft.Json.JsonProperty(nameof(id))]

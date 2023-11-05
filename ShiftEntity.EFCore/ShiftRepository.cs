@@ -8,24 +8,28 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.EFCore
 {
-    public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> : ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO, ViewAndUpsertDTO>
+    public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> : 
+        IShiftRepositoryAsync<EntityType, ListDTO, ViewAndUpsertDTO>
         where DB : ShiftDbContext
         where EntityType : ShiftEntity<EntityType>, new()
         where ListDTO : ShiftEntityDTOBase
     {
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, mapper, shiftRepositoryBuilder)
-        {
-        }
-    }
+        public readonly DB db;
+        internal DbSet<EntityType> dbSet;
+        public readonly IMapper mapper;
 
-    public class ShiftRepository<DB, EntityType, ListDTO, ViewDTO, UpsertDTO> : 
-        ShiftRepository<DB, EntityType>, IShiftRepositoryAsync<EntityType, ListDTO, ViewDTO, UpsertDTO>
-        where DB : ShiftDbContext
-        where EntityType : ShiftEntity<EntityType>, new()
-        where ListDTO : ShiftEntityDTOBase
-    {
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, mapper, shiftRepositoryBuilder)
+        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
         {
+            this.db = db;
+            this.dbSet = dbSet;
+            this.mapper = mapper;
+
+            if (shiftRepositoryBuilder is not null)
+            {
+                this.ShiftRepositoryOptions = new ShiftRepositoryOptions<EntityType>();
+
+                shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
+            }
         }
 
         public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false, IQueryable<EntityType>? queryable = null)
@@ -36,55 +40,22 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
         }
 
-        public virtual ValueTask<ViewDTO> ViewAsync(EntityType entity)
+        public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
         {
-            return new ValueTask<ViewDTO>(mapper.Map<ViewDTO>(entity));
+            return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
         }
 
-        public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, UpsertDTO dto, ActionTypes actionType, long? userId = null)
+        public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null)
         {
             entity = mapper.Map(dto, entity);
 
             return new ValueTask<EntityType>(entity);
         }
-    }
-
-    public class ShiftRepository<DB, EntityType> : ShiftRepository<EntityType>
-        where DB : ShiftDbContext
-        where EntityType : ShiftEntity<EntityType>
-    {
-        public readonly DB db;
-        public readonly IMapper mapper;
-        public ShiftRepository(DB db, DbSet<EntityType> dbSet, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null) : base(db, dbSet, shiftRepositoryBuilder)
-        {
-            this.db = db;
-            this.mapper = mapper;
-        }
-    }
-
-    public class ShiftRepository<EntityType> : IShiftEntityDeleteAsync<EntityType> where EntityType :
-        ShiftEntity<EntityType>
-    {
-        internal DbSet<EntityType> dbSet;
-        ShiftDbContext db;
-
+        
         public Message? ResponseMessage { get; set; }
         public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
         public ShiftRepositoryOptions<EntityType>? ShiftRepositoryOptions { get; set; }
-
-        public ShiftRepository(ShiftDbContext db, DbSet<EntityType> dbSet, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
-        {
-            this.db = db;
-            this.dbSet = dbSet;
-
-            if (shiftRepositoryBuilder is not null)
-            {
-                this.ShiftRepositoryOptions = new ShiftRepositoryOptions<EntityType>();
-
-                shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
-            }
-        }
 
         //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
         //{

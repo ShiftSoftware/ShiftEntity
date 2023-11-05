@@ -22,11 +22,11 @@ using ShiftSoftware.ShiftEntity.Model.HashIds;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
-public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO> :
-    ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO>
-    where Entity : ShiftEntity<Entity>
-    where UpdateDTO : ShiftEntityDTO
+public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewAndUpsertDTO> :
+    ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpsertDTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>
+    where Entity : ShiftEntity<Entity>, new()
+    where ViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
     where ListDTO : ShiftEntityDTOBase
 {
     private readonly ReadWriteDeleteAction action;
@@ -184,7 +184,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -223,7 +223,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpPost]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Post([FromBody] CreateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Post([FromBody] ViewAndUpsertDTO dto)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -249,7 +249,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpPut("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Put(string key, [FromBody] ViewAndUpsertDTO dto)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -275,7 +275,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
 
     [Authorize]
     [HttpDelete("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -297,18 +297,5 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewD
         });
 
         return result.ActionResult;
-    }
-}
-
-public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, UpsertDTO> :
-    ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, UpsertDTO, UpsertDTO, UpsertDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, UpsertDTO, UpsertDTO>
-    where Entity : ShiftEntity<Entity>, new()
-    where UpsertDTO : ShiftEntityDTO
-    where ListDTO : ShiftEntityDTOBase
-{
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null) : base(action, dynamicActionFilterBuilder)
-    {
-
     }
 }

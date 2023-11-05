@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
-public abstract class ShiftEntityDTO : ShiftEntityDTOBase
+public abstract class ShiftEntityViewAndUpsertDTO : ShiftEntityDTOBase
 {
 
     [DataType(DataType.DateTime)]

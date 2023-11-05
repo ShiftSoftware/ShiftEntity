@@ -16,11 +16,11 @@ using Microsoft.OData;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
-public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO> :
-    ShiftEntityControllerBase<Repository, Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, SelectDTO, CreateDTO, UpdateDTO>
-    where Entity : ShiftEntity<Entity>
-    where UpdateDTO : ShiftEntityDTO
+public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpsertDTO> :
+    ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpsertDTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>
+    where Entity : ShiftEntity<Entity>, new()
+    where ViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
     where ListDTO : ShiftEntityDTOBase
 {
 
@@ -38,7 +38,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
     }
 
     [HttpGet("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
         return (await base.GetSingleItem(key, asOf, null)).ActionResult;
     }
@@ -51,19 +51,19 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, SelectDTO, 
     }
 
     [HttpPost]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Post([FromBody] CreateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Post([FromBody] ViewAndUpsertDTO dto)
     {
         return (await base.PostItem(dto, null)).ActionResult;
     }
 
     [HttpPut("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Put(string key, [FromBody] UpdateDTO dto)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Put(string key, [FromBody] ViewAndUpsertDTO dto)
     {
         return (await base.PutItem(key, dto, null)).ActionResult;
     }
 
     [HttpDelete("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<SelectDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
         return (await base.DeleteItem(key, isHardDelete, null)).ActionResult;
     }

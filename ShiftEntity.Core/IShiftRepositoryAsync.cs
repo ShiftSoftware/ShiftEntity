@@ -6,17 +6,30 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, UpsertDTO> :
-    IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, UpsertDTO, UpsertDTO>
-    where Entity : ShiftEntity<Entity>, new()
-    where ListDTO : ShiftEntityDTOBase
+public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
+        IShiftOdataList<Entity, ListDTO>,
+        IShiftEntityFind<Entity>,
+        IShiftEntityPrepareForReplicationAsync<Entity>,
+        IShiftEntityViewAsync<Entity, ViewAndUpsertDTO>,
+        IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>,
+        IShiftEntityUpdateAsync<Entity, ViewAndUpsertDTO>,
+        IShiftEntityDeleteAsync<Entity>
+        where Entity : ShiftEntity<Entity>, new()
+        where ListDTO : ShiftEntityDTOBase
 {
-    ValueTask<Entity> IShiftEntityCreateAsync<Entity, UpsertDTO>.CreateAsync(UpsertDTO dto, long? userId)
+
+    void Add(Entity entity);
+    Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false);
+
+    Message? ResponseMessage { get; set; }
+    Dictionary<string, object>? AdditionalResponseData { get; set; }
+
+    ValueTask<Entity> IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>.CreateAsync(ViewAndUpsertDTO dto, long? userId)
     {
         return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId);
     }
 
-    ValueTask<Entity> IShiftEntityUpdateAsync<Entity, UpsertDTO>.UpdateAsync(Entity entity, UpsertDTO dto, long? userId)
+    ValueTask<Entity> IShiftEntityUpdateAsync<Entity, ViewAndUpsertDTO>.UpdateAsync(Entity entity, ViewAndUpsertDTO dto, long? userId)
     {
         return UpsertAsync(entity, dto, ActionTypes.Update, userId);
     }
@@ -30,26 +43,8 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, UpsertDTO> :
     /// <param name="userId"></param>
     /// <returns></returns>
     /// <exception cref="NotImplementedException"></exception>
-    public ValueTask<Entity> UpsertAsync(Entity entity, UpsertDTO dto, ActionTypes actionType, long? userId = null)
+    public ValueTask<Entity> UpsertAsync(Entity entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null)
     {
         throw new NotImplementedException();
     }
-}
-
-public interface IShiftRepositoryAsync<Entity, ListDTO, ViewDTO, CreateDTO, UpdateDTO> :
-    IShiftOdataList<Entity, ListDTO>,
-    IShiftEntityFind<Entity>,
-    IShiftEntityPrepareForReplicationAsync<Entity>,
-    IShiftEntityViewAsync<Entity, ViewDTO>,
-    IShiftEntityCreateAsync<Entity, CreateDTO>,
-    IShiftEntityUpdateAsync<Entity, UpdateDTO>,
-    IShiftEntityDeleteAsync<Entity>
-    where Entity : ShiftEntity<Entity>
-    where ListDTO : ShiftEntityDTOBase
-{
-    void Add(Entity entity);
-    Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false);
-
-    Message? ResponseMessage { get; set; }
-    Dictionary<string, object>? AdditionalResponseData { get; set; }
 }
