@@ -49,6 +49,14 @@ namespace ShiftSoftware.ShiftEntity.EFCore
         {
             entity = mapper.Map(dto, entity);
 
+            if (actionType == ActionTypes.Insert)
+            {
+                if (this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.IncludeOperations.Count > 0)
+                    entity.ReloadAfterSave = true;
+
+                dbSet.Add(entity);
+            }
+
             return new ValueTask<EntityType>(entity);
         }
         
@@ -194,15 +202,6 @@ namespace ShiftSoftware.ShiftEntity.EFCore
             return items;
         }
 
-        public virtual void Add(EntityType entity)
-        {
-            if (this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.IncludeOperations.Count > 0)
-            {
-                entity.ReloadAfterSave = true;
-            }
-
-            dbSet.Add(entity);
-        }
 
         public virtual async Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false)
         {

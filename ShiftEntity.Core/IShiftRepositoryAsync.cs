@@ -18,7 +18,6 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
         where ListDTO : ShiftEntityDTOBase
 {
 
-    void Add(Entity entity);
     Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false);
 
     Message? ResponseMessage { get; set; }
