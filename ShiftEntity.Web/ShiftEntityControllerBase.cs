@@ -161,6 +161,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             return new(HandleException(ex), null);
         }
 
+        repository.Add(newItem);
 
         newItem.BeforeCommitValidation = beforeCommitValidation;
 
