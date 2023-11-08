@@ -3,6 +3,7 @@ using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json.Linq;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.Model.Enums;
@@ -15,7 +16,7 @@ using System.Windows.Markup;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
 internal class CosmosDBService<EntityType>
-    where EntityType : class
+    where EntityType : ShiftEntityBase<EntityType>
 {
     private readonly IMapper mapper;
     private readonly IEnumerable<DbContextProvider> dbContextProviders;
@@ -57,20 +58,29 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            int failCount = 0;
+            int updateReferenceFailCount = 0;
+            int updateParentReferenceFailCount = 0;
 
             if (replicationChangeType == ReplicationChangeType.Modified)
             {
+                //Update references
                 var referenceReplicationAttributes = (ReferenceReplicationAttribute[])entity.GetType()
                     .GetCustomAttributes(typeof(ReferenceReplicationAttribute), true);
 
                 if (referenceReplicationAttributes is not null)
                     foreach (var referenceReplicationAttribute in referenceReplicationAttributes)
                         if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
-                            failCount = +(await UpdateReferences(db, referenceReplicationAttribute, entity, response.Resource));
+                            updateReferenceFailCount += (await UpdateReferences(db, referenceReplicationAttribute, entity));
+
+                //Update parent references
+                var parentReferenceReplicationAttributes = (PropertyReferenceReplicationAttribute[])entity.GetType()
+                    .GetCustomAttributes(typeof(PropertyReferenceReplicationAttribute), true);
+
+                foreach (var parentReferenceReplicationAttribute in parentReferenceReplicationAttributes)
+                    updateParentReferenceFailCount += (await UpdateParentReferences(db, parentReferenceReplicationAttribute, entity));
             }
 
-            if(failCount == 0)
+            if (updateReferenceFailCount == 0 && updateParentReferenceFailCount == 0)
                 await UpdateLastReplicationDateAsync(entity);
         }
     }
@@ -81,10 +91,9 @@ internal class CosmosDBService<EntityType>
     /// <param name="db"></param>
     /// <param name="referenceReplicationAttribute"></param>
     /// <param name="entity"></param>
-    /// <param name="item"></param>
     /// <returns>Number of failed items to update</returns>
     private async Task<int> UpdateReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
-        EntityType entity, object item)
+        EntityType entity)
     {
         int failedItemsCount = 0;
         var container = db.GetContainer(referenceReplicationAttribute.ContainerName);
@@ -146,6 +155,64 @@ internal class CosmosDBService<EntityType>
         return failedItemsCount;
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="db"></param>
+    /// <param name="referenceReplicationAttribute"></param>
+    /// <param name="entity"></param>
+    /// <returns>Number of failed items to update</returns>
+    private async Task<int> UpdateParentReferences(Database db, PropertyReferenceReplicationAttribute parentReferenceReplicationAttribute,
+        EntityType entity)
+    {
+        int failedItemsCount = 0;
+        var container = db.GetContainer(parentReferenceReplicationAttribute.ContainerName);
+
+        var data = mapper.Map(entity, typeof(EntityType), parentReferenceReplicationAttribute.ItemType);
+
+        var query = $"SELECT * FROM c WHERE c.{parentReferenceReplicationAttribute.PropertyName}.{nameof(entity.ID)} = @id";
+
+        var parameterizedQuery = new QueryDefinition(
+          query: query
+        ).WithParameter("@id", entity.ID.ToString());
+
+        var filteredFeed = container.GetItemQueryIterator<dynamic>(
+            queryDefinition: parameterizedQuery
+        );
+
+        List<dynamic> itemReferences = new();
+
+        while (filteredFeed.HasMoreResults)
+        {
+            itemReferences.AddRange(await filteredFeed.ReadNextAsync());
+        }
+
+        List<Task> tasks = new List<Task>();
+
+        var propertyItem = mapper.Map(entity, typeof(EntityType), parentReferenceReplicationAttribute.ItemType);
+        var containerReposne = await container.ReadContainerAsync();
+
+        foreach (var itemReference in itemReferences)
+        {
+            var id = Convert.ToString(itemReference.id);
+            var partitionKey = await GetPartitionKey(containerReposne, itemReference);
+
+            tasks.Add(((Task<ItemResponse<dynamic>>)container.PatchItemAsync<dynamic>(id, partitionKey,
+                new[] { PatchOperation.Replace($"/{parentReferenceReplicationAttribute.PropertyName}", propertyItem) },
+                new PatchItemRequestOptions { IfMatchEtag = itemReference._etag }))
+                .ContinueWith(x =>
+                {
+                    if (x.IsFaulted)
+                        failedItemsCount++;
+                }));
+
+        }
+
+        await Task.WhenAll(tasks);
+
+        return failedItemsCount;
+    }
+
     private Dictionary<string, object?> GetCompareValues(ReferenceReplicationAttribute referenceReplicationAttribute, object item)
     {
         Dictionary<string, object?> values = new Dictionary<string, object?>();
@@ -164,6 +231,27 @@ internal class CosmosDBService<EntityType>
         }
 
         return values;
+    }
+
+    private async Task<PartitionKey> GetPartitionKey(ContainerResponse containerResponse, dynamic item)
+    {
+        PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
+
+        foreach (var partitionKeyPath in containerResponse.Resource.PartitionKeyPaths)
+        {
+            var value =(JValue) item[partitionKeyPath.Substring(1)];
+
+            if (value.Value.GetType() == typeof(string))
+                partitionKeyBuilder.Add(value.Value<string>());
+            else if (value.Value.GetType().IsNumericType())
+                partitionKeyBuilder.Add(value.Value<double>());
+            else if (value.Value.GetType() == typeof(bool) || value.Value.GetType() == typeof(bool?))
+                partitionKeyBuilder.Add(value.Value<bool>());
+            else
+                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
+        }
+
+        return partitionKeyBuilder.Build();
     }
 
     private (PartitionKey? partitionKey,
