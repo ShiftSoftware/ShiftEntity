@@ -59,7 +59,7 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
             int updateReferenceFailCount = 0;
-            int updateParentReferenceFailCount = 0;
+            int updatePropertyReferenceFailCount = 0;
 
             if (replicationChangeType == ReplicationChangeType.Modified)
             {
@@ -72,15 +72,15 @@ internal class CosmosDBService<EntityType>
                         if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
                             updateReferenceFailCount += (await UpdateReferences(db, referenceReplicationAttribute, entity));
 
-                //Update parent references
+                //Update property references
                 var parentReferenceReplicationAttributes = (PropertyReferenceReplicationAttribute[])entity.GetType()
                     .GetCustomAttributes(typeof(PropertyReferenceReplicationAttribute), true);
 
                 foreach (var parentReferenceReplicationAttribute in parentReferenceReplicationAttributes)
-                    updateParentReferenceFailCount += (await UpdateParentReferences(db, parentReferenceReplicationAttribute, entity));
+                    updatePropertyReferenceFailCount += (await UpdateParentReferences(db, parentReferenceReplicationAttribute, entity));
             }
 
-            if (updateReferenceFailCount == 0 && updateParentReferenceFailCount == 0)
+            if (updateReferenceFailCount == 0 && updatePropertyReferenceFailCount == 0)
                 await UpdateLastReplicationDateAsync(entity);
         }
     }
@@ -167,8 +167,6 @@ internal class CosmosDBService<EntityType>
     {
         int failedItemsCount = 0;
         var container = db.GetContainer(parentReferenceReplicationAttribute.ContainerName);
-
-        var data = mapper.Map(entity, typeof(EntityType), parentReferenceReplicationAttribute.ItemType);
 
         var query = $"SELECT * FROM c WHERE c.{parentReferenceReplicationAttribute.PropertyName}.{nameof(entity.ID)} = @id";
 
@@ -418,20 +416,84 @@ internal class CosmosDBService<EntityType>
             response.StatusCode == System.Net.HttpStatusCode.Created ||
             response.StatusCode == System.Net.HttpStatusCode.NoContent)
         {
-            int failCount = 0;
+            int updateReferenceFailCount = 0;
+            int updatePropertyReferenceFailCount = 0;
 
+            //Delete references
             var referenceReplicationAttributes = (ReferenceReplicationAttribute[])entity.GetType()
                     .GetCustomAttributes(typeof(ReferenceReplicationAttribute), true);
 
             if (referenceReplicationAttributes is not null)
                 foreach (var referenceReplicationAttribute in referenceReplicationAttributes)
                     if (referenceReplicationAttribute is not null && referenceReplicationAttribute.ComparePropertyNames?.Count() > 0)
-                        failCount = +(await DeleteReferences(db, referenceReplicationAttribute, entity, response.Resource));
+                        updateReferenceFailCount += (await DeleteReferences(db, referenceReplicationAttribute, entity));
 
-            if (failCount == 0)
+            //Delete property references
+            var parentReferenceReplicationAttributes = (PropertyReferenceReplicationAttribute[])entity.GetType()
+                .GetCustomAttributes(typeof(PropertyReferenceReplicationAttribute), true);
+
+            foreach (var parentReferenceReplicationAttribute in parentReferenceReplicationAttributes)
+                updatePropertyReferenceFailCount += (await DeleteParentReferences(db, parentReferenceReplicationAttribute, entity));
+
+            if (updateReferenceFailCount == 0 && updatePropertyReferenceFailCount == 0)
                 await UpdateDeleteRowLogLastReplicationDateAsync(entity, cosmosDbItemType, containerName,
                     partitionKey.level1, partitionKey.level2, partitionKey.level3);
         }
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="db"></param>
+    /// <param name="referenceReplicationAttribute"></param>
+    /// <param name="entity"></param>
+    /// <returns>Number of failed items to update</returns>
+    private async Task<int> DeleteParentReferences(Database db, PropertyReferenceReplicationAttribute parentReferenceReplicationAttribute,
+        EntityType entity)
+    {
+        int failedItemsCount = 0;
+        var container = db.GetContainer(parentReferenceReplicationAttribute.ContainerName);
+
+        var query = $"SELECT * FROM c WHERE c.{parentReferenceReplicationAttribute.PropertyName}.{nameof(entity.ID)} = @id";
+
+        var parameterizedQuery = new QueryDefinition(
+          query: query
+        ).WithParameter("@id", entity.ID.ToString());
+
+        var filteredFeed = container.GetItemQueryIterator<dynamic>(
+            queryDefinition: parameterizedQuery
+        );
+
+        List<dynamic> itemReferences = new();
+
+        while (filteredFeed.HasMoreResults)
+        {
+            itemReferences.AddRange(await filteredFeed.ReadNextAsync());
+        }
+
+        List<Task> tasks = new List<Task>();
+
+        var containerReposne = await container.ReadContainerAsync();
+
+        foreach (var itemReference in itemReferences)
+        {
+            var id = Convert.ToString(itemReference.id);
+            var partitionKey = await GetPartitionKey(containerReposne, itemReference);
+
+            tasks.Add(((Task<ItemResponse<dynamic>>)container.PatchItemAsync<dynamic>(id, partitionKey,
+                new[] { PatchOperation.Remove($"/{parentReferenceReplicationAttribute.PropertyName}") },
+                new PatchItemRequestOptions { IfMatchEtag = itemReference._etag }))
+                .ContinueWith(x =>
+                {
+                    if (x.IsFaulted)
+                        failedItemsCount++;
+                }));
+
+        }
+
+        await Task.WhenAll(tasks);
+
+        return failedItemsCount;
     }
 
     private async Task UpdateDeleteRowLogLastReplicationDateAsync(EntityType entity,
@@ -479,7 +541,7 @@ internal class CosmosDBService<EntityType>
     }
 
     private async Task<int> DeleteReferences(Database db, ReferenceReplicationAttribute referenceReplicationAttribute,
-        EntityType entity, object item)
+        EntityType entity)
     {
         int failedItemsCount = 0;
         var container = db.GetContainer(referenceReplicationAttribute.ContainerName);
