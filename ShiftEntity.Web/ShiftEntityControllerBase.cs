@@ -49,7 +49,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
         }
 
-        var queryable = repository.GetIQueryableForOData(showDeletedRows);
+        var queryable = repository.GetIQueryable(showDeletedRows);
 
         if (where is not null)
             queryable = queryable.Where(where);

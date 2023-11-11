@@ -35,7 +35,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false, IQueryable<EntityType>? queryable = null)
     {
         if (queryable is null)
-            queryable = GetIQueryableForOData(showDeletedRows);
+            queryable = GetIQueryable(showDeletedRows);
 
         return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
     }
@@ -144,7 +144,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     //    return GetIQueryable(asOf, includes);
     //}
 
-    public virtual IQueryable<EntityType> GetIQueryableForOData(bool showDeletedRows = false)
+    public virtual IQueryable<EntityType> GetIQueryable(bool showDeletedRows = false)
     {
         var query = dbSet.AsQueryable();
 
