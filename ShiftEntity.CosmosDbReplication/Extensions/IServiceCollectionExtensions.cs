@@ -87,4 +87,10 @@ public static class IServiceCollectionExtensions
 
         return services.AddShiftEntityCosmosDbReplication(o);
     }
+
+    public static IServiceCollection AddShiftEntityCosmosDbReplicationFunction(this IServiceCollection services)
+    {
+        services.AddScoped<CosmosDbReplication>();
+        return services;
+    }
 }

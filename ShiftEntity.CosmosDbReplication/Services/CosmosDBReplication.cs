@@ -1,0 +1,126 @@
+﻿using ShiftSoftware.ShiftEntity.EFCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using ShiftSoftware.ShiftEntity.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using AutoMapper;
+using Microsoft.Azure.Cosmos;
+using EntityFrameworkCore.Triggered.Extensions;
+
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
+
+public class CosmosDbReplication
+{
+    private readonly IServiceProvider services;
+
+    public CosmosDbReplication(IServiceProvider services)
+    {
+        this.services = services;
+    }
+
+    public CosmosDbReplicationOperations<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId)
+        where DB : ShiftDbContext
+        where Entity : ShiftEntity<Entity>
+    {
+        return new CosmosDbReplicationOperations<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services);
+    }
+}
+public class CosmosDbReplicationOperations<DB, Entity>
+   where DB : ShiftDbContext
+       where Entity : ShiftEntity<Entity>
+{
+    private readonly string cosmosDbConnectionString;
+    private readonly string cosmosDbDatabaseId;
+    private readonly IServiceProvider services;
+    private readonly IMapper mapper;
+    private readonly DB db;
+    private readonly DbSet<Entity> dbSet;
+
+    private IEnumerable<Entity> entities;
+
+    List<Func<Task>> operationActions = new();
+    Dictionary<long, long> failCounts = new Dictionary<long, long>();
+
+    public CosmosDbReplicationOperations(
+        string cosmosDbConnectionString,
+        string cosmosDbDatabaseId,
+        IServiceProvider services)
+    {
+        this.cosmosDbConnectionString = cosmosDbConnectionString;
+        this.cosmosDbDatabaseId = cosmosDbDatabaseId;
+        this.services = services;
+        this.mapper = services.GetRequiredService<IMapper>();
+        this.db = services.GetRequiredService<DB>();
+        this.dbSet = this.db.Set<Entity>();
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="CosmosDBItem"></typeparam>
+    /// <param name="containerId"></param>
+    /// <param name="mapping">If null, it use Auto Mapper for mapping</param>
+    /// <returns></returns>
+    public CosmosDbReplicationOperations<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    {
+        operationActions.Add(async () =>
+        {
+            using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
+            new List<(string, string)> { (cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
+            {
+                AllowBulkExecution = true
+            });
+            var db = client.GetDatabase(cosmosDbDatabaseId);
+            var container = db.GetContainer(containerId);
+
+            List<Task> cosmosTasks = new ();
+
+            foreach (var entity in this.entities)
+            {
+                CosmosDBItem item;
+                if (mapping is not null)
+                    item = mapping(entity);
+                else
+                    item = this.mapper.Map<CosmosDBItem>(entity);
+
+                cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(item)
+                    .ContinueWith(x =>
+                    {
+                        if (x.IsFaulted)
+                            failCounts[entity.ID]++;
+                    }));
+            }
+
+            await Task.WhenAll(cosmosTasks);
+        });
+
+        return this;
+    }
+
+    public async Task RunAsync()
+    {
+        //Setup
+        this.entities = await this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
+            !x.LastReplicationDate.HasValue).ToArrayAsync();
+        foreach (var entity in this.entities)
+            failCounts[entity.ID] = 0;
+
+        foreach (var operationAction in this.operationActions)
+            await operationAction.Invoke();
+
+        await UpdateLastReplicationDate();
+    }
+
+    private async Task UpdateLastReplicationDate()
+    {
+        foreach (var entity in this.entities)
+            if (this.failCounts[entity.ID] == 0)
+                entity.UpdateReplicationDate();
+
+        await this.db.SaveChangesWithoutTriggersAsync();
+    }
+}
