@@ -18,11 +18,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
 
-    public ShiftRepository(DB db, IMapper mapper, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
+    public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
-        this.mapper = mapper;
+        this.mapper = db.GetService<IMapper>();
 
         if (shiftRepositoryBuilder is not null)
         {
