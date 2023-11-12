@@ -13,11 +13,11 @@ using EntityFrameworkCore.Triggered.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
-public class CosmosDbReplication
+public class CosmosDBReplication
 {
     private readonly IServiceProvider services;
 
-    public CosmosDbReplication(IServiceProvider services)
+    public CosmosDBReplication(IServiceProvider services)
     {
         this.services = services;
     }
@@ -43,7 +43,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private IEnumerable<Entity> entities;
 
     List<Func<Task>> operationActions = new();
-    Dictionary<long, long> failCounts = new Dictionary<long, long>();
+    Dictionary<long, bool> cosmosFails = new ();
 
     public CosmosDbReplicationOperations(
         string cosmosDbConnectionString,
@@ -91,7 +91,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
                     .ContinueWith(x =>
                     {
                         if (x.IsFaulted)
-                            failCounts[entity.ID]++;
+                            cosmosFails[entity.ID] = true;
                     }));
             }
 
@@ -107,7 +107,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
         this.entities = await this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
             !x.LastReplicationDate.HasValue).ToArrayAsync();
         foreach (var entity in this.entities)
-            failCounts[entity.ID] = 0;
+            cosmosFails[entity.ID] = false;
 
         foreach (var operationAction in this.operationActions)
             await operationAction.Invoke();
@@ -118,7 +118,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private async Task UpdateLastReplicationDate()
     {
         foreach (var entity in this.entities)
-            if (this.failCounts[entity.ID] == 0)
+            if (this.cosmosFails[entity.ID] == false)
                 entity.UpdateReplicationDate();
 
         await this.db.SaveChangesWithoutTriggersAsync();
