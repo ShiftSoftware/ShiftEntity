@@ -22,11 +22,12 @@ public class CosmosDBReplication
         this.services = services;
     }
 
-    public CosmosDbReplicationOperations<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId)
+    public CosmosDbReplicationOperations<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
         where Entity : ShiftEntity<Entity>
     {
-        return new CosmosDbReplicationOperations<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services);
+        return new CosmosDbReplicationOperations<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
 }
 public class CosmosDbReplicationOperations<DB, Entity>
@@ -39,6 +40,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private readonly IMapper mapper;
     private readonly DB db;
     private readonly DbSet<Entity> dbSet;
+    private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
 
     private IEnumerable<Entity> entities;
 
@@ -48,7 +50,8 @@ public class CosmosDbReplicationOperations<DB, Entity>
     public CosmosDbReplicationOperations(
         string cosmosDbConnectionString,
         string cosmosDbDatabaseId,
-        IServiceProvider services)
+        IServiceProvider services,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
@@ -56,6 +59,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
         this.mapper = services.GetRequiredService<IMapper>();
         this.db = services.GetRequiredService<DB>();
         this.dbSet = this.db.Set<Entity>();
+        this.query = query;
     }
 
     /// <summary>
@@ -104,8 +108,14 @@ public class CosmosDbReplicationOperations<DB, Entity>
     public async Task RunAsync()
     {
         //Setup
-        this.entities = await this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
-            !x.LastReplicationDate.HasValue).ToArrayAsync();
+        var queryable = this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
+            !x.LastReplicationDate.HasValue);
+
+        if (this.query is not null)
+            queryable = this.query(queryable);
+
+        this.entities = await queryable.ToArrayAsync();
+
         foreach (var entity in this.entities)
             cosmosFails[entity.ID] = false;
 
