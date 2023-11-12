@@ -51,7 +51,7 @@ public class ShiftEntityReplicationAttribute : Attribute
         }
         else
         {
-            account = accounts.FirstOrDefault(x => x.Name.ToLower() == AccountName.ToLower());
+            account = accounts.FirstOrDefault(x => x.Name.ToLower() == AccountName.ToLower()) ?? new CosmosDBAccount("", "", true, "");
             if (account is null)
                 throw new ArgumentException($"Can not find any account by name '{AccountName}'");
             else
