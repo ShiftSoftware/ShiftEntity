@@ -1,17 +1,12 @@
-﻿using ShiftSoftware.ShiftEntity.EFCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using ShiftSoftware.ShiftEntity.Core;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper;
-using Microsoft.Azure.Cosmos;
+﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
+using Microsoft.Azure.Cosmos;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using System.Runtime.CompilerServices;
+using System.Net;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
@@ -136,11 +131,20 @@ public class CosmosDbReplicationOperations<DB, Entity>
                 cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
                     .ContinueWith(x =>
                     {
+                        CosmosException ex = null;
+
+                        if (x.Exception != null)
+                            foreach (var innerException in x.Exception.InnerExceptions)
+                                if (innerException is CosmosException customException)
+                                    ex = customException;
+
+                        bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
+
                         if (!this.cosmosDeleteSuccesses.ContainsKey(deletedRow.ID))
-                            this.cosmosDeleteSuccesses[deletedRow.ID] = new SuccessResponse { Current = x.IsCompletedSuccessfully };
+                            this.cosmosDeleteSuccesses[deletedRow.ID] = new SuccessResponse { Current = success };
                         else
                             this.cosmosDeleteSuccesses[deletedRow.ID].Current =
-                                this.cosmosDeleteSuccesses[deletedRow.ID].Current && x.IsCompletedSuccessfully;
+                                this.cosmosDeleteSuccesses[deletedRow.ID].Current && success;
                     }));
             }
 
