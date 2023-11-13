@@ -7,6 +7,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using System.Net;
+using System.Runtime.CompilerServices;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
@@ -101,10 +102,9 @@ public class CosmosDbReplicationOperations<DB, Entity>
                     .ContinueWith(x =>
                     {
                         if (!this.cosmosUpsertSuccesses.ContainsKey(entity.ID))
-                            this.cosmosUpsertSuccesses[entity.ID] = new SuccessResponse { Current = x.IsCompletedSuccessfully };
+                            this.cosmosUpsertSuccesses[entity.ID] = SuccessResponse.Create(x.IsCompletedSuccessfully);
                         else
-                            this.cosmosUpsertSuccesses[entity.ID].Current =
-                                this.cosmosUpsertSuccesses[entity.ID].Current && x.IsCompletedSuccessfully;
+                            this.cosmosUpsertSuccesses[entity.ID].Set(x.IsCompletedSuccessfully);
                     }));
             }
 
@@ -141,10 +141,9 @@ public class CosmosDbReplicationOperations<DB, Entity>
                         bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
 
                         if (!this.cosmosDeleteSuccesses.ContainsKey(deletedRow.ID))
-                            this.cosmosDeleteSuccesses[deletedRow.ID] = new SuccessResponse { Current = success };
+                            this.cosmosDeleteSuccesses[deletedRow.ID] = SuccessResponse.Create(success);
                         else
-                            this.cosmosDeleteSuccesses[deletedRow.ID].Current =
-                                this.cosmosDeleteSuccesses[deletedRow.ID].Current && success;
+                            this.cosmosDeleteSuccesses[deletedRow.ID].Set(success);
                     }));
             }
 
@@ -212,32 +211,57 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private void UpdateLastReplicationDatesAsync()
     {
         foreach (var entity in this.entities)
-            if (this.cosmosUpsertSuccesses.GetValueOrDefault(entity.ID, new SuccessResponse()).Current)
+            if (this.cosmosUpsertSuccesses.GetValueOrDefault(entity.ID, new SuccessResponse()).Get())
                 entity.UpdateReplicationDate();
     }
 
     private void DeleteReplicatedDeletedRowLogs()
     {
         foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Current)
+            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Get())
                 db.DeletedRowLogs.Remove(row);
     }
 
     private void ResetUpsertSuccess()
     {
         this.cosmosUpsertSuccesses = this.cosmosUpsertSuccesses
-            .ToDictionary(x => x.Key, x => new SuccessResponse { Previous = x.Value?.Current, Current = false });
+            .ToDictionary(x => x.Key, x => x.Value.Reset());
     }
 
     private void ResetDeleteSuccess()
     {
         this.cosmosDeleteSuccesses = this.cosmosDeleteSuccesses
-            .ToDictionary(x => x.Key, x => new SuccessResponse { Previous = x.Value?.Current, Current = false });
+            .ToDictionary(x => x.Key, x => x.Value.Reset());
     }
 }
 
 class SuccessResponse
 {
     public bool? Previous { get; set; }
-    public bool Current { get; set; }
+    public bool? Current { get; set; }
+
+    public static SuccessResponse Create(bool value)
+    {
+        return new SuccessResponse { Previous = null, Current = value };
+    }
+
+    public SuccessResponse Set(bool value)
+    {
+        this.Current = this.Previous.GetValueOrDefault(true) && this.Current.GetValueOrDefault(true) && value;
+
+        return this;
+    }
+
+    public bool Get()
+    {
+        return this.Current.GetValueOrDefault(false);
+    }
+
+    public SuccessResponse Reset()
+    {
+        this.Previous = this.Current;
+        this.Current = null;
+
+        return this;
+    }
 }
