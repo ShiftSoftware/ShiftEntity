@@ -49,8 +49,10 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private IEnumerable<Entity> entities;
     private IEnumerable<DeletedRowLog> deletedRows;
 
-    List<Func<Task>> operationActions = new();
-    Dictionary<long, bool> cosmosFails = new ();
+    List<Func<Task>> upsertActions = new();
+    List<Func<Task>> deleteActions = new();
+    Dictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
+    Dictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
     Dictionary<long, bool> cosmosDeleteFails = new ();
 
     public CosmosDbReplicationOperations(
@@ -80,7 +82,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
         this.containerId = containerId;
 
         //Upsert fail replicated entities into cosmos container
-        operationActions.Add(async () =>
+        this.upsertActions.Add(async () =>
         {
             using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
             new List<(string, string)> { (cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
@@ -90,7 +92,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
             var db = client.GetDatabase(cosmosDbDatabaseId);
             var container = db.GetContainer(containerId);
 
-            List<Task> cosmosTasks = new ();
+            List < Task> cosmosTasks = new ();
 
             foreach (var entity in this.entities)
             {
@@ -103,8 +105,11 @@ public class CosmosDbReplicationOperations<DB, Entity>
                 cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(item)
                     .ContinueWith(x =>
                     {
-                        if (x.IsFaulted)
-                            cosmosFails[entity.ID] = true;
+                        if (!this.cosmosUpsertSuccesses.ContainsKey(entity.ID))
+                            this.cosmosUpsertSuccesses[entity.ID] = new SuccessResponse { Current = x.IsCompletedSuccessfully };
+                        else
+                            this.cosmosUpsertSuccesses[entity.ID].Current =
+                                this.cosmosUpsertSuccesses[entity.ID].Current && x.IsCompletedSuccessfully;
                     }));
             }
 
@@ -112,7 +117,7 @@ public class CosmosDbReplicationOperations<DB, Entity>
         });
 
         //Delete fail deleted rows from cosmos container
-        operationActions.Add(async () =>
+        this.deleteActions.Add(async () =>
         {
             using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
             new List<(string, string)> { (cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
@@ -131,8 +136,11 @@ public class CosmosDbReplicationOperations<DB, Entity>
                 cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
                     .ContinueWith(x =>
                     {
-                        if (x.IsFaulted)
-                            cosmosDeleteFails[deletedRow.ID] = true;
+                        if (!this.cosmosDeleteSuccesses.ContainsKey(deletedRow.ID))
+                            this.cosmosDeleteSuccesses[deletedRow.ID] = new SuccessResponse { Current = x.IsCompletedSuccessfully };
+                        else
+                            this.cosmosDeleteSuccesses[deletedRow.ID].Current =
+                                this.cosmosDeleteSuccesses[deletedRow.ID].Current && x.IsCompletedSuccessfully;
                     }));
             }
 
@@ -179,8 +187,17 @@ public class CosmosDbReplicationOperations<DB, Entity>
         this.deletedRows = await db.DeletedRowLogs.Where(x => x.ContainerName == this.containerId)
             .ToArrayAsync();
 
-        foreach (var operationAction in this.operationActions)
-            await operationAction.Invoke();
+        foreach (var action in this.upsertActions)
+        {
+            this.ResetUpsertSuccess();
+            await action.Invoke();
+        }
+
+        foreach (var action in this.deleteActions)
+        {
+            this.ResetDeleteSuccess();
+            await action.Invoke();
+        }
 
         UpdateLastReplicationDatesAsync();
         DeleteReplicatedDeletedRowLogs();
@@ -191,14 +208,32 @@ public class CosmosDbReplicationOperations<DB, Entity>
     private void UpdateLastReplicationDatesAsync()
     {
         foreach (var entity in this.entities)
-            if (this.cosmosFails.GetValueOrDefault(entity.ID, false) == false)
+            if (this.cosmosUpsertSuccesses.GetValueOrDefault(entity.ID, new SuccessResponse()).Current)
                 entity.UpdateReplicationDate();
     }
 
     private void DeleteReplicatedDeletedRowLogs()
     {
         foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteFails.GetValueOrDefault(row.ID, false) == false)
+            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Current)
                 db.DeletedRowLogs.Remove(row);
     }
+
+    private void ResetUpsertSuccess()
+    {
+        this.cosmosUpsertSuccesses = this.cosmosUpsertSuccesses
+            .ToDictionary(x => x.Key, x => new SuccessResponse { Previous = x.Value?.Current, Current = false });
+    }
+
+    private void ResetDeleteSuccess()
+    {
+        this.cosmosDeleteSuccesses = this.cosmosDeleteSuccesses
+            .ToDictionary(x => x.Key, x => new SuccessResponse { Previous = x.Value?.Current, Current = false });
+    }
+}
+
+class SuccessResponse
+{
+    public bool? Previous { get; set; }
+    public bool Current { get; set; }
 }
