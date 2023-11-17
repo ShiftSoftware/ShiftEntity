@@ -133,13 +133,11 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
 
             List<Task> cosmosTasks = new();
 
-            foreach (var deletedRow in this.deletedRows)
+            foreach (var deletedRow in this.deletedRows.Where(x => x.ContainerName == containerId))
             {
                 var key = GetPartitionKey(deletedRow);
 
-                var rowId = deletedRow.ID;
-
-                cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(rowId.ToString(), key)
+                cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
                     .ContinueWith(x =>
                     {
                         CosmosException ex = null;
@@ -151,10 +149,10 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
 
                         bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
 
-                        if (!this.cosmosDeleteSuccesses.ContainsKey(rowId))
-                            this.cosmosDeleteSuccesses[rowId] = SuccessResponse.Create(success);
+                        if (!this.cosmosDeleteSuccesses.ContainsKey(deletedRow.ID))
+                            this.cosmosDeleteSuccesses[deletedRow.ID] = SuccessResponse.Create(success);
                         else
-                            this.cosmosDeleteSuccesses[rowId].Set(success);
+                            this.cosmosDeleteSuccesses[deletedRow.ID].Set(success);
                     }));
             }
 
