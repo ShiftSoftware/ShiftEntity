@@ -1,21 +1,15 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using System.ComponentModel;
-using System.Drawing.Imaging;
-using System.Dynamic;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Net;
-using System.Runtime.CompilerServices;
-using System.Transactions;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 
@@ -163,13 +157,13 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
     }
 
     public CosmosDbReplicationOperations<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
-        string destinationContainerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
+        string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
         {
             string propertyName = memberExpression.Member.Name;
-            return UpdatePropertyReference<CosmosDBItemReference>(destinationContainerId, propertyName, mapping);
+            return UpdatePropertyReference<CosmosDBItemReference>(containerId, propertyName, mapping);
         }
         else
         {
@@ -178,19 +172,19 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
     }
 
     public CosmosDbReplicationOperations<DB, Entity> UpdatePropertyReference<CosmosDBItemReference>(
-        string destinationContainerId, string destinationReferencePropertyName,
+        string containerId, string destinationReferencePropertyName,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         //Update reference
         this.upsertActions.Add(async () =>
         {
             using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, destinationContainerId) }, new CosmosClientOptions()
+            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
             {
                 AllowBulkExecution = true
             });
             var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(destinationContainerId);
+            var container = db.GetContainer(containerId);
 
             var containerReposne = await container.ReadContainerAsync();
 
@@ -241,12 +235,12 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         this.deleteActions.Add(async () =>
         {
             using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, destinationContainerId) }, new CosmosClientOptions()
+            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
             {
                 AllowBulkExecution = true
             });
             var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(destinationContainerId);
+            var container = db.GetContainer(containerId);
 
             var containerReposne = await container.ReadContainerAsync();
 
@@ -288,7 +282,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         return this;
     }
 
-    public async Task<IEnumerable<dynamic>> GetItemsForPropertyReferenceUpdateAsync(Microsoft.Azure.Cosmos.Container container, 
+    public async Task<IEnumerable<dynamic>> GetItemsForPropertyReferenceUpdateAsync(Microsoft.Azure.Cosmos.Container container,
         string referencePropertyName,
         IEnumerable<string> ids)
     {
@@ -307,6 +301,80 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         while (filteredFeed.HasMoreResults)
         {
             items.AddRange(await filteredFeed.ReadNextAsync());
+        }
+
+        return items;
+    }
+
+    public CosmosDbReplicationOperations<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
+        Func<IQueryable<CosmosDBItem>, IEnumerable<Entity>, IQueryable<CosmosDBItem>> finder,
+        Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
+    {
+        this.upsertActions.Add(async () =>
+        {
+            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
+            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
+            {
+                AllowBulkExecution = true
+            });
+            var db = client.GetDatabase(this.cosmosDbDatabaseId);
+            var container = db.GetContainer(containerId);
+            var queryable = container.GetItemLinqQueryable<CosmosDBItem>();
+
+            var items = await GetItemsForReferenceUpdate(container, finder);
+
+            List<Task> cosmosTasks = new();
+
+            foreach (var entity in this.entities)
+            {
+                var itemsForUpsert = finder(items.AsQueryable(), new List<Entity> { entity }).ToList();
+                if (itemsForUpsert is not null && itemsForUpsert?.Count > 0)
+                {
+                    foreach (var item in itemsForUpsert)
+                    {
+                        CosmosDBItem tempItems = item;
+                        if (mapping is null)
+                            this.mapper.Map(entity, tempItems);
+                        else
+                            tempItems = mapping(entity, item);
+
+
+                        cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(tempItems)
+                            .ContinueWith(x =>
+                            {
+                                if (!this.cosmosUpsertSuccesses.ContainsKey(entity.ID))
+                                    this.cosmosUpsertSuccesses[entity.ID] = SuccessResponse.Create(x.IsCompletedSuccessfully);
+                                else
+                                    this.cosmosUpsertSuccesses[entity.ID].Set(x.IsCompletedSuccessfully);
+                            }));
+
+                        
+                    }
+                }
+                else
+                {
+                    this.cosmosUpsertSuccesses[entity.ID]?.ResetToPreviousState();
+                }
+            }
+
+            await Task.WhenAll(cosmosTasks);
+        });
+
+        return this;
+    }
+
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container,
+        Func<IQueryable<CosmosDBItem>, IEnumerable<Entity>, IQueryable<CosmosDBItem>> finder)
+    {
+        var orderedQuery = container.GetItemLinqQueryable<CosmosDBItem>();
+        var query = finder(orderedQuery, this.entities);
+        var feedIterator = query.ToFeedIterator<CosmosDBItem>();
+
+        List<CosmosDBItem> items = new();
+
+        while (feedIterator.HasMoreResults)
+        {
+            items.AddRange(await feedIterator.ReadNextAsync());
         }
 
         return items;
