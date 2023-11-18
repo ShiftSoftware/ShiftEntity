@@ -307,7 +307,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
     }
 
     public CosmosDbReplicationOperations<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
-        Func<IQueryable<CosmosDBItem>, IEnumerable<Entity>, IQueryable<CosmosDBItem>> finder,
+        Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
         this.upsertActions.Add(async () =>
@@ -321,16 +321,15 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
             var container = db.GetContainer(containerId);
             var queryable = container.GetItemLinqQueryable<CosmosDBItem>();
 
-            var items = await GetItemsForReferenceUpdate(container, finder);
-
             List<Task> cosmosTasks = new();
 
             foreach (var entity in this.entities)
             {
-                var itemsForUpsert = finder(items.AsQueryable(), new List<Entity> { entity }).ToList();
-                if (itemsForUpsert is not null && itemsForUpsert?.Count > 0)
+                var items = await GetItemsForReferenceUpdate(container, entity, finder);
+
+                if (items is not null && items?.Count() > 0)
                 {
-                    foreach (var item in itemsForUpsert)
+                    foreach (var item in items)
                     {
                         CosmosDBItem tempItems = item;
                         if (mapping is null)
@@ -347,8 +346,6 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
                                 else
                                     this.cosmosUpsertSuccesses[entity.ID].Set(x.IsCompletedSuccessfully);
                             }));
-
-                        
                     }
                 }
                 else
@@ -363,11 +360,13 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         return this;
     }
 
-    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container,
-        Func<IQueryable<CosmosDBItem>, IEnumerable<Entity>, IQueryable<CosmosDBItem>> finder)
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container,Entity entity,
+        Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder)
     {
-        var orderedQuery = container.GetItemLinqQueryable<CosmosDBItem>();
-        var query = finder(orderedQuery, this.entities);
+        var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
+
+        query = finder(query, entity);
+
         var feedIterator = query.ToFeedIterator<CosmosDBItem>();
 
         List<CosmosDBItem> items = new();
