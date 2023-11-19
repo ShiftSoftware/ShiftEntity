@@ -22,15 +22,52 @@ public class CosmosDBReplication
         this.services = services;
     }
 
-    public CosmosDbReplicationOperations<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
+    public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
         where Entity : ShiftEntity<Entity>
     {
-        return new CosmosDbReplicationOperations<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
+        return new CosmosDbReplicationOperation<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
 }
-public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
+public class CosmosDbReplicationOperation<DB, Entity>
+    where DB : ShiftDbContext
+    where Entity : ShiftEntity<Entity>
+{
+    private readonly string cosmosDbConnectionString;
+    private readonly string cosmosDbDatabaseId;
+    private readonly IServiceProvider services;
+    private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
+
+    public CosmosDbReplicationOperation(
+        string cosmosDbConnectionString,
+        string cosmosDbDatabaseId,
+        IServiceProvider services,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query)
+    {
+        this.cosmosDbConnectionString = cosmosDbConnectionString;
+        this.cosmosDbDatabaseId = cosmosDbDatabaseId;
+        this.services = services;
+        this.query = query;
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="CosmosDBItem"></typeparam>
+    /// <param name="containerId"></param>
+    /// <param name="mapping">If null, it use Auto Mapper for mapping</param>
+    /// <returns></returns>
+    public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    {
+        CosmosDbReferenceOperation<DB, Entity> referenceOperations = new(this.cosmosDbConnectionString, this.cosmosDbDatabaseId,
+            this.services, this.query);
+
+        return referenceOperations.Replicate<CosmosDBItem>(containerId, mapping);
+    }
+}
+
+public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     where DB : ShiftDbContext
     where Entity : ShiftEntity<Entity>
 {
@@ -45,14 +82,14 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
     private IEnumerable<Entity> entities;
     private IEnumerable<DeletedRowLog> deletedRows;
 
-    private List<string> containerIds = new();
+    private string replicationContainerId;
 
     List<Func<Task>> upsertActions = new();
     List<Func<Task>> deleteActions = new();
     Dictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
     Dictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
-    public CosmosDbReplicationOperations(
+    public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
         string cosmosDbDatabaseId,
         IServiceProvider services,
@@ -74,9 +111,9 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
     /// <param name="containerId"></param>
     /// <param name="mapping">If null, it use Auto Mapper for mapping</param>
     /// <returns></returns>
-    public CosmosDbReplicationOperations<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
-        this.containerIds.Add(containerId);
+        this.replicationContainerId = containerId;
 
         //Upsert fail replicated entities into cosmos container
         this.upsertActions.Add(async () =>
@@ -127,7 +164,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
 
             List<Task> cosmosTasks = new();
 
-            foreach (var deletedRow in this.deletedRows.Where(x => x.ContainerName == containerId))
+            foreach (var deletedRow in this.deletedRows)
             {
                 var key = GetPartitionKey(deletedRow);
 
@@ -156,7 +193,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         return this;
     }
 
-    public CosmosDbReplicationOperations<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
+    public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
@@ -171,7 +208,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         }
     }
 
-    public CosmosDbReplicationOperations<DB, Entity> UpdatePropertyReference<CosmosDBItemReference>(
+    public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference>(
         string containerId, string destinationReferencePropertyName,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
@@ -306,7 +343,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         return items;
     }
 
-    public CosmosDbReplicationOperations<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
+    public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
@@ -360,7 +397,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         return this;
     }
 
-    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container,Entity entity,
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container, Entity entity,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder)
     {
         var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
@@ -434,7 +471,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         this.entities = await queryable.ToArrayAsync();
 
         //Return delete rows that failed to replicate
-        this.deletedRows = await db.DeletedRowLogs.Where(x => this.containerIds.Contains(x.ContainerName))
+        this.deletedRows = await db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName)
             .ToArrayAsync();
 
         foreach (var action in this.upsertActions)
@@ -488,7 +525,7 @@ public class CosmosDbReplicationOperations<DB, Entity> : IDisposable
         this.entities = null!;
         this.deletedRows = null!;
 
-        this.containerIds = null!;
+        this.replicationContainerId = null!;
 
         this.upsertActions = null!;
         this.deleteActions = null!;
