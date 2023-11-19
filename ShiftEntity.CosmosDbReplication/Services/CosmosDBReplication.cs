@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
+using FluentValidation.TestHelper;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -249,7 +250,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
 
                 var id = Convert.ToString(item.id);
-                PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+                PartitionKey partitionKey = GetPartitionKeyForDynamic(containerReposne, item);
 
                 var entityId = entity.ID;
 
@@ -297,7 +298,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             foreach (var item in items)
             {
                 var id = Convert.ToString(item.id);
-                PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+                PartitionKey partitionKey = GetPartitionKeyForDynamic(containerReposne, item);
 
                 var rowId = ((string)Convert.ToString(item[destinationReferencePropertyName].id)).ToLong();
 
@@ -345,6 +346,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
+        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
         this.upsertActions.Add(async () =>
@@ -356,7 +358,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             });
             var db = client.GetDatabase(this.cosmosDbDatabaseId);
             var container = db.GetContainer(containerId);
-            var queryable = container.GetItemLinqQueryable<CosmosDBItem>();
 
             List<Task> cosmosTasks = new();
 
@@ -394,6 +395,56 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await Task.WhenAll(cosmosTasks);
         });
 
+        this.deleteActions.Add(async () =>
+        {
+            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
+            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
+            {
+                AllowBulkExecution = true
+            });
+            var db = client.GetDatabase(this.cosmosDbDatabaseId);
+            var container = db.GetContainer(containerId);
+            var containerResponse = await container.ReadContainerAsync();
+
+            List<Task> cosmosTasks = new();
+
+            foreach (var row in this.deletedRows)
+            {
+                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
+                if(items is not null && items?.Count() > 0)
+                {
+                    foreach (var item in items)
+                    {
+                        var key = GetPartitionKey(containerResponse, item);
+
+                        cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(row.RowID.ToString(), key)
+                        .ContinueWith(x =>
+                        {
+                            CosmosException ex = null;
+
+                            if (x.Exception != null)
+                                foreach (var innerException in x.Exception.InnerExceptions)
+                                    if (innerException is CosmosException customException)
+                                        ex = customException;
+
+                            bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
+
+                            if (!this.cosmosDeleteSuccesses.ContainsKey(row.ID))
+                                this.cosmosDeleteSuccesses[row.ID] = SuccessResponse.Create(success);
+                            else
+                                this.cosmosDeleteSuccesses[row.ID].Set(success);
+                        }));
+                    }
+                }
+                else
+                {
+                    this.cosmosDeleteSuccesses[row.ID]?.ResetToPreviousState();
+                }
+            }
+
+            await Task.WhenAll(cosmosTasks);
+        });
+
         return this;
     }
 
@@ -405,6 +456,26 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         query = finder(query, entity);
 
         var feedIterator = query.ToFeedIterator<CosmosDBItem>();
+
+        List<CosmosDBItem> items = new();
+
+        while (feedIterator.HasMoreResults)
+        {
+            items.AddRange(await feedIterator.ReadNextAsync());
+        }
+
+        return items;
+    }
+
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceDelete<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container, 
+        DeletedRowLog row,
+        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder)
+    {
+        var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
+
+        var extendedQuery = deletedRowFinder(query, row);
+
+        var feedIterator = extendedQuery.ToFeedIterator<CosmosDBItem>();
 
         List<CosmosDBItem> items = new();
 
@@ -428,20 +499,47 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return builder.Build();
     }
 
-    private PartitionKey GetPartitionKey(ContainerResponse containerResponse, dynamic item)
+    private PartitionKey GetPartitionKeyForDynamic(ContainerResponse containerResponse, dynamic item)
     {
         PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
-
+        
         foreach (var partitionKeyPath in containerResponse.Resource.PartitionKeyPaths)
         {
             var value = (JValue)item[partitionKeyPath.Substring(1)];
-
+            
             if (value.Value.GetType() == typeof(string))
                 partitionKeyBuilder.Add(value.Value<string>());
             else if (value.Value.GetType().IsNumericType())
                 partitionKeyBuilder.Add(value.Value<double>());
             else if (value.Value.GetType() == typeof(bool) || value.Value.GetType() == typeof(bool?))
                 partitionKeyBuilder.Add(value.Value<bool>());
+            else
+                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
+        }
+
+        return partitionKeyBuilder.Build();
+    }
+
+    private PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
+    {
+        PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
+
+        foreach (var partitionKeyPath in containerResponse.Resource.PartitionKeyPaths)
+        {
+            var path = partitionKeyPath.Substring(1);
+            var propertyInfo = item.GetType().GetProperty(path);
+            if (propertyInfo is null)
+                throw new Exception($"Can not find property for partition key path '{path}'");
+
+            var type = propertyInfo.PropertyType;
+            var value = propertyInfo.GetValue(item, null);
+            
+            if (type == typeof(string))
+                partitionKeyBuilder.Add(Convert.ToString(value));
+            else if (type.IsNumericType())
+                partitionKeyBuilder.Add(Convert.ToDouble(value));
+            else if (type == typeof(bool) || type == typeof(bool?))
+                partitionKeyBuilder.Add(Convert.ToBoolean(value));
             else
                 throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
         }
