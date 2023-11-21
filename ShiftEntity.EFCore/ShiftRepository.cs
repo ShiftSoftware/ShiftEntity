@@ -8,7 +8,10 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
-public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> : 
+public class ShiftRepositoryBase { };
+
+public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
+    ShiftRepositoryBase,
     IShiftRepositoryAsync<EntityType, ListDTO, ViewAndUpsertDTO>
     where DB : ShiftDbContext
     where EntityType : ShiftEntity<EntityType>, new()

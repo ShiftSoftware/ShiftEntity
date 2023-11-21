@@ -1,5 +1,8 @@
 ﻿using Microsoft.OData.Edm;
 using Microsoft.OData.ModelBuilder;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
+using System.Linq;
+using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -80,5 +83,21 @@ public class ShiftEntityODataOptions
         this.ODataConvention.EntitySet<T>(name);
 
         return this;
+    }
+
+    public void RegisterAllDTOs(params Assembly[] assemblies)
+    {
+        foreach (var assembly in assemblies)
+        {
+            var derivedClasses = assembly.GetTypes()
+            .Where(type => typeof(ShiftEntityListDTO).IsAssignableFrom(type) || typeof(ShiftEntityMixedDTO).IsAssignableFrom(type))
+            .ToList();
+
+            foreach (var c in derivedClasses)
+            {
+                EntityTypeConfiguration entity = this.ODataConvention.AddEntityType(c);
+                this.ODataConvention.AddEntitySet(c.Name.Replace("DTO", "").Replace("List", ""), entity);
+            }
+        }
     }
 }
