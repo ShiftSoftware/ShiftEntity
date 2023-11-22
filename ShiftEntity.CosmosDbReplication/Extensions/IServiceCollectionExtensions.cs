@@ -32,7 +32,7 @@ public static class IServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
+    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
     {
         //Register all IShiftEntityPrepareForSyncAsync
         services.RegisterIShiftEntityPrepareForReplication(options.RepositoriesAssembly);
@@ -80,15 +80,15 @@ public static class IServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
+    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
     {
         ShiftEntityCosmosDbOptions o = new();
         optionBuilder.Invoke(o);
 
-        return services.AddShiftEntityCosmosDbReplication(o);
+        return services.AddShiftEntityCosmosDbReplicationTrigger(o);
     }
 
-    public static IServiceCollection AddShiftEntityCosmosDbReplicationFunction(this IServiceCollection services)
+    public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services)
     {
         services.AddScoped<CosmosDBReplication>();
         return services;

@@ -7,8 +7,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using System.ComponentModel.Design;
 using System.Linq.Expressions;
 using System.Net;
 
@@ -196,23 +198,17 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
+        Func<IQueryable<DestinationContainer>, Entity, IQueryable<DestinationContainer>> finder,
+        Func<IQueryable<DestinationContainer>, DeletedRowLog, IQueryable<DestinationContainer>> deletedRowFinder,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
-        if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
-        {
-            string propertyName = memberExpression.Member.Name;
-            return UpdatePropertyReference<CosmosDBItemReference>(containerId, propertyName, mapping);
-        }
-        else
-        {
-            throw new ArgumentException("Expression must be a member access expression");
-        }
-    }
+        string propertyName = "";
 
-    public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference>(
-        string containerId, string destinationReferencePropertyName,
-        Func<Entity, CosmosDBItemReference>? mapping = null)
-    {
+        if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
+            propertyName = memberExpression.Member.Name;
+        else
+            throw new ArgumentException("Expression must be a member access expression");
+
         //Update reference
         this.upsertActions.Add(async () =>
         {
@@ -226,44 +222,42 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             var containerReposne = await container.ReadContainerAsync();
 
-            var items = await GetItemsForPropertyReferenceUpdateAsync(container, destinationReferencePropertyName,
-                this.entities.Select(x => x.ID.ToString()));
-
-            var referencedIds = items.Select(i => Convert.ToString(i[destinationReferencePropertyName].id));
-            var successIdsWithoutReference = this.cosmosUpsertSuccesses
-                .Where(x => !((bool)referencedIds.Contains(x.Key.ToString())));
-
-            //Reset successes that not have reference to its previous status 
-            foreach (var success in successIdsWithoutReference)
-                success.Value.ResetToPreviousState();
-
             List<Task> cosmosTasks = new();
 
-            foreach (var item in items)
+            foreach (var entity in this.entities)
             {
-                var entity = this.entities.FirstOrDefault(x => x.ID.ToString() == Convert.ToString(item[destinationReferencePropertyName].id))!;
+                var items = await GetItemsForReferenceUpdate(container, entity, finder);
 
-                CosmosDBItemReference propertyItem;
-                if (mapping is not null)
-                    propertyItem = mapping(entity);
-                else
-                    propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
-
-                var id = Convert.ToString(item.id);
-                PartitionKey partitionKey = GetPartitionKeyForDynamic(containerReposne, item);
-
-                var entityId = entity.ID;
-
-                cosmosTasks.Add(((Task<ItemResponse<dynamic>>)container.PatchItemAsync<dynamic>(id, partitionKey,
-                    new[] { PatchOperation.Replace($"/{destinationReferencePropertyName}", propertyItem) },
-                    new PatchItemRequestOptions { IfMatchEtag = item._etag }))
-                    .ContinueWith(x =>
+                if (items is not null && items?.Count() > 0)
+                {
+                    foreach (var item in items)
                     {
-                        if (!this.cosmosUpsertSuccesses.ContainsKey(entityId))
-                            this.cosmosUpsertSuccesses[entityId] = SuccessResponse.Create(x.IsCompletedSuccessfully);
+                        CosmosDBItemReference propertyItem;
+                        if (mapping is not null)
+                            propertyItem = mapping(entity);
                         else
-                            this.cosmosUpsertSuccesses[entityId].Set(x.IsCompletedSuccessfully);
-                    }));
+                            propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
+
+                        var id = Convert.ToString(item.GetProperty("id"));
+                        PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+
+                        var entityId = entity.ID;
+
+                        cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                            new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
+                            .ContinueWith(x =>
+                            {
+                                if (!this.cosmosUpsertSuccesses.ContainsKey(entityId))
+                                    this.cosmosUpsertSuccesses[entityId] = SuccessResponse.Create(x.IsCompletedSuccessfully);
+                                else
+                                    this.cosmosUpsertSuccesses[entityId].Set(x.IsCompletedSuccessfully);
+                            }));
+                    }
+                }
+                else
+                {
+                    this.cosmosUpsertSuccesses[entity.ID]?.ResetToPreviousState();
+                }
             }
 
             await Task.WhenAll(cosmosTasks);
@@ -282,66 +276,49 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             var containerReposne = await container.ReadContainerAsync();
 
-            var items = await GetItemsForPropertyReferenceUpdateAsync(container, destinationReferencePropertyName,
-                this.deletedRows.Select(x => x.RowID.ToString()));
-
-            var referencedIds = items.Select(i => Convert.ToString(i[destinationReferencePropertyName].id));
-            var successIdsWithoutReference = this.cosmosDeleteSuccesses
-                .Where(x => !((bool)referencedIds.Contains(x.Key.ToString())));
-
-            //Reset successes that not have reference to its previous status 
-            foreach (var success in successIdsWithoutReference)
-                success.Value.ResetToPreviousState();
-
             List<Task> cosmosTasks = new();
 
-            foreach (var item in items)
+            foreach (var row in this.deletedRows)
             {
-                var id = Convert.ToString(item.id);
-                PartitionKey partitionKey = GetPartitionKeyForDynamic(containerReposne, item);
+                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
 
-                var rowId = ((string)Convert.ToString(item[destinationReferencePropertyName].id)).ToLong();
-
-                cosmosTasks.Add(((Task<ItemResponse<dynamic>>)container.PatchItemAsync<dynamic>(id, partitionKey,
-                    new[] { PatchOperation.Remove($"/{destinationReferencePropertyName}") },
-                    new PatchItemRequestOptions { IfMatchEtag = item._etag }))
-                    .ContinueWith(x =>
+                if (items is not null && items?.Count() > 0) 
+                {
+                    foreach (var item in items)
                     {
-                        if (!this.cosmosDeleteSuccesses.ContainsKey(rowId))
-                            this.cosmosDeleteSuccesses[rowId] = SuccessResponse.Create(x.IsCompletedSuccessfully);
-                        else
-                            this.cosmosDeleteSuccesses[rowId].Set(x.IsCompletedSuccessfully);
-                    }));
+                        var id = Convert.ToString(item.GetProperty("id"));
+                        PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+
+                        cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                            new[] { PatchOperation.Remove($"/{propertyName}") })
+                            .ContinueWith(x =>
+                            {
+                                CosmosException ex = null;
+
+                                if (x.Exception != null)
+                                    foreach (var innerException in x.Exception.InnerExceptions)
+                                        if (innerException is CosmosException customException)
+                                            ex = customException;
+
+                                bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
+
+                                if (!this.cosmosDeleteSuccesses.ContainsKey(row.ID))
+                                    this.cosmosDeleteSuccesses[row.ID] = SuccessResponse.Create(success);
+                                else
+                                    this.cosmosDeleteSuccesses[row.ID].Set(success);
+                            }));
+                    }
+                }
+                else
+                {
+                    this.cosmosDeleteSuccesses[row.ID]?.ResetToPreviousState();
+                }
             }
 
             await Task.WhenAll(cosmosTasks);
         });
 
         return this;
-    }
-
-    public async Task<IEnumerable<dynamic>> GetItemsForPropertyReferenceUpdateAsync(Microsoft.Azure.Cosmos.Container container,
-        string referencePropertyName,
-        IEnumerable<string> ids)
-    {
-        var query = $"SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.{referencePropertyName}.id)";
-
-        var parameterizedQuery = new QueryDefinition(
-          query: query
-        ).WithParameter("@ids", ids);
-
-        var filteredFeed = container.GetItemQueryIterator<dynamic>(
-            queryDefinition: parameterizedQuery
-        );
-
-        List<dynamic> items = new();
-
-        while (filteredFeed.HasMoreResults)
-        {
-            items.AddRange(await filteredFeed.ReadNextAsync());
-        }
-
-        return items;
     }
 
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
@@ -497,27 +474,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
 
         return builder.Build();
-    }
-
-    private PartitionKey GetPartitionKeyForDynamic(ContainerResponse containerResponse, dynamic item)
-    {
-        PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
-        
-        foreach (var partitionKeyPath in containerResponse.Resource.PartitionKeyPaths)
-        {
-            var value = (JValue)item[partitionKeyPath.Substring(1)];
-            
-            if (value.Value.GetType() == typeof(string))
-                partitionKeyBuilder.Add(value.Value<string>());
-            else if (value.Value.GetType().IsNumericType())
-                partitionKeyBuilder.Add(value.Value<double>());
-            else if (value.Value.GetType() == typeof(bool) || value.Value.GetType() == typeof(bool?))
-                partitionKeyBuilder.Add(value.Value<bool>());
-            else
-                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
-        }
-
-        return partitionKeyBuilder.Build();
     }
 
     private PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
