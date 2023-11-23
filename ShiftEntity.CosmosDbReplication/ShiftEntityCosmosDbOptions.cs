@@ -17,11 +17,6 @@ public class ShiftEntityCosmosDbOptions
     /// </summary>
     public string? DefaultDatabaseName { get; set; }
 
-    /// <summary>
-    /// If not set, it gets the entry assembly
-    /// </summary>
-    public Assembly? RepositoriesAssembly { get; set; }
-
     public List<CosmosDBAccount> Accounts { get; set; }
 
     internal List<ShiftDbContextStore> ShiftDbContextStorage { get; private set; }

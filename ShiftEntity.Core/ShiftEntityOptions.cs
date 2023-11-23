@@ -11,11 +11,6 @@ public class ShiftEntityOptions
     internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
 
-    /// <summary>
-    /// If not set, it gets the entry assembly
-    /// </summary>
-    public Assembly? RepositoriesAssembly { get; set; }
-
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
         _WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponse;

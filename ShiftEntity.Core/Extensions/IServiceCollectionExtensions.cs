@@ -19,28 +19,6 @@ public static class IServiceCollectionExtensions
         return AddShiftEntity(services, o);
     }
 
-    public static IServiceCollection RegisterIShiftEntityFind(this IServiceCollection services, Assembly? repositoriesAssembly = null)
-    {
-        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
-
-        // Find all types in the assembly that implement IRepository<>
-        var repositoryTypes = repositoryAssembly!.GetTypes()
-            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)) &&
-                !t.IsInterface);
-
-        // Register each IRepository<> implementation with its corresponding interface
-        foreach (var repositoryType in repositoryTypes)
-        {
-            var interfaceType = repositoryType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>));
-            if (interfaceType != null)
-            {
-                services.AddScoped(interfaceType, repositoryType);
-            }
-        }
-
-        return services;
-    }
-
     public static IServiceCollection AddShiftEntity(this IServiceCollection services, ShiftEntityOptions shiftEntityOptions)
     {
         services
@@ -48,8 +26,6 @@ public static class IServiceCollectionExtensions
 
         if (shiftEntityOptions.azureStorageOptions.Count > 0)
             services.TryAddSingleton(new AzureStorageService(shiftEntityOptions.azureStorageOptions));
-
-        services.RegisterIShiftEntityFind(shiftEntityOptions.RepositoriesAssembly);
 
         services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
 

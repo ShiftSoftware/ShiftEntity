@@ -11,32 +11,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {
-    private static IServiceCollection RegisterIShiftEntityPrepareForReplication(this IServiceCollection services, Assembly? repositoriesAssembly = null)
-    {
-        Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
-
-        var repositoryTypes = repositoryAssembly.GetTypes()
-            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>)) &&
-                !t.IsInterface);
-
-        // Register each IRepository<> implementation with its corresponding interface
-        foreach (var repositoryType in repositoryTypes)
-        {
-            var interfaceType = repositoryType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>));
-            if (interfaceType != null)
-            {
-                services.AddScoped(interfaceType, repositoryType);
-            }
-        }
-
-        return services;
-    }
-
     public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
     {
-        //Register all IShiftEntityPrepareForSyncAsync
-        services.RegisterIShiftEntityPrepareForReplication(options.RepositoriesAssembly);
-
         //Register triggers
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
