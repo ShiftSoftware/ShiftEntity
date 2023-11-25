@@ -1,6 +1,7 @@
 ﻿
 using AutoMapper;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System.Text.Json;
 

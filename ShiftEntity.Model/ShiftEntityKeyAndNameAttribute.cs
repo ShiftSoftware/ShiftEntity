@@ -1,7 +1,5 @@
-﻿using System;
-
-
-namespace ShiftSoftware.ShiftEntity.Core;
+﻿
+namespace ShiftSoftware.ShiftEntity.Model;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public class ShiftEntityKeyAndNameAttribute : Attribute
