@@ -50,28 +50,24 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
 
     public override ShiftEntitySelectDTO Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dto = new ShiftEntitySelectDTO();
+        //var dto = new ShiftEntitySelectDTO();
 
-        var obj = JsonSerializer.Deserialize<JsonElement>(ref reader, options);
+        var dto = JsonSerializer.Deserialize<ShiftEntitySelectDTO>(ref reader, options)!;
 
-        if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
+        //if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
         {
-            var id = idProperty.GetString();
+            //var id = idProperty.GetString();
 
             if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
             {
-                dto.Value = this.hashids.Decode(id!).ToString();
-            }
-            else
-            {
-                dto.Value = id!;
+                dto.Value = this.hashids.Decode(dto.Value!).ToString();
             }
         }
 
-        if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
-        {
-            dto.Text = textProperty.GetString();
-        }
+        //if (obj.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
+        //{
+        //    dto.Text = textProperty.Deserialize<string>(options);
+        //}
 
         return dto;
     }
@@ -114,36 +110,36 @@ public class ShiftEntitySelectDTOEnumerableJsonHashIdConverter : JsonConverter<I
 
     public override IEnumerable<ShiftEntitySelectDTO> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dtoList = new List<ShiftEntitySelectDTO>();
+        //var dtoList = new List<ShiftEntitySelectDTO>();
 
-        var obj = JsonSerializer.Deserialize<JsonElement>(ref reader, options);
+        var dtoList = JsonSerializer.Deserialize<IEnumerable<ShiftEntitySelectDTO>>(ref reader, options)!;
 
-        if (obj.ValueKind == JsonValueKind.Array)
+        //if (obj.ValueKind == JsonValueKind.Array)
         {
-            foreach (var element in obj.EnumerateArray())
+            foreach (var dto in dtoList)
             {
-                var dto = new ShiftEntitySelectDTO();
+                //var dto = new ShiftEntitySelectDTO();
 
-                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
+                //if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
                 {
-                    var id = idProperty.GetString();
+                    //var id = idProperty.GetString();
 
                     if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
                     {
-                        dto.Value = this.hashids.Decode(id!).ToString();
+                        dto.Value = this.hashids.Decode(dto.Value!).ToString();
                     }
-                    else
-                    {
-                        dto.Value = id!;
-                    }
+                    //else
+                    //{
+                    //    dto.Value = id!;
+                    //}
                 }
 
-                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
-                {
-                    dto.Text = textProperty.GetString();
-                }
+                //if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
+                //{
+                //    dto.Text = textProperty.GetString();
+                //}
 
-                dtoList.Add(dto);
+                //dtoList.Add(dto);
             }
         }
 
@@ -196,36 +192,36 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
 
     public override List<ShiftEntitySelectDTO> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        var dtoList = new List<ShiftEntitySelectDTO>();
+        //var dtoList = new List<ShiftEntitySelectDTO>();
 
-        var obj = JsonSerializer.Deserialize<JsonElement>(ref reader, options);
+        var dtoList = JsonSerializer.Deserialize<List<ShiftEntitySelectDTO>>(ref reader, options)!;
 
-        if (obj.ValueKind == JsonValueKind.Array)
+        //if (obj.ValueKind == JsonValueKind.Array)
         {
-            foreach (var element in obj.EnumerateArray())
+            foreach (var dto in dtoList)
             {
-                var dto = new ShiftEntitySelectDTO();
+                //var dto = new ShiftEntitySelectDTO();
 
-                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
+                //if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Value), out var idProperty))
                 {
-                    var id = idProperty.GetString();
+                    //var id = idProperty.GetString();
 
                     if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
                     {
-                        dto.Value = this.hashids.Decode(id!).ToString();
+                        dto.Value = this.hashids.Decode(dto.Value!).ToString();
                     }
-                    else
-                    {
-                        dto.Value = id!;
-                    }
+                    //else
+                    //{
+                    //    dto.Value = id!;
+                    //}
                 }
 
-                if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
-                {
-                    dto.Text = textProperty.GetString();
-                }
+                //if (element.TryGetProperty(nameof(ShiftEntitySelectDTO.Text), out var textProperty))
+                //{
+                //    dto.Text = textProperty.GetString();
+                //}
 
-                dtoList.Add(dto);
+                //dtoList.Add(dto);
             }
         }
 
