@@ -96,8 +96,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private string replicateContainerId;
     private IServiceProvider serviceProvider;
 
-    private Func<Task> upsertAction;
+    private Func<Task> replicateAction;
     private List<Func<Task>> deleteActions = new();
+    private List<Func<Task>> referenceActions = new();
 
     private bool? isSucceeded = null;
 
@@ -123,7 +124,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         this.cosmosContainerIds.Add(cosmosContainerId);
         this.replicateContainerId = cosmosContainerId;
 
-        this.upsertAction = async () =>
+        this.replicateAction = async () =>
         {
             CosmosDbItem item;
 
@@ -202,15 +203,27 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         //If the change type is added or modified, then do the upsert action
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
-            await this.upsertAction.Invoke();
+        {
+            //Reset the isSucceeded flag
+            this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) ? null : false;
+
+            await this.replicateAction.Invoke();
+        }
 
         if (changeType == ChangeType.Modified)
         {
 
         }
         else if (changeType == ChangeType.Deleted)
+        {
             foreach (var action in this.deleteActions)
+            {
+                //Reset the isSucceeded flag
+                this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) ? null : false;
+
                 await action.Invoke();
+            }
+        }
 
         if (this.isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
             await UpdateLastReplicationDateAsync();
