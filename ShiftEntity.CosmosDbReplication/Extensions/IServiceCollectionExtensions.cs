@@ -1,5 +1,6 @@
 ﻿using EntityFrameworkCore.Triggered;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
@@ -13,13 +14,16 @@ public static class IServiceCollectionExtensions
 {
     public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
     {
+        //Set IServiceCollection to options
+        options.Services = services;
+
         //Register triggers
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
-
+        
         CosmosDBAccount connection = new();
-
+        
         //register options
 
         //Add default connection and database
@@ -44,7 +48,7 @@ public static class IServiceCollectionExtensions
         if (options.Accounts.GroupBy(x => x.Name?.ToLower()).Any(x => x.Count() > 1))
             throw new ArgumentException("There account names must be unique");
 
-        services.TryAddSingleton(options);
+        services.AddSingleton(options);
         services.AddScoped(typeof(CosmosDBService<>));
 
         foreach (var shiftDbContext in options.ShiftDbContextStorage)
@@ -59,6 +63,10 @@ public static class IServiceCollectionExtensions
     public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
     {
         ShiftEntityCosmosDbOptions o = new();
+
+        //Set IServiceCollection to options
+        o.Services = services;
+
         optionBuilder.Invoke(o);
 
         return services.AddShiftEntityCosmosDbReplicationTrigger(o);

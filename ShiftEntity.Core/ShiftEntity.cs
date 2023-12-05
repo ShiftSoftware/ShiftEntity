@@ -33,6 +33,9 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> wher
         this.ID = id;
     }
 
+    /// <summary>
+    /// Set LastReplicationDate to LastSaveDate
+    /// </summary>
     public void UpdateReplicationDate()
     {
         LastReplicationDate = LastSaveDate;

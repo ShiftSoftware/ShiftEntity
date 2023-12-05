@@ -169,7 +169,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             foreach (var deletedRow in this.deletedRows)
             {
-                var key = GetPartitionKey(deletedRow);
+                var key = PartitionKeyHelper.GetPartitionKey(deletedRow);
 
                 cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
                     .ContinueWith(x =>
@@ -239,7 +239,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                             propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
 
                         var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+                        PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item);
 
                         var entityId = entity.ID;
 
@@ -287,7 +287,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     foreach (var item in items)
                     {
                         var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = GetPartitionKey(containerReposne, item);
+                        PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item);
 
                         cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
                             new[] { PatchOperation.Remove($"/{propertyName}") })
@@ -392,7 +392,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 {
                     foreach (var item in items)
                     {
-                        var key = GetPartitionKey(containerResponse, item);
+                        var key = PartitionKeyHelper.GetPartitionKey(containerResponse, item);
 
                         cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(row.RowID.ToString(), key)
                         .ContinueWith(x =>
@@ -462,55 +462,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         }
 
         return items;
-    }
-
-    private PartitionKey GetPartitionKey(DeletedRowLog row)
-    {
-        var builder = new PartitionKeyBuilder();
-
-        AddPrtitionKey(builder, row.PartitionKeyLevelOneValue, row.PartitionKeyLevelOneType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelTwoValue, row.PartitionKeyLevelTwoType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelThreeValue, row.PartitionKeyLevelThreeType);
-
-
-        return builder.Build();
-    }
-
-    private PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
-    {
-        PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
-
-        foreach (var partitionKeyPath in containerResponse.Resource.PartitionKeyPaths)
-        {
-            var path = partitionKeyPath.Substring(1);
-            var propertyInfo = item.GetType().GetProperty(path);
-            if (propertyInfo is null)
-                throw new Exception($"Can not find property for partition key path '{path}'");
-
-            var type = propertyInfo.PropertyType;
-            var value = propertyInfo.GetValue(item, null);
-            
-            if (type == typeof(string))
-                partitionKeyBuilder.Add(Convert.ToString(value));
-            else if (type.IsNumericType())
-                partitionKeyBuilder.Add(Convert.ToDouble(value));
-            else if (type == typeof(bool) || type == typeof(bool?))
-                partitionKeyBuilder.Add(Convert.ToBoolean(value));
-            else
-                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
-        }
-
-        return partitionKeyBuilder.Build();
-    }
-
-    private void AddPrtitionKey(PartitionKeyBuilder builder, string? value, PartitionKeyTypes type)
-    {
-        if (type == PartitionKeyTypes.String)
-            builder.Add(value);
-        else if (type == PartitionKeyTypes.Numeric)
-            builder.Add(Double.Parse(value));
-        else if (type == PartitionKeyTypes.Boolean)
-            builder.Add(Boolean.Parse(value));
     }
 
     public async Task RunAsync()

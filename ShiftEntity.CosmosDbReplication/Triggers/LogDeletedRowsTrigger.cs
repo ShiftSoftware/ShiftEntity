@@ -48,8 +48,6 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                 {
                     object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
 
-                    id = Convert.ToString(item.GetProperty("id"));
-
                     partitionKeyLevelOne = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelOnePropertyName);
                     partitionKeyLevelTwo = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelTwoPropertyName);
                     partitionKeyLevelThree = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelThreePropertyName);
@@ -60,7 +58,7 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
                 var deleteRowLog = new DeletedRowLog
                 {
                     ContainerName = conf.containerName,
-                    RowID = long.Parse(id!),
+                    RowID = entity.ID,
                     PartitionKeyLevelOneType = partitionKeyLevelOne.type,
                     PartitionKeyLevelOneValue = partitionKeyLevelOne.value,
                     PartitionKeyLevelTwoType = partitionKeyLevelTwo.type,
