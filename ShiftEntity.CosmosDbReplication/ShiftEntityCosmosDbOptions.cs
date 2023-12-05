@@ -9,6 +9,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
+using System.Net;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
@@ -167,15 +168,30 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 var containerResponse = await container.ReadContainerAsync();
                 this.partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
 
-                var response = await container.DeleteItemAsync<CosmosDbItem>(this.entity.ID.ToString(),
-                    this.partitionKeyDetails?.partitionKey ?? PartitionKey.None);
+                //var response = await container.DeleteItemAsync<CosmosDbItem>(this.entity.ID.ToString(),
+                //    this.partitionKeyDetails?.partitionKey ?? PartitionKey.None);
 
-                if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-                        response.StatusCode == System.Net.HttpStatusCode.NotFound ||
-                        response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && true;
-                else
-                    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && false;
+                //if (response.StatusCode == System.Net.HttpStatusCode.OK ||
+                //        response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                //        response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                //    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && true;
+                //else
+                //    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && false;
+
+                await container.DeleteItemAsync<CosmosDbItem>(this.entity.ID.ToString(),
+                    this.partitionKeyDetails?.partitionKey ?? PartitionKey.None)
+                    .ContinueWith(x =>
+                    {
+                        CosmosException ex = null;
+
+                        if (x.Exception != null)
+                            foreach (var innerException in x.Exception.InnerExceptions)
+                                if (innerException is CosmosException customException)
+                                    ex = customException;
+
+                        bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
+                        this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && success;
+                    }).WaitAsync(new CancellationToken());
             });
     }
 
