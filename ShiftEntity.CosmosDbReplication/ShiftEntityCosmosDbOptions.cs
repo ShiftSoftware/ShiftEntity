@@ -49,7 +49,7 @@ public class ShiftEntityCosmosDbOptions
     }
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<Entity, IServiceProvider, ValueTask<Entity>>? mapper = null)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>
         where DB : ShiftDbContext
     {
@@ -63,10 +63,10 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
 
     public CosmosDbTriggerReplicateOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<Entity, IServiceProvider, ValueTask<Entity>>? mapper, IServiceCollection services, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, IServiceCollection services, Type dbContextType)
     {
         this.cosmosDbTriggerReferenceOperations =
-            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, mapper, dbContextType);
+            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapper, dbContextType);
         services.AddSingleton(this.cosmosDbTriggerReferenceOperations);
     }
 
@@ -78,7 +78,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// <param name="mapper">If null, it use auto mapper to map it</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<Entity, IServiceProvider, CosmosDbItem>? mapper = null)
+               Func<EntityWrapper<Entity>, CosmosDbItem>? mapper = null)
     {
         this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, mapper);
         return this.cosmosDbTriggerReferenceOperations;
@@ -90,7 +90,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 {
     private readonly string cosmosDbConnectionString;
     private readonly string cosmosDataBaseId;
-    private readonly Func<Entity, IServiceProvider, ValueTask<Entity>>? setupMapper;
+    private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper;
     private readonly Type dbContextType;
     private Database db;
     private List<string> cosmosContainerIds = new();
@@ -111,16 +111,16 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails = null;
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<Entity, IServiceProvider, ValueTask<Entity>>? mapper, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, Type dbContextType)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDataBaseId = cosmosDataBaseId;
-        this.setupMapper = mapper;
+        this.setupMapper = setupMapper;
         this.dbContextType = dbContextType;
     }
 
     internal void Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<Entity, IServiceProvider, CosmosDbItem>? mapper)
+               Func<EntityWrapper<Entity>, CosmosDbItem>? mapper)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
         this.replicateContainerId = cosmosContainerId;
@@ -130,7 +130,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             CosmosDbItem item;
 
             if (mapper is not null)
-                item = mapper(this.entity, this.serviceProvider);
+                item = mapper(new EntityWrapper<Entity>(this.entity, this.serviceProvider));
             else
             {
                 var autoMapper = this.serviceProvider.GetRequiredService<IMapper>();
@@ -155,7 +155,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 CosmosDbItem item;
 
                 if (mapper is not null)
-                    item = mapper(this.entity, this.serviceProvider);
+                    item = mapper(new EntityWrapper<Entity>(this.entity, this.serviceProvider));
                 else
                 {
                     var autoMapper = this.serviceProvider.GetRequiredService<IMapper>();
@@ -167,16 +167,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 //Store the partition key details
                 var containerResponse = await container.ReadContainerAsync();
                 this.partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
-
-                //var response = await container.DeleteItemAsync<CosmosDbItem>(this.entity.ID.ToString(),
-                //    this.partitionKeyDetails?.partitionKey ?? PartitionKey.None);
-
-                //if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-                //        response.StatusCode == System.Net.HttpStatusCode.NotFound ||
-                //        response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                //    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && true;
-                //else
-                //    this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && false;
 
                 await container.DeleteItemAsync<CosmosDbItem>(this.entity.ID.ToString(),
                     this.partitionKeyDetails?.partitionKey ?? PartitionKey.None)
@@ -201,7 +191,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         //Do the mapping if not null
         if (setupMapper is not null)
-            entity = await setupMapper.Invoke(entity, serviceProvider);
+            entity = await setupMapper.Invoke(new EntityWrapper<Entity>(entity, serviceProvider));
 
         this.entity = entity;
 
@@ -291,6 +281,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             await dbContext.SaveChangesWithoutTriggersAsync();
         }
     }
+}
+
+public class EntityWrapper<EntityType>
+    where EntityType : ShiftEntity<EntityType>
+{
+    public EntityWrapper(EntityType entity, IServiceProvider serviceProvider)
+    {
+        Entity = entity;
+        Services = serviceProvider;
+    }
+
+    public EntityType Entity { get; }
+    public IServiceProvider Services { get; }
 }
 
 internal class ShiftDbContextStore
