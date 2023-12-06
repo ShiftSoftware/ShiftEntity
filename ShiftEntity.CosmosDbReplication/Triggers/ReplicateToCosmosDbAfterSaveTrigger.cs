@@ -49,12 +49,12 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             {
                 if (t.IsFaulted)
                 {
-                    Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
+                    //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
                     Console.ForegroundColor = ConsoleColor.Red; // Set text color to red
                     Console.Error.Write("fail: ");
                     Console.ResetColor();
                     Console.Error.WriteLine(t.Exception);
-                    Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
+                    //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
                 }
             });
         }

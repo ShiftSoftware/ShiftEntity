@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
@@ -95,7 +96,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private Database db;
     private List<string> cosmosContainerIds = new();
     private string replicateContainerId;
-    private IServiceProvider serviceProvider;
 
     private Func<Entity, IServiceProvider, Database, Task> replicateAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
@@ -106,13 +106,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private List<Func<Task>> upsertReferenceActions = new();
 
     private bool? isSucceeded = null;
-
-    private Entity entity;
-
-    (PartitionKey? partitionKey,
-        (string? value, PartitionKeyTypes type)? level1,
-        (string? value, PartitionKeyTypes type)? level2,
-        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails = null;
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, Type dbContextType)
@@ -134,7 +127,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             CosmosDbItem item;
 
             if (mapper is not null)
-                item = mapper(new EntityWrapper<Entity>(entity, this.serviceProvider));
+                item = mapper(new EntityWrapper<Entity>(entity, services));
             else
             {
                 var autoMapper = services.GetRequiredService<IMapper>();
@@ -159,7 +152,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 CosmosDbItem item;
 
                 if (mapper is not null)
-                    item = mapper(new EntityWrapper<Entity>(entity, this.serviceProvider));
+                    item = mapper(new EntityWrapper<Entity>(entity, services));
                 else
                 {
                     var autoMapper = services.GetRequiredService<IMapper>();
@@ -170,15 +163,15 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 //Store the partition key details
                 var containerResponse = await container.ReadContainerAsync();
-                this.partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
+                var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
 
                 //Get item id
-                var idString = GetId(item);
+                var idString = Convert.ToString(item.GetProperty("id"));
                 long id = 0;
                 long.TryParse(idString, out id);
 
                 await container.DeleteItemAsync<CosmosDbItem>(idString,
-                    this.partitionKeyDetails?.partitionKey ?? PartitionKey.None)
+                    partitionKeyDetails.partitionKey ?? PartitionKey.None)
                     .ContinueWith(x =>
                     {
                         CosmosException ex = null;
@@ -203,13 +196,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         (string? value, PartitionKeyTypes type)? level2,
         (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails) replicateDeleteItemInfo = new();
 
-        this.serviceProvider = serviceProvider;
-
         //Do the mapping if not null
         if (setupMapper is not null)
             entity = await setupMapper(new EntityWrapper<Entity>(entity, serviceProvider));
-
-        this.entity = entity;
 
         //Prepare the lists of the container that used, to the connection
         List<(string databaseId, string continerId)> containers = new();
@@ -296,34 +285,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         if (log is not null)
             dbContext.DeletedRowLogs.Remove(log);
-    }
-
-    //public void Dispose()
-    //{
-    //    this.serviceProvider = null;
-    //    this.db = null;
-    //    this.cosmosContainerIds = null;
-    //    this.replicateContainerId = null;
-    //    this.replicateAction = null;
-    //    this.deleteActions = null;
-    //    this.referenceActions = null;
-    //    this.isSucceeded = null;
-    //    this.entity = null;
-    //    this.partitionKeyDetails = null;
-    //}
-
-    private string? GetId(object obj)
-    {
-        // Get the type of the object
-        Type objectType = obj.GetType();
-
-        // Find the property by name (replace "PropertyName" with your property name)
-        PropertyInfo? propertyInfo = objectType.GetProperty("id");
-
-        if (propertyInfo is not null)
-            return Convert.ToString(propertyInfo.GetValue(obj));
-        else
-            throw new MemberAccessException($"Can not find id property in the {objectType.Name}");
     }
 }
 
