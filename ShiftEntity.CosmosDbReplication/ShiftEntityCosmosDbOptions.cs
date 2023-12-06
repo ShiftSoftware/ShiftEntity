@@ -2,6 +2,7 @@
 using EntityFrameworkCore.Triggered;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.Azure.Cosmos.Serialization.HybridRow;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
@@ -65,10 +66,10 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
 
     public CosmosDbTriggerReplicateOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, IServiceCollection services, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
     {
         this.cosmosDbTriggerReferenceOperations =
-            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapper, dbContextType);
+            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping, dbContextType);
         services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
     }
 
@@ -77,12 +78,12 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapper">If null, it use auto mapper to map it</param>
+    /// <param name="mapping">If null, it use auto mapper to map it</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<EntityWrapper<Entity>, CosmosDbItem>? mapper = null)
+               Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, mapper);
+        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, mapping);
         return this.cosmosDbTriggerReferenceOperations;
     }
 }
@@ -92,9 +93,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 {
     private readonly string cosmosDbConnectionString;
     private readonly string cosmosDataBaseId;
-    private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper;
+    private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
     private readonly Type dbContextType;
-    private Database db;
     private List<string> cosmosContainerIds = new();
     private string replicateContainerId;
 
@@ -103,20 +103,20 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
         (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails, bool isSucceeded)>> replicateDeleteAction;
-    private List<Func<Entity, IServiceProvider, Database, Task>> deleteReferenceActions = new();
-    private List<Func<Task>> upsertReferenceActions = new();
+    private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> deleteReferenceActions = new();
+    private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDataBaseId = cosmosDataBaseId;
-        this.setupMapper = setupMapper;
+        this.setupMapping = setupMapping;
         this.dbContextType = dbContextType;
     }
 
     internal void Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<EntityWrapper<Entity>, CosmosDbItem>? mapper)
+               Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
         this.replicateContainerId = cosmosContainerId;
@@ -127,8 +127,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             CosmosDbItem item;
 
-            if (mapper is not null)
-                item = mapper(new EntityWrapper<Entity>(entity, services));
+            if (mapping is not null)
+                item = mapping(new EntityWrapper<Entity>(entity, services));
             else
             {
                 var autoMapper = services.GetRequiredService<IMapper>();
@@ -154,8 +154,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 bool isSucceeded = false;
                 CosmosDbItem item;
 
-                if (mapper is not null)
-                    item = mapper(new EntityWrapper<Entity>(entity, services));
+                if (mapping is not null)
+                    item = mapping(new EntityWrapper<Entity>(entity, services));
                 else
                 {
                     var autoMapper = services.GetRequiredService<IMapper>();
@@ -191,6 +191,70 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             };
     }
 
+    public CosmosDbTriggerReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
+                Func<IQueryable<CosmosDbItem>, EntityWrapper<Entity>, IQueryable<CosmosDbItem>> finder,
+                Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem>? mapping = null)
+    {
+        this.cosmosContainerIds.Add(cosmosContainerId);
+
+        this.upsertReferenceActions.Add(async (entity, services, db) =>
+        {
+            bool? isSucceeded = null;
+            var container = db.GetContainer(cosmosContainerId);
+
+            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
+
+            if (items is not null && items?.Count() > 0)
+            {
+                List<Task> cosmosTasks = new();
+
+                foreach (var item in items)
+                {
+                    CosmosDbItem tempItems = item;
+                    if (mapping is null)
+                    {
+                        var mapper = services.GetRequiredService<IMapper>();
+                        mapper.Map(entity, tempItems);
+                    }
+                    else
+                        tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
+
+                    cosmosTasks.Add(container.UpsertItemAsync<CosmosDbItem>(tempItems)
+                        .ContinueWith(x =>
+                        {
+                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        }));
+                }
+
+                await Task.WhenAll(cosmosTasks);
+            }
+
+            return isSucceeded;
+        });
+
+        return this;
+    }
+
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Container container, 
+        Entity entity, IServiceProvider serviceProvider,
+        Func<IQueryable<CosmosDBItem>, EntityWrapper<Entity>, IQueryable<CosmosDBItem>> finder)
+    {
+        var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
+
+        query = finder(query, new EntityWrapper<Entity>(entity, serviceProvider));
+
+        var feedIterator = query.ToFeedIterator<CosmosDBItem>();
+
+        List<CosmosDBItem> items = new();
+
+        while (feedIterator.HasMoreResults)
+        {
+            items.AddRange(await feedIterator.ReadNextAsync());
+        }
+
+        return items;
+    }
+
     internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
     {
         (long id, (PartitionKey? partitionKey,
@@ -201,8 +265,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         bool? isSucceeded = null;
 
         //Do the mapping if not null
-        if (setupMapper is not null)
-            entity = await setupMapper(new EntityWrapper<Entity>(entity, serviceProvider));
+        if (setupMapping is not null)
+            entity = await setupMapping(new EntityWrapper<Entity>(entity, serviceProvider));
 
         //Prepare the lists of the container that used, to the connection
         List<(string databaseId, string continerId)> containers = new();
@@ -215,7 +279,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             AllowBulkExecution = true
         });
         var db = client.GetDatabase(this.cosmosDataBaseId);
-        this.db = db;
 
         //If the change type is added or modified, then do the upsert action
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
@@ -230,7 +293,14 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         if (changeType == ChangeType.Modified)
         {
+            //Reset the isSucceeded flag
+            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
 
+            foreach (var action in this.upsertReferenceActions)
+            {
+                var result = await action(entity, serviceProvider, db);
+                isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
+            }
         }
         else if (changeType == ChangeType.Deleted)
         {
