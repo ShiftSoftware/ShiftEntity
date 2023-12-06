@@ -11,7 +11,9 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model;
+using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
 
@@ -284,7 +286,106 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         return this;
     }
 
-    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Container container, 
+    public CosmosDbTriggerReferenceOperations<Entity> UpdatePropertyReference<CosmosDbItemReference, DestinationContainer>(
+        string cosmosContainerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
+        Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
+        Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
+    {
+        string propertyName = "";
+
+        if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
+            propertyName = memberExpression.Member.Name;
+        else
+            throw new ArgumentException("Expression must be a member access expression");
+
+        this.cosmosContainerIds.Add(cosmosContainerId);
+
+        this.upsertReferenceActions.Add(async (entity, services, db) =>
+        {
+            bool? isSucceeded = null;
+            var container = db.GetContainer(cosmosContainerId);
+
+            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
+
+            if (items is not null && items?.Count() > 0)
+            {
+                List<Task> cosmosTasks = new();
+
+                var containerReposne = await container.ReadContainerAsync();
+
+                foreach (var item in items)
+                {
+                    CosmosDbItemReference propertyItem;
+                    if (mapping is null)
+                    {
+                        var mapper = services.GetRequiredService<IMapper>();
+                        propertyItem = mapper.Map<CosmosDbItemReference>(entity);
+                    }
+                    else
+                        propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
+
+                    var id = Convert.ToString(item.GetProperty("id"));
+                    PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+
+                    cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                            new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
+                        .ContinueWith(x =>
+                        {
+                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        }));
+                }
+
+                await Task.WhenAll(cosmosTasks);
+            }
+
+            return isSucceeded;
+        });
+
+        this.deleteReferenceActions.Add(async (entity, services, db) =>
+        {
+            bool? isSucceeded = null;
+            var container = db.GetContainer(cosmosContainerId);
+
+            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
+
+            if (items is not null && items?.Count() > 0)
+            {
+                List<Task> cosmosTasks = new();
+
+                var containerReposne = await container.ReadContainerAsync();
+
+                foreach (var item in items)
+                {
+                    CosmosDbItemReference propertyItem;
+                    if (mapping is null)
+                    {
+                        var mapper = services.GetRequiredService<IMapper>();
+                        propertyItem = mapper.Map<CosmosDbItemReference>(entity);
+                    }
+                    else
+                        propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
+
+                    var id = Convert.ToString(item.GetProperty("id"));
+                    PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+
+                    cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                        new[] { PatchOperation.Remove($"/{propertyName}") })
+                        .ContinueWith(x =>
+                        {
+                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        }));
+                }
+
+                await Task.WhenAll(cosmosTasks);
+            }
+
+            return isSucceeded;
+        });
+
+        return this;
+    }
+
+    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Container container,
         Entity entity, IServiceProvider serviceProvider,
         Func<IQueryable<CosmosDBItem>, EntityWrapper<Entity>, IQueryable<CosmosDBItem>> finder)
     {
