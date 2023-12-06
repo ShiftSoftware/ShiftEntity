@@ -40,18 +40,21 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
 
         if (cosmosDbTriggerActions is not null)
         {
+            var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
+
             _ = Task.Run(async () =>
             {
-                await cosmosDbTriggerActions.RunAsync(context.Entity, this.serviceProvider.CreateAsyncScope().ServiceProvider,
-                    context.ChangeType);
+                await cosmosDbTriggerActions.RunAsync(context.Entity, serviceProvider, context.ChangeType);
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted)
                 {
+                    Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
                     Console.ForegroundColor = ConsoleColor.Red; // Set text color to red
                     Console.Error.Write("fail: ");
                     Console.ResetColor();
                     Console.Error.WriteLine(t.Exception);
+                    Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
                 }
             });
         }
