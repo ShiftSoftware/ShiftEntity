@@ -2,6 +2,7 @@
 using EntityFrameworkCore.Triggered;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos.Serialization.HybridRow;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,15 +98,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private List<string> cosmosContainerIds = new();
     private string replicateContainerId;
 
-    private Func<Entity, IServiceProvider, Database, Task> replicateAction;
+    private Func<Entity, IServiceProvider, Database, Task<bool>> replicateAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
-        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails)>> replicateDeleteAction;
+        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails, bool isSucceeded)>> replicateDeleteAction;
     private List<Func<Entity, IServiceProvider, Database, Task>> deleteReferenceActions = new();
     private List<Func<Task>> upsertReferenceActions = new();
-
-    private bool? isSucceeded = null;
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapper, Type dbContextType)
@@ -124,6 +123,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         this.replicateAction = async (entity, services, db) =>
         {
+            bool isSucceeded = false;
+
             CosmosDbItem item;
 
             if (mapper is not null)
@@ -138,17 +139,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var response = await container.UpsertItemAsync(item);
 
-
             if (response.StatusCode == System.Net.HttpStatusCode.OK ||
                 response.StatusCode == System.Net.HttpStatusCode.Created ||
                 response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && true;
+                isSucceeded = true;
             else
-                this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && false;
+                isSucceeded = false;
+
+            return isSucceeded;
         };
 
         this.replicateDeleteAction = async (entity, services, db) =>
             {
+                bool isSucceeded = false;
                 CosmosDbItem item;
 
                 if (mapper is not null)
@@ -181,20 +184,21 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                                 if (innerException is CosmosException customException)
                                     ex = customException;
 
-                        bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-                        this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) && success;
+                        isSucceeded = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
                     }).WaitAsync(new CancellationToken());
 
-                return (id, partitionKeyDetails);
+                return (id, partitionKeyDetails, isSucceeded);
             };
     }
 
     internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
     {
         (long id, (PartitionKey? partitionKey,
-        (string? value, PartitionKeyTypes type)? level1,
-        (string? value, PartitionKeyTypes type)? level2,
-        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails) replicateDeleteItemInfo = new();
+            (string? value, PartitionKeyTypes type)? level1,
+            (string? value, PartitionKeyTypes type)? level2,
+            (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails,
+            bool isSucceeded) replicateDeleteItemInfo = new();
+        bool? isSucceeded = null;
 
         //Do the mapping if not null
         if (setupMapper is not null)
@@ -217,9 +221,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
         {
             //Reset the isSucceeded flag
-            this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) ? null : false;
+            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
 
-            await this.replicateAction(entity, serviceProvider, db);
+            var result = await this.replicateAction(entity, serviceProvider, db);
+
+            isSucceeded = isSucceeded.GetValueOrDefault(true) && result;
         }
 
         if (changeType == ChangeType.Modified)
@@ -229,24 +235,18 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         else if (changeType == ChangeType.Deleted)
         {
             //Reset the isSucceeded flag
-            this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) ? null : false;
+            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
 
             replicateDeleteItemInfo = await this.replicateDeleteAction(entity, serviceProvider, db);
 
-            foreach (var action in this.deleteReferenceActions)
-            {
-                //Reset the isSucceeded flag
-                this.isSucceeded = this.isSucceeded.GetValueOrDefault(true) ? null : false;
-
-                await action(entity, serviceProvider, db);
-            }
+            isSucceeded = isSucceeded.GetValueOrDefault(true) && replicateDeleteItemInfo.isSucceeded;
         }
 
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
 
-        if (this.isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
+        if (isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
             UpdateLastReplicationDateAsync(dbContext, entity);
-        else if (this.isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
+        else if (isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
             await RemoveDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
 
         await dbContext.SaveChangesWithoutTriggersAsync();
