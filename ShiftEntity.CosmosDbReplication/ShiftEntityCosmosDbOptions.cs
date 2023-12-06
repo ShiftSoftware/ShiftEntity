@@ -164,7 +164,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 var container = db.GetContainer(cosmosContainerId);
 
-                //Store the partition key details
                 var containerResponse = await container.ReadContainerAsync();
                 var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
 
@@ -223,6 +222,56 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                         .ContinueWith(x =>
                         {
                             isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        }));
+                }
+
+                await Task.WhenAll(cosmosTasks);
+            }
+
+            return isSucceeded;
+        });
+
+        this.deleteReferenceActions.Add(async (entity, services, db) =>
+        {
+            bool? isSucceeded = null;
+            var container = db.GetContainer(cosmosContainerId);
+
+            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
+
+            if (items is not null && items?.Count() > 0)
+            {
+                List<Task> cosmosTasks = new();
+
+                foreach (var item in items)
+                {
+                    CosmosDbItem tempItems = item;
+                    if (mapping is null)
+                    {
+                        var mapper = services.GetRequiredService<IMapper>();
+                        mapper.Map(entity, tempItems);
+                    }
+                    else
+                        tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
+
+                    var containerResponse = await container.ReadContainerAsync();
+                    var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
+
+                    //Get item id
+                    var idString = Convert.ToString(item.GetProperty("id"));
+
+                    cosmosTasks.Add(container.DeleteItemAsync<CosmosDbItem>(idString,
+                        partitionKeyDetails.partitionKey ?? PartitionKey.None)
+                        .ContinueWith(x =>
+                        {
+                            CosmosException ex = null;
+
+                            if (x.Exception != null)
+                                foreach (var innerException in x.Exception.InnerExceptions)
+                                    if (innerException is CosmosException customException)
+                                        ex = customException;
+
+                            isSucceeded = isSucceeded.GetValueOrDefault(true) &&
+                                (x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound);
                         }));
                 }
 
@@ -293,12 +342,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         if (changeType == ChangeType.Modified)
         {
-            //Reset the isSucceeded flag
-            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
-
             foreach (var action in this.upsertReferenceActions)
             {
+                //Reset the isSucceeded flag
+                isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
+
                 var result = await action(entity, serviceProvider, db);
+
                 isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
             }
         }
@@ -310,6 +360,16 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             replicateDeleteItemInfo = await this.replicateDeleteAction(entity, serviceProvider, db);
 
             isSucceeded = isSucceeded.GetValueOrDefault(true) && replicateDeleteItemInfo.isSucceeded;
+
+            foreach (var action in this.deleteReferenceActions)
+            {
+                //Reset the isSucceeded flag
+                isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
+
+                var result = await action(entity, serviceProvider, db);
+
+                isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
+            }
         }
 
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
