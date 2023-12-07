@@ -27,7 +27,7 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
 
     public Task BeforeSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
-        if (context.ChangeType is not ChangeType.Modified) 
+        if (context.ChangeType != ChangeType.Modified) 
             return Task.CompletedTask;
 
         if(this.cosmosDbTriggerActions is null)
@@ -65,7 +65,7 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
     private void CheckPartitionKey(object item, object unmodifiedItem,
         Func<object, (object? value, Type type, string? propertyName)?> partitionKeyAction)
     {
-        var unmodifiedResult= partitionKeyAction(unmodifiedItem);
+        var unmodifiedResult = partitionKeyAction(unmodifiedItem);
         var result = partitionKeyAction(item);
 
         if (result?.value?.Equals(unmodifiedResult?.value) == false)

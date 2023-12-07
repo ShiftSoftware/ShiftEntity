@@ -1,108 +1,104 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType>
-    where EntityType : ShiftEntityBase<EntityType>
+    where EntityType : ShiftEntity<EntityType>
 {
-    private readonly IMapper mapper;
-    private readonly ShiftEntityCosmosDbOptions options;
     private readonly IServiceProvider serviceProvider;
+    private readonly IMapper? mapper;
+    private readonly CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions;
 
-    public LogDeletedRowsTrigger(IMapper mapper,
-        ShiftEntityCosmosDbOptions options, IServiceProvider serviceProvider)
+    public LogDeletedRowsTrigger(
+        IServiceProvider serviceProvider,
+        IMapper? mapper = null,
+        CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions = null)
     {
-        this.mapper = mapper;
-        this.options = options;
         this.serviceProvider = serviceProvider;
+        this.mapper = mapper;
+        this.cosmosDbTriggerActions = cosmosDbTriggerActions;
     }
 
     public Task BeforeSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
-        if (context.ChangeType == ChangeType.Deleted)
+        if (context.ChangeType != ChangeType.Deleted)
+            return Task.CompletedTask;
+
+        if (this.cosmosDbTriggerActions is null)
+            return Task.CompletedTask;
+
+        object item;
+
+        if (this.cosmosDbTriggerActions.ReplicateMipping is not null)
+            item = this.cosmosDbTriggerActions.ReplicateMipping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
+        else
+            item = this.mapper!.Map(context.Entity!, typeof(EntityType), this.cosmosDbTriggerActions.ReplicateComsomsDbItemType);
+
+        var id = Convert.ToString(item.GetProperty("id"));
+
+        (object? value, Type type, string? propertyName)? partitionKeyLevelOne = null;
+        (object? value, Type type, string? propertyName)? partitionKeyLevelTwo = null;
+        (object? value, Type type, string? propertyName)? partitionKeyLevelThree = null;
+
+        if (this.cosmosDbTriggerActions.PartitionKeyLevel1Action is not null)
+            partitionKeyLevelOne = this.cosmosDbTriggerActions.PartitionKeyLevel1Action(item);
+
+        if (this.cosmosDbTriggerActions.PartitionKeyLevel2Action is not null)
+            partitionKeyLevelTwo = this.cosmosDbTriggerActions.PartitionKeyLevel2Action(item);
+
+        if (this.cosmosDbTriggerActions.PartitionKeyLevel3Action is not null)
+            partitionKeyLevelThree = this.cosmosDbTriggerActions.PartitionKeyLevel3Action(item);
+
+        var deleteRowLog = new DeletedRowLog
         {
-            var entityType = context.Entity.GetType();
+            ContainerName = this.cosmosDbTriggerActions.ReplicateContainerId,
+            RowID = long.Parse(id!)
+        };
 
-            var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
-
-            if (replicationAttribute is not null)
-            {
-                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
-                    .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
-
-                var entity = context.Entity;
-                (string? value, PartitionKeyTypes type) partitionKeyLevelOne = (null, PartitionKeyTypes.None);
-                (string? value, PartitionKeyTypes type) partitionKeyLevelTwo = (null, PartitionKeyTypes.None);
-                (string? value, PartitionKeyTypes type) partitionKeyLevelThree = (null, PartitionKeyTypes.None);
-
-                var id = "";
-
-                if (partitionKeyAttribute is not null)
-                {
-                    object item = mapper.Map(entity, typeof(EntityType), replicationAttribute.ItemType);
-                    id = Convert.ToString(item.GetProperty("id"));
-
-                    partitionKeyLevelOne = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelOnePropertyName);
-                    partitionKeyLevelTwo = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelTwoPropertyName);
-                    partitionKeyLevelThree = GetPatitionKey(replicationAttribute.ItemType, item, partitionKeyAttribute.KeyLevelThreePropertyName);
-                }
-
-                var conf = replicationAttribute.GetConfigurations(options.Accounts, context.Entity.GetType().Name);
-
-                var deleteRowLog = new DeletedRowLog
-                {
-                    ContainerName = conf.containerName,
-                    RowID = long.Parse(id!),
-                    PartitionKeyLevelOneType = partitionKeyLevelOne.type,
-                    PartitionKeyLevelOneValue = partitionKeyLevelOne.value,
-                    PartitionKeyLevelTwoType = partitionKeyLevelTwo.type,
-                    PartitionKeyLevelTwoValue = partitionKeyLevelTwo.value,
-                    PartitionKeyLevelThreeType = partitionKeyLevelThree.type,
-                    PartitionKeyLevelThreeValue = partitionKeyLevelThree.value,
-                };
-
-                foreach (var dbType in options.ShiftDbContextStorage)
-                {
-                    var dbContext = (DbContext)serviceProvider.GetRequiredService(dbType.ShiftDbContextType);
-                        if (dbContext.Model.GetEntityTypes().Any(x => x.ClrType == typeof(EntityType)))
-                            dbContext.Entry(deleteRowLog).State = Microsoft.EntityFrameworkCore.EntityState.Added;
-                }
-            }
+        if (partitionKeyLevelOne is not null)
+        {
+            deleteRowLog.PartitionKeyLevelOneType = GetPartitionKeyType(partitionKeyLevelOne.Value.type);
+            deleteRowLog.PartitionKeyLevelOneValue = Convert.ToString(partitionKeyLevelOne.Value.value);
         }
+        else
+            deleteRowLog.PartitionKeyLevelOneType = PartitionKeyTypes.None;
+
+        if (partitionKeyLevelTwo is not null)
+        {
+            deleteRowLog.PartitionKeyLevelTwoType = GetPartitionKeyType(partitionKeyLevelTwo.Value.type);
+            deleteRowLog.PartitionKeyLevelTwoValue = Convert.ToString(partitionKeyLevelTwo.Value.value);
+        }
+        else
+            deleteRowLog.PartitionKeyLevelTwoType = PartitionKeyTypes.None;
+
+        if (partitionKeyLevelThree is not null)
+        {
+            deleteRowLog.PartitionKeyLevelThreeType = GetPartitionKeyType(partitionKeyLevelThree.Value.type);
+            deleteRowLog.PartitionKeyLevelThreeValue = Convert.ToString(partitionKeyLevelThree.Value.value);
+        }
+        else
+            deleteRowLog.PartitionKeyLevelThreeType = PartitionKeyTypes.None;
+
+        var dbContext = (ShiftDbContext)this.serviceProvider.GetRequiredService(this.cosmosDbTriggerActions.dbContextType);
+
+        dbContext.Entry(deleteRowLog).State = Microsoft.EntityFrameworkCore.EntityState.Added;
 
         return Task.CompletedTask;
     }
 
-    private (string? value, PartitionKeyTypes type) GetPatitionKey(Type itemType, object item, string? partitionKeyName)
+    private PartitionKeyTypes GetPartitionKeyType(Type type)
     {
-        if (partitionKeyName is null)
-            return (null, PartitionKeyTypes.None);
-
-        var property = itemType.GetProperty(partitionKeyName);
-        if (property is null)
-            throw new WrongPartitionKeyNameException($"Can not find {partitionKeyName} in the {itemType.Name}");
-
-        Type propertyType = property.PropertyType;
-        if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-            throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
-
-        PartitionKeyTypes partitionKeyType;
-        var partitionKeyValue = property.GetValue(item);
-
-        if (propertyType == typeof(bool?) || propertyType == typeof(bool))
-            partitionKeyType = PartitionKeyTypes.Boolean;
-        else if (propertyType == typeof(string))
-            partitionKeyType = PartitionKeyTypes.String;
+        if (type == typeof(bool?) || type == typeof(bool))
+            return PartitionKeyTypes.Boolean;
+        else if (type == typeof(string))
+            return PartitionKeyTypes.String;
         else
-            partitionKeyType = PartitionKeyTypes.Numeric;
-
-        return (partitionKeyValue?.ToString(), partitionKeyType);
+            return PartitionKeyTypes.Numeric;
     }
 }

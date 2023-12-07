@@ -135,7 +135,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private readonly string cosmosDbConnectionString;
     private readonly string cosmosDataBaseId;
     private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
-    private readonly Type dbContextType;
+    internal readonly Type dbContextType;
+
     private List<string> cosmosContainerIds = new();
 
     internal string ReplicateContainerId { get; private set; }
