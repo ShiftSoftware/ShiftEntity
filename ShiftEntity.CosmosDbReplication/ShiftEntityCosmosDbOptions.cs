@@ -3,16 +3,12 @@ using EntityFrameworkCore.Triggered;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
-using Microsoft.Azure.Cosmos.Serialization.HybridRow;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
-using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using ShiftSoftware.ShiftEntity.Model;
 using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
@@ -23,33 +19,11 @@ public class ShiftEntityCosmosDbOptions
 {
     internal IServiceCollection Services { get; set; }
 
-    /// <summary>
-    /// This is become the default connection
-    /// </summary>
-    public string? ConnectionString { get; set; }
-
-    /// <summary>
-    /// This is become the default database for the specified connection string
-    /// </summary>
-    public string? DefaultDatabaseName { get; set; }
-
-    public List<CosmosDBAccount> Accounts { get; set; }
-
-    internal List<ShiftDbContextStore> ShiftDbContextStorage { get; private set; }
-
-    public ShiftEntityCosmosDbOptions()
-    {
-        Accounts = new();
-        ShiftDbContextStorage = new();
-    }
-
     public ShiftEntityCosmosDbOptions AddShiftDbContext<T>(Action<DbContextOptionsBuilder<T>> optionBuilder)
         where T : ShiftDbContext
     {
         DbContextOptionsBuilder<T> builder = new();
         optionBuilder.Invoke(builder);
-
-        ShiftDbContextStorage.Add(new ShiftDbContextStore(typeof(T), builder.Options));
         return this;
     }
 
@@ -179,8 +153,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         this.replicateAction = async (entity, services, db) =>
         {
-            bool isSucceeded = false;
-
             CosmosDbItem item;
 
             if (mapping is not null)
@@ -196,13 +168,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             var response = await container.UpsertItemAsync(item);
 
             if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-                response.StatusCode == System.Net.HttpStatusCode.Created ||
-                response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                isSucceeded = true;
-            else
-                isSucceeded = false;
+                    response.StatusCode == System.Net.HttpStatusCode.Created ||
+                    response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                return true;
 
-            return isSucceeded;
+            return false;
         };
 
         this.replicateDeleteAction = async (entity, services, db) =>
@@ -328,30 +298,30 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
-            if (items is not null && items?.Count() > 0)
+            if(items is null || items?.Count() == 0)
+                return true;
+
+            List<Task> cosmosTasks = new();
+
+            foreach (var item in items)
             {
-                List<Task> cosmosTasks = new();
-
-                foreach (var item in items)
+                CosmosDbItem tempItems = item;
+                if (mapping is null)
                 {
-                    CosmosDbItem tempItems = item;
-                    if (mapping is null)
-                    {
-                        var mapper = services.GetRequiredService<IMapper>();
-                        mapper.Map(entity, tempItems);
-                    }
-                    else
-                        tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
-
-                    cosmosTasks.Add(container.UpsertItemAsync<CosmosDbItem>(tempItems)
-                        .ContinueWith(x =>
-                        {
-                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
-                        }));
+                    var mapper = services.GetRequiredService<IMapper>();
+                    mapper.Map(entity, tempItems);
                 }
+                else
+                    tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
 
-                await Task.WhenAll(cosmosTasks);
+                cosmosTasks.Add(container.UpsertItemAsync<CosmosDbItem>(tempItems)
+                    .ContinueWith(x =>
+                    {
+                        isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                    }));
             }
+
+            await Task.WhenAll(cosmosTasks);
 
             return isSucceeded;
         });
@@ -363,45 +333,45 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
-            if (items is not null && items?.Count() > 0)
+            if (items is null || items?.Count() == 0)
+                return true;
+
+            List<Task> cosmosTasks = new();
+
+            foreach (var item in items)
             {
-                List<Task> cosmosTasks = new();
-
-                foreach (var item in items)
+                CosmosDbItem tempItems = item;
+                if (mapping is null)
                 {
-                    CosmosDbItem tempItems = item;
-                    if (mapping is null)
-                    {
-                        var mapper = services.GetRequiredService<IMapper>();
-                        mapper.Map(entity, tempItems);
-                    }
-                    else
-                        tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
-
-                    var containerResponse = await container.ReadContainerAsync();
-                    var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
-
-                    //Get item id
-                    var idString = Convert.ToString(item.GetProperty("id"));
-
-                    cosmosTasks.Add(container.DeleteItemAsync<CosmosDbItem>(idString,
-                        partitionKeyDetails.partitionKey ?? PartitionKey.None)
-                        .ContinueWith(x =>
-                        {
-                            CosmosException ex = null;
-
-                            if (x.Exception != null)
-                                foreach (var innerException in x.Exception.InnerExceptions)
-                                    if (innerException is CosmosException customException)
-                                        ex = customException;
-
-                            isSucceeded = isSucceeded.GetValueOrDefault(true) &&
-                                (x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound);
-                        }));
+                    var mapper = services.GetRequiredService<IMapper>();
+                    mapper.Map(entity, tempItems);
                 }
+                else
+                    tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
 
-                await Task.WhenAll(cosmosTasks);
+                var containerResponse = await container.ReadContainerAsync();
+                var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
+
+                //Get item id
+                var idString = Convert.ToString(item.GetProperty("id"));
+
+                cosmosTasks.Add(container.DeleteItemAsync<CosmosDbItem>(idString,
+                    partitionKeyDetails.partitionKey ?? PartitionKey.None)
+                    .ContinueWith(x =>
+                    {
+                        CosmosException ex = null;
+
+                        if (x.Exception != null)
+                            foreach (var innerException in x.Exception.InnerExceptions)
+                                if (innerException is CosmosException customException)
+                                    ex = customException;
+
+                        isSucceeded = isSucceeded.GetValueOrDefault(true) &&
+                            (x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound);
+                    }));
             }
+
+            await Task.WhenAll(cosmosTasks);
 
             return isSucceeded;
         });
@@ -430,36 +400,36 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
-            if (items is not null && items?.Count() > 0)
+            if (items is null || items?.Count() == 0)
+                return true;
+
+            List<Task> cosmosTasks = new();
+
+            var containerReposne = await container.ReadContainerAsync();
+
+            foreach (var item in items)
             {
-                List<Task> cosmosTasks = new();
-
-                var containerReposne = await container.ReadContainerAsync();
-
-                foreach (var item in items)
+                CosmosDbItemReference propertyItem;
+                if (mapping is null)
                 {
-                    CosmosDbItemReference propertyItem;
-                    if (mapping is null)
-                    {
-                        var mapper = services.GetRequiredService<IMapper>();
-                        propertyItem = mapper.Map<CosmosDbItemReference>(entity);
-                    }
-                    else
-                        propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
-
-                    var id = Convert.ToString(item.GetProperty("id"));
-                    PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
-
-                    cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                            new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
-                        .ContinueWith(x =>
-                        {
-                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
-                        }));
+                    var mapper = services.GetRequiredService<IMapper>();
+                    propertyItem = mapper.Map<CosmosDbItemReference>(entity);
                 }
+                else
+                    propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
 
-                await Task.WhenAll(cosmosTasks);
+                var id = Convert.ToString(item.GetProperty("id"));
+                PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+
+                cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                        new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
+                    .ContinueWith(x =>
+                    {
+                        isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                    }));
             }
+
+            await Task.WhenAll(cosmosTasks);
 
             return isSucceeded;
         });
@@ -471,36 +441,36 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
-            if (items is not null && items?.Count() > 0)
+            if (items is null || items?.Count() == 0)
+                return true;
+
+            List<Task> cosmosTasks = new();
+
+            var containerReposne = await container.ReadContainerAsync();
+
+            foreach (var item in items)
             {
-                List<Task> cosmosTasks = new();
-
-                var containerReposne = await container.ReadContainerAsync();
-
-                foreach (var item in items)
+                CosmosDbItemReference propertyItem;
+                if (mapping is null)
                 {
-                    CosmosDbItemReference propertyItem;
-                    if (mapping is null)
-                    {
-                        var mapper = services.GetRequiredService<IMapper>();
-                        propertyItem = mapper.Map<CosmosDbItemReference>(entity);
-                    }
-                    else
-                        propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
-
-                    var id = Convert.ToString(item.GetProperty("id"));
-                    PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
-
-                    cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                        new[] { PatchOperation.Remove($"/{propertyName}") })
-                        .ContinueWith(x =>
-                        {
-                            isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
-                        }));
+                    var mapper = services.GetRequiredService<IMapper>();
+                    propertyItem = mapper.Map<CosmosDbItemReference>(entity);
                 }
+                else
+                    propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
 
-                await Task.WhenAll(cosmosTasks);
+                var id = Convert.ToString(item.GetProperty("id"));
+                PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+
+                cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
+                    new[] { PatchOperation.Remove($"/{propertyName}") })
+                    .ContinueWith(x =>
+                    {
+                        isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                    }));
             }
+
+            await Task.WhenAll(cosmosTasks);
 
             return isSucceeded;
         });
@@ -653,16 +623,4 @@ public class EntityWrapper<EntityType>
 
     public EntityType Entity { get; }
     public IServiceProvider Services { get; }
-}
-
-internal class ShiftDbContextStore
-{
-    public Type ShiftDbContextType { get; private set; }
-    public object DbContextOptions { get; private set; }
-
-    public ShiftDbContextStore(Type shiftDbContextType, object dbContextOptions)
-    {
-        ShiftDbContextType = shiftDbContextType;
-        DbContextOptions = dbContextOptions;
-    }
 }

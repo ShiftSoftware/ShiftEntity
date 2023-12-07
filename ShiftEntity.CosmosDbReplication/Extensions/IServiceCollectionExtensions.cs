@@ -21,41 +21,6 @@ public static class IServiceCollectionExtensions
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
-        
-        CosmosDBAccount connection = new();
-        
-        //register options
-
-        //Add default connection and database
-        if (options.ConnectionString is not null)
-        {
-            connection.ConnectionString = options.ConnectionString;
-            connection.IsDefault = true;
-
-            if (options.DefaultDatabaseName is not null)
-            {
-                connection.DefaultDatabaseName = options.DefaultDatabaseName;
-            }
-
-            options.Accounts.Add(connection);
-        }
-
-        //There must be only one default connection
-        if (options.Accounts.Count(c => c.IsDefault) > 1)
-            throw new ArgumentException("There must be only at least one default connection");
-
-        //The account names must be unique
-        if (options.Accounts.GroupBy(x => x.Name?.ToLower()).Any(x => x.Count() > 1))
-            throw new ArgumentException("There account names must be unique");
-
-        services.AddSingleton(options);
-        services.AddScoped(typeof(CosmosDBService<>));
-
-        foreach (var shiftDbContext in options.ShiftDbContextStorage)
-        {
-            services.AddSingleton(
-                new DbContextProvider(shiftDbContext.ShiftDbContextType, shiftDbContext.DbContextOptions));
-        }
 
         return services;
     }
