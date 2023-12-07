@@ -64,7 +64,8 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
         if (partitionKeyLevelOne is not null)
         {
             deleteRowLog.PartitionKeyLevelOneType = GetPartitionKeyType(partitionKeyLevelOne.Value.type);
-            deleteRowLog.PartitionKeyLevelOneValue = Convert.ToString(partitionKeyLevelOne.Value.value);
+            deleteRowLog.PartitionKeyLevelOneValue = partitionKeyLevelOne.Value.value is null ?
+                null : Convert.ToString(partitionKeyLevelOne.Value.value);
         }
         else
             deleteRowLog.PartitionKeyLevelOneType = PartitionKeyTypes.None;
@@ -72,7 +73,8 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
         if (partitionKeyLevelTwo is not null)
         {
             deleteRowLog.PartitionKeyLevelTwoType = GetPartitionKeyType(partitionKeyLevelTwo.Value.type);
-            deleteRowLog.PartitionKeyLevelTwoValue = Convert.ToString(partitionKeyLevelTwo.Value.value);
+            deleteRowLog.PartitionKeyLevelTwoValue = partitionKeyLevelTwo.Value.value is null ?
+                null : Convert.ToString(partitionKeyLevelTwo.Value.value);
         }
         else
             deleteRowLog.PartitionKeyLevelTwoType = PartitionKeyTypes.None;
@@ -80,7 +82,8 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
         if (partitionKeyLevelThree is not null)
         {
             deleteRowLog.PartitionKeyLevelThreeType = GetPartitionKeyType(partitionKeyLevelThree.Value.type);
-            deleteRowLog.PartitionKeyLevelThreeValue = Convert.ToString(partitionKeyLevelThree.Value.value);
+            deleteRowLog.PartitionKeyLevelThreeValue = partitionKeyLevelThree.Value.value is null ?
+                null : Convert.ToString(partitionKeyLevelThree.Value.value);
         }
         else
             deleteRowLog.PartitionKeyLevelThreeType = PartitionKeyTypes.None;
