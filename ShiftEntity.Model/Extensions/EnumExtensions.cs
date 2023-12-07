@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 
-namespace System;
+namespace ShiftSoftware.ShiftEntity.Model.Extensions;
 
 public static class EnumExtensions
 {

@@ -1,4 +1,4 @@
-﻿namespace System;
+﻿namespace ShiftSoftware.ShiftEntity.Model.Extensions;
 
 public static class HashIdExtensions
 {

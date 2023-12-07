@@ -1,5 +1,6 @@
-﻿
-namespace System.Linq.Expressions;
+﻿using System.Linq.Expressions;
+
+namespace ShiftSoftware.ShiftEntity.Model.Extensions;
 
 public static class ExpressionExtensions
 {
