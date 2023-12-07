@@ -83,9 +83,48 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// <param name="mapping">If null, it use auto mapper to map it</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, mapping);
+        this.cosmosDbTriggerReferenceOperations
+            .Replicate(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
+        return this.cosmosDbTriggerReferenceOperations;
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="CosmosDbItem"></typeparam>
+    /// <param name="cosmosContainerId"></param>
+    /// <param name="mapping">If null, it use auto mapper to map it</param>
+    /// <returns></returns>
+    public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
+        string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+    {
+        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
+            partitionKeyLevel2Expression, null, mapping);
+        return this.cosmosDbTriggerReferenceOperations;
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="CosmosDbItem"></typeparam>
+    /// <param name="cosmosContainerId"></param>
+    /// <param name="mapping">If null, it use auto mapper to map it</param>
+    /// <returns></returns>
+    public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
+        string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel3Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+    {
+        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
+            partitionKeyLevel2Expression, partitionKeyLevel3Expression, mapping);
         return this.cosmosDbTriggerReferenceOperations;
     }
 }
@@ -98,7 +137,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
     private readonly Type dbContextType;
     private List<string> cosmosContainerIds = new();
-    private string replicateContainerId;
+
+    internal string ReplicateContainerId { get; private set; }
+    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel1Action { get; private set; }
+    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel2Action { get; private set; }
+    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel3Action { get; private set; }
+    internal Func<EntityWrapper<Entity>, object>? ReplicateMipping { get; private set; }
+    internal Type ReplicateComsomsDbItemType { get; private set; }
 
     private Func<Entity, IServiceProvider, Database, Task<bool>> replicateAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
@@ -117,11 +162,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         this.dbContextType = dbContextType;
     }
 
-    internal void Replicate<CosmosDbItem>(string cosmosContainerId,
-               Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
+    internal void Replicate<CosmosDbItem>(
+        string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel2Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel3Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
-        this.replicateContainerId = cosmosContainerId;
+        this.ReplicateContainerId = cosmosContainerId;
+
+        SetPartitonKeyActions(partitionKeyLevel1Expression, partitionKeyLevel2Expression, partitionKeyLevel3Expression);
+        this.ReplicateMipping = mapping is not null ? new Func<EntityWrapper<Entity>, object>(x => mapping(x)!) : null;
+        this.ReplicateComsomsDbItemType = typeof(CosmosDbItem);
 
         this.replicateAction = async (entity, services, db) =>
         {
@@ -190,6 +243,75 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 return (id, partitionKeyDetails, isSucceeded);
             };
+    }
+
+    private void SetPartitonKeyActions<CosmosDbItem>(
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel2Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel3Expression)
+    {
+        if (partitionKeyLevel1Expression is not null)
+        {
+            this.PartitionKeyLevel1Action = o => GetPartitionKey(o, partitionKeyLevel1Expression);
+            CheckPartitionKeyType(partitionKeyLevel1Expression);
+        }
+
+        if (partitionKeyLevel2Expression is not null)
+        {
+            this.PartitionKeyLevel2Action = o => GetPartitionKey(o, partitionKeyLevel2Expression);
+            CheckPartitionKeyType(partitionKeyLevel2Expression);
+        }
+
+        if (partitionKeyLevel3Expression is not null)
+        {
+            this.PartitionKeyLevel3Action = o => GetPartitionKey(o, partitionKeyLevel3Expression);
+            CheckPartitionKeyType(partitionKeyLevel3Expression);
+        }
+    }
+
+    private (object? value, Type type, string? propertyName)? GetPartitionKey<CosmosDbItem>(object data, 
+        Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
+    {
+        var value = partitionKeyExpression.Compile().Invoke((CosmosDbItem)data);
+        var type = partitionKeyExpression.Body.Type;
+        var propertyName = null as string;
+
+        // Check if the body of the expression is a UnaryExpression
+        if (partitionKeyExpression.Body is UnaryExpression unaryExpression)
+        {
+            // If it is, use the Operand property to get the underlying expression
+            type = unaryExpression.Operand.Type;
+        }
+
+        // Check if the body of the expression is a MemberExpression
+        if (partitionKeyExpression.Body is MemberExpression memberExpression)
+            propertyName = memberExpression.Member.Name;
+
+        return (value, type, propertyName);
+    }
+
+    private void CheckPartitionKeyType<CosmosDbItem>(Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
+    {
+        var type = partitionKeyExpression.Body.Type;
+        string? propertyName = null;
+
+        // Check if the body of the expression is a UnaryExpression
+        if (partitionKeyExpression.Body is UnaryExpression unaryExpression)
+        {
+            // If it is, use the Operand property to get the underlying expression
+            type = unaryExpression.Operand.Type;
+        }
+
+        if (partitionKeyExpression.Body is MemberExpression memberExpression)
+            propertyName = memberExpression.Member.Name;
+        else if (partitionKeyExpression.Body is UnaryExpression unaryExpression2 &&
+                unaryExpression2.Operand is MemberExpression memberExpression2)
+            propertyName = memberExpression2.Member.Name;
+
+        //Check if the type of the partition key is not valid throw exception
+        if (!(type == typeof(bool?) || type == typeof(bool) || type == typeof(string) || type.IsNumericType()))
+            throw new WrongPartitionKeyTypeException($"Partition key type of '{propertyName}' is invalid, " +
+                               "Only boolean or number or string partition key types allowed");
     }
 
     public CosmosDbTriggerReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
@@ -292,7 +414,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
     {
         string propertyName = "";
-
+        
         if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
             propertyName = memberExpression.Member.Name;
         else
@@ -497,7 +619,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     {
         var query = dbContext.DeletedRowLogs.Where(x =>
             x.RowID == rowId &&
-            x.ContainerName == this.replicateContainerId
+            x.ContainerName == this.ReplicateContainerId
         );
 
         if (partitionKeyDetails?.level1 is not null)

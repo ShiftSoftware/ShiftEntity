@@ -7,75 +7,68 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTrigger<EntityType>, ITriggerPriority
-    where EntityType : ShiftEntityBase<EntityType>
+    where EntityType : ShiftEntity<EntityType>
 {
-    private readonly IMapper mapper;
+    private readonly IServiceProvider serviceProvider;
+    private readonly IMapper? mapper;
+    private readonly CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions;
 
-    public PreventChangePartitionKeyValueTrigger(IMapper mapper)
+    public PreventChangePartitionKeyValueTrigger(
+        IServiceProvider serviceProvider,
+        IMapper? mapper = null,
+        CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions = null)
     {
+        this.serviceProvider = serviceProvider;
         this.mapper = mapper;
+        this.cosmosDbTriggerActions = cosmosDbTriggerActions;
     }
 
     public int Priority => int.MinValue;
 
     public Task BeforeSave(ITriggerContext<EntityType> context, CancellationToken cancellationToken)
     {
-        if (context.ChangeType == ChangeType.Modified)
+        if (context.ChangeType is not ChangeType.Modified) 
+            return Task.CompletedTask;
+
+        if(this.cosmosDbTriggerActions is null)
+            return Task.CompletedTask;
+
+        object unmodifiefItem;
+        object item;
+
+        if(this.cosmosDbTriggerActions.ReplicateMipping is not null)
         {
-            var entityType = context.Entity.GetType();
-
-            var replicationAttribute = (ShiftEntityReplicationAttribute)entityType.GetCustomAttributes(true).LastOrDefault(x => x as ShiftEntityReplicationAttribute != null)!;
-
-            if (replicationAttribute != null)
-            {
-                var partitionKeyAttribute = (ReplicationPartitionKeyAttribute)entityType.GetCustomAttributes(true)
-                    .LastOrDefault(x => x as ReplicationPartitionKeyAttribute != null)!;
-
-
-                if (partitionKeyAttribute is not null)
-                {
-
-                    object unmodifiefItem = mapper.Map(context.UnmodifiedEntity, typeof(EntityType), replicationAttribute.ItemType);
-                    object item = mapper.Map(context.Entity, typeof(EntityType), replicationAttribute.ItemType);
-
-                    //Check partition key level one
-                    CheckPartitionKey(item, unmodifiefItem,
-                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelOnePropertyName);
-
-                    //Check partition key level two
-                    CheckPartitionKey(item, unmodifiefItem,
-                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelTwoPropertyName);
-
-                    //Check partition key level three
-                    CheckPartitionKey(item, unmodifiefItem,
-                        replicationAttribute.ItemType, partitionKeyAttribute.KeyLevelThreePropertyName);
-                }
-            }
+            unmodifiefItem = this.cosmosDbTriggerActions.ReplicateMipping(
+                new EntityWrapper<EntityType>(context.UnmodifiedEntity!, this.serviceProvider));
+            item = this.cosmosDbTriggerActions.ReplicateMipping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
         }
+        else
+        {
+            unmodifiefItem = this.mapper!.Map(context.UnmodifiedEntity!, typeof(EntityType),
+                this.cosmosDbTriggerActions.ReplicateComsomsDbItemType);
+            item = this.mapper!.Map(context.Entity!, typeof(EntityType),
+                this.cosmosDbTriggerActions.ReplicateComsomsDbItemType);
+        }
+        
+        if(this.cosmosDbTriggerActions.PartitionKeyLevel1Action is not null)
+            CheckPartitionKey(item, unmodifiefItem, this.cosmosDbTriggerActions.PartitionKeyLevel1Action);
+
+        if (this.cosmosDbTriggerActions.PartitionKeyLevel2Action is not null)
+            CheckPartitionKey(item, unmodifiefItem, this.cosmosDbTriggerActions.PartitionKeyLevel2Action);
+
+        if (this.cosmosDbTriggerActions.PartitionKeyLevel3Action is not null)
+            CheckPartitionKey(item, unmodifiefItem, this.cosmosDbTriggerActions.PartitionKeyLevel3Action);
 
         return Task.CompletedTask;
     }
 
-    private void CheckPartitionKey(object item,
-        object unmodifiefItem,
-        Type itemType,
-        string? partitionKeyName)
+    private void CheckPartitionKey(object item, object unmodifiedItem,
+        Func<object, (object? value, Type type, string? propertyName)?> partitionKeyAction)
     {
-        if (partitionKeyName is not null)
-        {
-            var property = itemType.GetProperty(partitionKeyName);
-            if (property is null)
-                throw new WrongPartitionKeyNameException($"Can not find '{partitionKeyName}' in the '{itemType.Name}' for partition key");
+        var unmodifiedResult= partitionKeyAction(unmodifiedItem);
+        var result = partitionKeyAction(item);
 
-            Type propertyType = property.PropertyType;
-            if (!(propertyType == typeof(bool?) || propertyType == typeof(bool) || propertyType == typeof(string) || propertyType.IsNumericType()))
-                throw new WrongPartitionKeyTypeException("Only boolean or number or string partition key types allowed");
-
-            var unmodifiedPartitionKey = property.GetValue(unmodifiefItem);
-            var partitionKey = property.GetValue(item);
-
-            if (!Equals(unmodifiedPartitionKey, partitionKey))
-                throw new PartitionKeyChangedException($"The value of partition key '{partitionKeyName}' is changed");
-        }
+        if (result?.value?.Equals(unmodifiedResult?.value) == false)
+            throw new PartitionKeyChangedException($"The value of partition key '{result?.propertyName}' is changed");
     }
 }
