@@ -36,9 +36,15 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         {
             var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
 
+            var entity = context.Entity;
+            var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
+
+            if (prepareForReplication is not null)
+                entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
+
             _ = Task.Run(async () =>
             {
-                await this.cosmosDbTriggerActions.RunAsync(context.Entity, serviceProvider, context.ChangeType);
+                await this.cosmosDbTriggerActions.RunAsync(entity, serviceProvider, context.ChangeType);
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted)
