@@ -19,14 +19,6 @@ public class ShiftEntityCosmosDbOptions
 {
     internal IServiceCollection Services { get; set; }
 
-    public ShiftEntityCosmosDbOptions AddShiftDbContext<T>(Action<DbContextOptionsBuilder<T>> optionBuilder)
-        where T : ShiftDbContext
-    {
-        DbContextOptionsBuilder<T> builder = new();
-        optionBuilder.Invoke(builder);
-        return this;
-    }
-
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>
