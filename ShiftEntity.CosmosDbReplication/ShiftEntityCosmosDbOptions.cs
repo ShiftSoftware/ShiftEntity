@@ -516,7 +516,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         foreach (var containerId in this.cosmosContainerIds)
             containers.Add((this.cosmosDataBaseId, containerId));
 
-        //Connect to the cosmos selected database
+        //Connect to the cosmos selected database and containers
         using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers, new CosmosClientOptions()
         {
             AllowBulkExecution = true

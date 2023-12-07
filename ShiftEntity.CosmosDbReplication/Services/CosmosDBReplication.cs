@@ -84,6 +84,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     private IEnumerable<Entity> entities;
     private IEnumerable<DeletedRowLog> deletedRows;
+    private List<string> cosmosContainerIds = new();
+
+    private Database cosmosDatabase;
 
     private string replicationContainerId;
 
@@ -117,18 +120,13 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
         this.replicationContainerId = containerId;
+        this.cosmosContainerIds.Add(containerId);
 
         //Upsert fail replicated entities into cosmos container
         this.upsertActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
-            new List<(string, string)> { (cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
-
+            var container = this.cosmosDatabase.GetContainer(containerId);
+            
             List<Task> cosmosTasks = new();
 
             foreach (var entity in this.entities)
@@ -157,13 +155,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //Delete fail deleted rows from cosmos container
         this.deleteActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(cosmosDbConnectionString,
-            new List<(string, string)> { (cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
+            var container = this.cosmosDatabase.GetContainer(containerId);
 
             List<Task> cosmosTasks = new();
 
@@ -203,6 +195,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         string propertyName = "";
+        this.cosmosContainerIds.Add(containerId);
 
         if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
             propertyName = memberExpression.Member.Name;
@@ -212,13 +205,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //Update reference
         this.upsertActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
+            var container = this.cosmosDatabase.GetContainer(containerId);
 
             var containerReposne = await container.ReadContainerAsync();
 
@@ -266,13 +253,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //Delete references
         this.deleteActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
+            var container = this.cosmosDatabase.GetContainer(containerId);
 
             var containerReposne = await container.ReadContainerAsync();
 
@@ -326,15 +307,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
+        this.cosmosContainerIds.Add(containerId);
+
         this.upsertActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
+            var container = this.cosmosDatabase.GetContainer(containerId);
 
             List<Task> cosmosTasks = new();
 
@@ -374,13 +351,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
         this.deleteActions.Add(async () =>
         {
-            using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString,
-            new List<(string, string)> { (this.cosmosDbDatabaseId, containerId) }, new CosmosClientOptions()
-            {
-                AllowBulkExecution = true
-            });
-            var db = client.GetDatabase(this.cosmosDbDatabaseId);
-            var container = db.GetContainer(containerId);
+            var container = this.cosmosDatabase.GetContainer(containerId);
             var containerResponse = await container.ReadContainerAsync();
 
             List<Task> cosmosTasks = new();
@@ -479,6 +450,22 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.deletedRows = await db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName)
             .ToArrayAsync();
 
+        //If there is no entities or deleted rows to replicate, terminate the process
+        if ((this.entities is null || this.entities?.Count() == 0) && (this.deletedRows is null || this.deletedRows?.Count() == 0))
+            return;
+
+        //Prepare the lists of the container that used, to the connection
+        List<(string databaseId, string continerId)> containers = new();
+        foreach (var containerId in this.cosmosContainerIds)
+            containers.Add((this.cosmosDbDatabaseId, containerId));
+
+        //Connect to the cosmos selected database and containers
+        using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers, new CosmosClientOptions()
+        {
+            AllowBulkExecution = true
+        });
+        this.cosmosDatabase = client.GetDatabase(this.cosmosDbDatabaseId);
+
         foreach (var action in this.upsertActions)
         {
             this.ResetUpsertSuccess();
@@ -536,6 +523,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.deleteActions = null!;
         this.cosmosDeleteSuccesses = null!;
         this.cosmosUpsertSuccesses = null!;
+
+        this.cosmosDatabase = null!;
     }
 }
 
