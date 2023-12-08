@@ -19,7 +19,6 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
-using ShiftSoftware.ShiftEntity.Model.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
