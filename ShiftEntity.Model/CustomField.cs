@@ -25,7 +25,7 @@ public class CustomFieldBase
 
 public class CustomField : CustomFieldBase
 {
-    public string Value { get; set; } = default!;
+    public string? Value { get; set; } = default!;
 
     public CustomField()
     { }
