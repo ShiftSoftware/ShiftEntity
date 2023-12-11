@@ -435,11 +435,13 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return items;
     }
 
-    public async Task RunAsync(bool removeDeleteRowLog = true)
+    public async Task RunAsync(bool removeDeleteRowLog = true, bool updateAll = false)
     {
         //Return fail replicated entities
-        var queryable = this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
-            !x.LastReplicationDate.HasValue);
+        var queryable = this.dbSet.AsQueryable();
+
+        if (!updateAll)
+            queryable = queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
 
         if (this.query is not null)
             queryable = this.query(queryable);
@@ -447,9 +449,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.entities = await queryable.ToArrayAsync();
 
         //Return delete rows that failed to replicate
-        this.deletedRows = await db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName)
-            .Where(x => !x.LastReplicationDate.HasValue)
-            .ToArrayAsync();
+        var deleteRowsQueryalbe = db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName);
+        if(!updateAll)
+            deleteRowsQueryalbe = deleteRowsQueryalbe.Where(x => !x.LastReplicationDate.HasValue);
+
+        this.deletedRows = await deleteRowsQueryalbe.ToArrayAsync();
 
         //If there is no entities or deleted rows to replicate, terminate the process
         if ((this.entities is null || this.entities?.Count() == 0) && (this.deletedRows is null || this.deletedRows?.Count() == 0))
