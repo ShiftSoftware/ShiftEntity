@@ -45,9 +45,14 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
                 long? companyId = http!.HttpContext!.GetCompanyID();
                 long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
 
-                context.Entity.RegionID = regionId;
-                context.Entity.CompanyID = companyId;
-                context.Entity.CompanyBranchID = companyBranchId;
+                if (context.Entity.RegionID is null)
+                    context.Entity.RegionID = regionId;
+
+                if (context.Entity.CompanyID is null)
+                    context.Entity.CompanyID = companyId;
+
+                if (context.Entity.CompanyBranchID is null)
+                    context.Entity.CompanyBranchID = companyBranchId;
             }
         }
 
