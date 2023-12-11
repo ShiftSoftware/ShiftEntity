@@ -3,7 +3,7 @@ using ShiftSoftware.ShiftEntity.Core;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Entities;
 
-[Index(nameof(LastReplicationDate))]
+[Index(nameof(ContainerName), nameof(LastReplicationDate))]
 public class DeletedRowLog
 {
     public long ID { get; set; }

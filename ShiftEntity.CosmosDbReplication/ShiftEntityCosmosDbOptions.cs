@@ -9,6 +9,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
@@ -20,11 +21,11 @@ public class ShiftEntityCosmosDbOptions
     internal IServiceCollection Services { get; set; }
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
         where Entity : ShiftEntity<Entity>
         where DB : ShiftDbContext
     {
-        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.Services, typeof(DB));
+        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.Services, typeof(DB), removeDeleteRowLog);
     }
 }
 
@@ -34,10 +35,11 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
 
     public CosmosDbTriggerReplicateOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType, bool removeDeleteRowLog)
     {
         this.cosmosDbTriggerReferenceOperations =
-            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping, dbContextType);
+            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping,
+            dbContextType, removeDeleteRowLog);
         services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
     }
 
@@ -102,7 +104,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private readonly string cosmosDataBaseId;
     private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
     internal readonly Type dbContextType;
-
+    private readonly bool removeDeleteRowLog;
     private List<string> cosmosContainerIds = new();
 
     internal string ReplicateContainerId { get; private set; }
@@ -121,12 +123,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType, bool removeDeleteRowLog)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDataBaseId = cosmosDataBaseId;
         this.setupMapping = setupMapping;
         this.dbContextType = dbContextType;
+        this.removeDeleteRowLog = removeDeleteRowLog;
     }
 
     internal void Replicate<CosmosDbItem>(
@@ -563,7 +566,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         if (isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
             UpdateLastReplicationDateAsync(dbContext, entity);
         else if (isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
-            await RemoveDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
+            await UpdateDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
 
         await dbContext.SaveChangesWithoutTriggersAsync();
     }
@@ -575,7 +578,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         dbContext.Entry(entity).Property(nameof(ShiftEntity<object>.LastReplicationDate)).IsModified = true;
     }
 
-    private async Task RemoveDeleteRowAsync(ShiftDbContext dbContext, Entity entity, long rowId, (PartitionKey? partitionKey,
+    private async Task UpdateDeleteRowAsync(ShiftDbContext dbContext, Entity entity, long rowId, (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
         (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails)
@@ -598,9 +601,16 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 x.PartitionKeyLevelThreeType == partitionKeyDetails.Value.level3!.Value.type);
 
         var log = await query.SingleOrDefaultAsync();
-
+        
         if (log is not null)
-            dbContext.DeletedRowLogs.Remove(log);
+            if(this.removeDeleteRowLog)
+                dbContext.DeletedRowLogs.Remove(log);
+            else
+            {
+                log.LastReplicationDate = DateTime.UtcNow;
+                dbContext.Attach(log);
+                dbContext.Entry(log).Property(nameof(DeletedRowLog.LastReplicationDate)).IsModified = true;
+            }
     }
 }
 
