@@ -435,7 +435,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return items;
     }
 
-    public async Task RunAsync()
+    public async Task RunAsync(bool removeDeleteRowLog = true)
     {
         //Return fail replicated entities
         var queryable = this.dbSet.Where(x => x.LastReplicationDate < x.LastSaveDate ||
@@ -448,6 +448,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
         //Return delete rows that failed to replicate
         this.deletedRows = await db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName)
+            .Where(x => !x.LastReplicationDate.HasValue)
             .ToArrayAsync();
 
         //If there is no entities or deleted rows to replicate, terminate the process
@@ -479,7 +480,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         }
 
         UpdateLastReplicationDatesAsync();
-        DeleteReplicatedDeletedRowLogs();
+
+        if (removeDeleteRowLog)
+            DeleteReplicatedDeletedRowLogs();
+        else
+            UpdateReplicatedDeletedRowLogs();
 
         await this.db.SaveChangesWithoutTriggersAsync();
 
@@ -498,6 +503,13 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         foreach (var row in this.deletedRows)
             if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Get())
                 db.DeletedRowLogs.Remove(row);
+    }
+
+    private void UpdateReplicatedDeletedRowLogs()
+    {
+        foreach (var row in this.deletedRows)
+            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Get())
+                row.LastReplicationDate = DateTime.UtcNow;
     }
 
     private void ResetUpsertSuccess()
