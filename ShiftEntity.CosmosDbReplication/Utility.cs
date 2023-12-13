@@ -5,14 +5,15 @@ using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
+namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
-internal static class PartitionKeyHelper
+internal static class Utility
 {
     internal static PartitionKey GetPartitionKey(DeletedRowLog row)
     {
@@ -110,5 +111,24 @@ internal static class PartitionKeyHelper
         level3 = keys.Count > 2 ? keys[2] : null;
 
         return (partitionKeyBuilder.Build(), level1, level2, level3);
+    }
+
+    internal static string GetPropertyFullPath<T>(Expression<Func<T, object>> expression)
+    {
+        var stack = new Stack<string>();
+        Expression expr = expression.Body;
+
+        if (expr is UnaryExpression unaryExpression)
+        {
+            expr = unaryExpression.Operand;
+        }
+
+        while (expr is MemberExpression memberExpr)
+        {
+            stack.Push(memberExpr.Member.Name);
+            expr = memberExpr.Expression;
+        }
+
+        return string.Join("/", stack);
     }
 }

@@ -186,7 +186,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 var container = db.GetContainer(cosmosContainerId);
 
                 var containerResponse = await container.ReadContainerAsync();
-                var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
+                var partitionKeyDetails = Utility.GetPartitionKeyDetails(containerResponse, item!);
 
                 //Get item id
                 var idString = Convert.ToString(item.GetProperty("id"));
@@ -345,7 +345,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
 
                 var containerResponse = await container.ReadContainerAsync();
-                var partitionKeyDetails = PartitionKeyHelper.GetPartitionKeyDetails(containerResponse, item!);
+                var partitionKeyDetails = Utility.GetPartitionKeyDetails(containerResponse, item!);
 
                 //Get item id
                 var idString = Convert.ToString(item.GetProperty("id"));
@@ -379,12 +379,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
         Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
     {
-        string propertyName = "";
-        
-        if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
-            propertyName = memberExpression.Member.Name;
-        else
-            throw new ArgumentException("Expression must be a member access expression");
+        string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression);
 
         this.cosmosContainerIds.Add(cosmosContainerId);
 
@@ -414,10 +409,10 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
 
                 var id = Convert.ToString(item.GetProperty("id"));
-                PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+                PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item!);
 
                 cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                        new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
+                        new[] { PatchOperation.Replace($"/{propertyPath}", propertyItem) })
                     .ContinueWith(x =>
                     {
                         isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
@@ -455,10 +450,10 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
 
                 var id = Convert.ToString(item.GetProperty("id"));
-                PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item!);
+                PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item!);
 
                 cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                    new[] { PatchOperation.Remove($"/{propertyName}") })
+                    new[] { PatchOperation.Remove($"/{propertyPath}") })
                     .ContinueWith(x =>
                     {
                         isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;

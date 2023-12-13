@@ -161,7 +161,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             foreach (var deletedRow in this.deletedRows)
             {
-                var key = PartitionKeyHelper.GetPartitionKey(deletedRow);
+                var key = Utility.GetPartitionKey(deletedRow);
 
                 cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
                     .ContinueWith(x =>
@@ -194,13 +194,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         Func<IQueryable<DestinationContainer>, DeletedRowLog, IQueryable<DestinationContainer>> deletedRowFinder,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
-        string propertyName = "";
+        string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression); ;
         this.cosmosContainerIds.Add(containerId);
-
-        if (destinationReferencePropertyExpression.Body is MemberExpression memberExpression)
-            propertyName = memberExpression.Member.Name;
-        else
-            throw new ArgumentException("Expression must be a member access expression");
 
         //Update reference
         this.upsertActions.Add(async () =>
@@ -226,12 +221,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                             propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
 
                         var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item);
+                        PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
 
                         var entityId = entity.ID;
 
                         cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                            new[] { PatchOperation.Replace($"/{propertyName}", propertyItem) })
+                            new[] { PatchOperation.Replace($"/{propertyPath}", propertyItem) })
                             .ContinueWith(x =>
                             {
                                 if (!this.cosmosUpsertSuccesses.ContainsKey(entityId))
@@ -268,10 +263,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     foreach (var item in items)
                     {
                         var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = PartitionKeyHelper.GetPartitionKey(containerReposne, item);
+                        PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
 
                         cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                            new[] { PatchOperation.Remove($"/{propertyName}") })
+                            new[] { PatchOperation.Remove($"/{propertyPath}") })
                             .ContinueWith(x =>
                             {
                                 CosmosException ex = null;
@@ -363,7 +358,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 {
                     foreach (var item in items)
                     {
-                        var key = PartitionKeyHelper.GetPartitionKey(containerResponse, item);
+                        var key = Utility.GetPartitionKey(containerResponse, item);
 
                         cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(row.RowID.ToString(), key)
                         .ContinueWith(x =>
