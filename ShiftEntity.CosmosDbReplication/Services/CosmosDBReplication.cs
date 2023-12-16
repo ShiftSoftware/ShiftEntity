@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using System.Collections.Concurrent;
 using System.ComponentModel.Design;
 using System.Linq.Expressions;
 using System.Net;
@@ -76,7 +77,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 {
     private readonly string cosmosDbConnectionString;
     private readonly string cosmosDbDatabaseId;
-    private readonly IServiceProvider services;
     private readonly IMapper mapper;
     private readonly DB db;
     private readonly DbSet<Entity> dbSet;
@@ -92,8 +92,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     List<Func<Task>> upsertActions = new();
     List<Func<Task>> deleteActions = new();
-    Dictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
-    Dictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
+    ConcurrentDictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
+    ConcurrentDictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
@@ -103,7 +103,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
-        this.services = services;
         this.mapper = services.GetRequiredService<IMapper>();
         this.db = services.GetRequiredService<DB>();
         this.dbSet = this.db.Set<Entity>();
@@ -142,10 +141,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(item)
                     .ContinueWith(x =>
                     {
-                        if (!this.cosmosUpsertSuccesses.ContainsKey(entityId))
-                            this.cosmosUpsertSuccesses[entityId] = SuccessResponse.Create(x.IsCompletedSuccessfully);
-                        else
-                            this.cosmosUpsertSuccesses[entityId].Set(x.IsCompletedSuccessfully);
+                        this.cosmosUpsertSuccesses.AddOrUpdate(entityId, SuccessResponse.Create(x.IsCompletedSuccessfully),
+                                                       (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
                     }));
             }
 
@@ -175,10 +172,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                         bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
 
-                        if (!this.cosmosDeleteSuccesses.ContainsKey(deletedRow.ID))
-                            this.cosmosDeleteSuccesses[deletedRow.ID] = SuccessResponse.Create(success);
-                        else
-                            this.cosmosDeleteSuccesses[deletedRow.ID].Set(success);
+                        this.cosmosDeleteSuccesses.AddOrUpdate(deletedRow.ID, SuccessResponse.Create(success),
+                                                                        (key, oldValue) => oldValue.Set(success));
                     }));
             }
 
@@ -229,16 +224,18 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                             new[] { PatchOperation.Replace($"/{propertyPath}", propertyItem) })
                             .ContinueWith(x =>
                             {
-                                if (!this.cosmosUpsertSuccesses.ContainsKey(entityId))
-                                    this.cosmosUpsertSuccesses[entityId] = SuccessResponse.Create(x.IsCompletedSuccessfully);
-                                else
-                                    this.cosmosUpsertSuccesses[entityId].Set(x.IsCompletedSuccessfully);
+                                this.cosmosUpsertSuccesses.AddOrUpdate(entityId, SuccessResponse.Create(x.IsCompletedSuccessfully),
+                                                                        (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
                             }));
                     }
                 }
                 else
                 {
-                    this.cosmosUpsertSuccesses[entity.ID]?.ResetToPreviousState();
+                    this.cosmosUpsertSuccesses.AddOrUpdate(
+                        entity.ID,
+                        id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
+                        (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
+                    );
                 }
             }
 
@@ -278,16 +275,18 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                                 bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
 
-                                if (!this.cosmosDeleteSuccesses.ContainsKey(row.ID))
-                                    this.cosmosDeleteSuccesses[row.ID] = SuccessResponse.Create(success);
-                                else
-                                    this.cosmosDeleteSuccesses[row.ID].Set(success);
+                                this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
+                                                                    (key, oldValue) => oldValue.Set(success));
                             }));
                     }
                 }
                 else
                 {
-                    this.cosmosDeleteSuccesses[row.ID]?.ResetToPreviousState();
+                    this.cosmosDeleteSuccesses.AddOrUpdate(
+                            row.ID,
+                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
+                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
+                        );
                 }
             }
 
@@ -328,16 +327,18 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                         cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(tempItems)
                             .ContinueWith(x =>
                             {
-                                if (!this.cosmosUpsertSuccesses.ContainsKey(entity.ID))
-                                    this.cosmosUpsertSuccesses[entity.ID] = SuccessResponse.Create(x.IsCompletedSuccessfully);
-                                else
-                                    this.cosmosUpsertSuccesses[entity.ID].Set(x.IsCompletedSuccessfully);
+                                this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(x.IsCompletedSuccessfully),
+                                                                            (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
                             }));
                     }
                 }
                 else
                 {
-                    this.cosmosUpsertSuccesses[entity.ID]?.ResetToPreviousState();
+                    this.cosmosUpsertSuccesses.AddOrUpdate(
+                            entity.ID,
+                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
+                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
+                        );
                 }
             }
 
@@ -372,16 +373,18 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                             bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
 
-                            if (!this.cosmosDeleteSuccesses.ContainsKey(row.ID))
-                                this.cosmosDeleteSuccesses[row.ID] = SuccessResponse.Create(success);
-                            else
-                                this.cosmosDeleteSuccesses[row.ID].Set(success);
+                            this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
+                                                                (key, oldValue) => oldValue.Set(success));
                         }));
                     }
                 }
                 else
                 {
-                    this.cosmosDeleteSuccesses[row.ID]?.ResetToPreviousState();
+                    this.cosmosDeleteSuccesses.AddOrUpdate(
+                            row.ID,
+                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
+                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
+                        );
                 }
             }
 
@@ -493,34 +496,34 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     private void UpdateLastReplicationDatesAsync()
     {
         foreach (var entity in this.entities)
-            if (this.cosmosUpsertSuccesses.GetValueOrDefault(entity.ID, new SuccessResponse()).Get())
+            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get())
                 entity.UpdateReplicationDate();
     }
 
     private void DeleteReplicatedDeletedRowLogs()
     {
         foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Get())
+            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
                 db.DeletedRowLogs.Remove(row);
     }
 
     private void UpdateReplicatedDeletedRowLogs()
     {
         foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetValueOrDefault(row.ID, new SuccessResponse()).Get())
+            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
                 row.LastReplicationDate = DateTime.UtcNow;
     }
 
     private void ResetUpsertSuccess()
     {
-        this.cosmosUpsertSuccesses = this.cosmosUpsertSuccesses
-            .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse());
+        this.cosmosUpsertSuccesses = new ConcurrentDictionary<long, SuccessResponse>(this.cosmosUpsertSuccesses
+            .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
     }
 
     private void ResetDeleteSuccess()
     {
-        this.cosmosDeleteSuccesses = this.cosmosDeleteSuccesses
-            .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse());
+        this.cosmosDeleteSuccesses = new ConcurrentDictionary<long, SuccessResponse>(this.cosmosDeleteSuccesses
+                    .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
     }
 
     public void Dispose()
