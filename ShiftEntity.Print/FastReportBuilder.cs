@@ -1,13 +1,13 @@
-﻿using FastReport.Barcode;
+﻿
 using FastReport;
-using Microsoft.AspNetCore.Mvc;
+using FastReport.Barcode;
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading.Tasks;
-using System;
 using System.Linq;
+using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Web.Services;
+namespace ShiftEntity.Print;
 
 public class FastReportBuilder
 {
@@ -63,10 +63,10 @@ public class FastReportBuilder
         return this;
     }
 
-    public async Task<FileStreamResult> GetPDFFile(Action<FastReport.Report> reportCustomizer = null)
-    {
-        return new FileStreamResult(await this.GetPDFStream(reportCustomizer), "application/pdf");
-    }
+    //public async Task<FileStreamResult> GetPDFFile(Action<FastReport.Report> reportCustomizer = null)
+    //{
+    //    return new FileStreamResult(await this.GetPDFStream(reportCustomizer), "application/pdf");
+    //}
 
     public async Task<Stream> GetPDFStream(Action<FastReport.Report> reportCustomizer = null)
     {

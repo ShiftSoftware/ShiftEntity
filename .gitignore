@@ -26,3 +26,5 @@
 /ShiftEntity.CosmosDbSync/bin/Debug/net6.0
 /ShiftEntity.VSIX.Template/obj
 /ShiftEntity.VSIX.Template/bin
+/ShiftEntity.Print/bin
+/ShiftEntity.Print/obj
