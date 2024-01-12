@@ -47,6 +47,8 @@
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
 
 		<ProjectReference Include="..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj" Condition="Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
+
+		<ProjectReference Include="..\ShiftEntity.Print\ShiftEntity.Print.csproj" />
 	</ItemGroup>
 
 </Project>

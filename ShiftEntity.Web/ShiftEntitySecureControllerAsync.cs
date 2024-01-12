@@ -19,6 +19,11 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
+using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.Print;
+using Microsoft.OData.Edm;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Mvc.Routing;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -206,6 +211,38 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         });
 
         return result.ActionResult;
+    }
+
+
+    [HttpGet("print-token/{key}")]
+    public virtual ActionResult PrintToken(string key)
+    {
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+
+        if (!typeAuthService.CanRead(action))
+            return Forbid();
+
+        var url = Url.Action(nameof(Print), new { key = key });
+
+        var (token, expires) = TokenService.GenerateSASToken(url!, key,
+            DateTime.UtcNow.AddSeconds(options.TokenExpirationInSeconds), options.SASTokenKey);
+
+        return Ok($"expires={expires}&token={token}");
+    }
+
+    [HttpGet("print/{key}")]
+    [AllowAnonymous]
+    public virtual async Task<ActionResult> Print(string key, [FromQuery] string? expires = null, [FromQuery] string? token = null)
+    {
+        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+
+        var url = Url.Action(nameof(Print), new { key = key });
+
+        if (!TokenService.ValidateSASToken(url!, key, expires!, token!, options.SASTokenKey))
+            return Forbid();
+
+        return (await base.Print(key, expires, token));
     }
 
     [Authorize]

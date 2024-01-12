@@ -309,4 +309,23 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             Additional = repository.AdditionalResponseData
         }), item);
     }
+
+    [NonAction]
+    public async Task<ActionResult> Print(string key, [FromQuery] string? expires=null, [FromQuery] string? token = null)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        try
+        {
+            return new FileStreamResult(await repository.PrintAsync(key), "application/pdf");
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new ShiftEntityResponse
+            {
+                Message = ex.Message,
+                Additional = ex.AdditionalData,
+            });
+        }
+    }
 }

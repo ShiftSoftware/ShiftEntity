@@ -245,4 +245,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         return new ValueTask<EntityType>(entity);
     }
+
+    public virtual Task<Stream> PrintAsync(string id)
+    {
+        throw new NotImplementedException();
+    }
 }
