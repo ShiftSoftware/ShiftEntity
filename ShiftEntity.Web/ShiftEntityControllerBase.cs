@@ -311,7 +311,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ActionResult> Print(string key, [FromQuery] string? expires=null, [FromQuery] string? token = null)
+    public async Task<ActionResult> Print(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 

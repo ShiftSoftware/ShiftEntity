@@ -21,9 +21,6 @@ using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Print;
-using Microsoft.OData.Edm;
-using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.AspNetCore.Mvc.Routing;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -242,7 +239,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (!TokenService.ValidateSASToken(url!, key, expires!, token!, options.SASTokenKey))
             return Forbid();
 
-        return (await base.Print(key, expires, token));
+        return (await base.Print(key));
     }
 
     [Authorize]

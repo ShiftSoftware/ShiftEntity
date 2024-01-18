@@ -11,9 +11,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.OData.Edm;
-using ShiftSoftware.ShiftEntity.Core.Services;
 
 
 
@@ -74,7 +71,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpGet("print/{key}")]
     public virtual async Task<ActionResult> Print(string key, [FromQuery] string? expires = null, [FromQuery] string? token = null)
     {
-        return (await base.Print(key, expires, token));
+        return (await base.Print(key));
     }
 
     [NonAction]
