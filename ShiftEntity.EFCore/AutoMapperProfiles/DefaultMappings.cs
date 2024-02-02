@@ -15,6 +15,38 @@ public class DefaultMappings : Profile
         CreateMap<string?, List<ShiftFileDTO>?>().ConvertUsing<StringToListOfShiftFileDto>();
 
         CreateMap<ShiftEntityBase, ShiftEntitySelectDTO>().ConvertUsing<ShiftEntityToShiftEntitySelectDTO>();
+
+        var repositoryTypes = AppDomain
+            .CurrentDomain
+            .GetAssemblies()
+            .SelectMany(x => x.GetTypes())
+            .Where(type => type.IsClass && !type.IsAbstract && typeof(ShiftRepositoryBase).IsAssignableFrom(type))
+            .ToList();
+
+        foreach (var repositoryType in repositoryTypes)
+        {
+            if (repositoryType.BaseType is not null)
+            {
+                var baseGenericArguments = repositoryType.BaseType.GetGenericArguments();
+
+                var entity = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityBase)));
+
+                var listDto = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityListDTO)));
+
+                var viewAndUpsertDTO = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityViewAndUpsertDTO)));
+
+                var mixedDTO = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityMixedDTO)));
+
+                if (listDto is not null)
+                    CreateMap(entity, listDto);
+
+                if (viewAndUpsertDTO is not null)
+                    CreateMap(entity, viewAndUpsertDTO).ReverseMap();
+
+                if (mixedDTO is not null)
+                    CreateMap(entity, mixedDTO).ReverseMap();
+            }
+        }
     }
 }
 
