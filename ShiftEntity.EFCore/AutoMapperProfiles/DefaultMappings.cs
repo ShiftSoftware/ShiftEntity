@@ -41,7 +41,82 @@ public class DefaultMappings : Profile
                     CreateMap(entity, listDto);
 
                 if (viewAndUpsertDTO is not null)
-                    CreateMap(entity, viewAndUpsertDTO).ReverseMap();
+                    CreateMap(entity, viewAndUpsertDTO)
+                        .AfterMap((entity, dto) =>
+                        {
+                            foreach (var property in dto.GetType().GetProperties())
+                            {
+                                if (property.PropertyType == typeof(ShiftEntitySelectDTO))
+                                {
+                                    var selectDTO = (ShiftEntitySelectDTO?)property.GetValue(dto);
+
+                                    if (selectDTO is null)
+                                    {
+                                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                                    }
+
+                                    if (selectDTO.Value == "" && selectDTO.Text is null)
+                                    {
+                                        string value = "";
+
+                                        var foriegnKeyNameByConvention = $"{property.Name}ID";
+
+                                        var foregnKeyPropertyByConvention = entity
+                                        .GetType()
+                                        .GetProperties()
+                                        .FirstOrDefault(x => x.Name.Equals(foriegnKeyNameByConvention, StringComparison.InvariantCultureIgnoreCase));
+
+                                        if (foregnKeyPropertyByConvention is not null)
+                                        {
+                                            value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
+                                        }
+
+                                        property.SetValue(dto, new ShiftEntitySelectDTO { Text = null, Value = value });
+                                    }
+                                }
+                            }
+                        })
+                        .ReverseMap()
+                        .AfterMap((dto, entity) =>
+                        {
+                            foreach (var property in entity.GetType().GetProperties())
+                            {
+                                if (property.PropertyType.IsAssignableTo(typeof(ShiftEntityBase)))
+                                {
+                                    property.SetValue(dto, null);
+                                }
+                            }
+
+                            foreach (var property in dto.GetType().GetProperties())
+                            {
+                                if (property.PropertyType == typeof(ShiftEntitySelectDTO))
+                                {
+                                    var selectDTO = (ShiftEntitySelectDTO?)property.GetValue(dto);
+
+                                    if (selectDTO is null)
+                                    {
+                                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                                    }
+
+                                    if (!string.IsNullOrWhiteSpace(selectDTO.Value))
+                                    {
+                                        var foriegnKeyNameByConvention = $"{property.Name}ID";
+
+                                        var foregnKeyPropertyByConvention = entity
+                                        .GetType()
+                                        .GetProperties()
+                                        .FirstOrDefault(x => x.Name.Equals(foriegnKeyNameByConvention, StringComparison.InvariantCultureIgnoreCase));
+
+                                        if (foregnKeyPropertyByConvention is not null)
+                                        {
+                                            //value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
+
+                                            foregnKeyPropertyByConvention.SetValue(entity, selectDTO.Value);
+                                        }
+                                    }
+                                }
+                            }
+                        });
 
                 if (mixedDTO is not null)
                     CreateMap(entity, mixedDTO).ReverseMap();
