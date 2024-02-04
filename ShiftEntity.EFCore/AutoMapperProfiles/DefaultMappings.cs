@@ -15,6 +15,7 @@ public class DefaultMappings : Profile
         CreateMap<string?, List<ShiftFileDTO>?>().ConvertUsing<StringToListOfShiftFileDto>();
 
         CreateMap<ShiftEntityBase, ShiftEntitySelectDTO>().ConvertUsing<ShiftEntityToShiftEntitySelectDTO>();
+        CreateMap<ShiftEntitySelectDTO, ShiftEntityBase>().ConstructUsing(x => null);
 
         var repositoryTypes = AppDomain
             .CurrentDomain
@@ -79,13 +80,13 @@ public class DefaultMappings : Profile
                         .ReverseMap()
                         .AfterMap((dto, entity) =>
                         {
-                            foreach (var property in entity.GetType().GetProperties())
-                            {
-                                if (property.PropertyType.IsAssignableTo(typeof(ShiftEntityBase)))
-                                {
-                                    property.SetValue(dto, null);
-                                }
-                            }
+                            //foreach (var property in entity.GetType().GetProperties())
+                            //{
+                            //    if (property.PropertyType.IsAssignableTo(typeof(ShiftEntityBase)))
+                            //    {
+                            //        property.SetValue(dto, null);
+                            //    }
+                            //}
 
                             foreach (var property in dto.GetType().GetProperties())
                             {
@@ -109,14 +110,19 @@ public class DefaultMappings : Profile
 
                                         if (foregnKeyPropertyByConvention is not null)
                                         {
-                                            //value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
-
-                                            foregnKeyPropertyByConvention.SetValue(entity, selectDTO.Value);
+                                            foregnKeyPropertyByConvention.SetValue(entity, long.Parse(selectDTO.Value));
                                         }
                                     }
                                 }
                             }
-                        });
+                        })
+                        .ForAllMembers(x => x.Condition((src, dest, value) =>
+                        {
+                            if (value != null && value.GetType().IsAssignableTo(typeof(ShiftEntityBase)))
+                                return false;
+
+                            return true;
+                        }));
 
                 if (mixedDTO is not null)
                     CreateMap(entity, mixedDTO).ReverseMap();
