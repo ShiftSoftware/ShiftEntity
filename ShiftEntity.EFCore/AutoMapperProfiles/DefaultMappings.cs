@@ -14,7 +14,7 @@ public class DefaultMappings : Profile
         CreateMap<List<ShiftFileDTO>?, string?>().ConvertUsing<ListOfShiftFileDtoToString>();
         CreateMap<string?, List<ShiftFileDTO>?>().ConvertUsing<StringToListOfShiftFileDto>();
 
-        CreateMap<ShiftEntityBase, ShiftEntitySelectDTO>().ConvertUsing<ShiftEntityToShiftEntitySelectDTO>();
+        CreateMap<ShiftEntityBase, ShiftEntitySelectDTO?>().ConvertUsing<ShiftEntityToShiftEntitySelectDTO>();
         CreateMap<ShiftEntitySelectDTO, ShiftEntityBase>().ConstructUsing(x => null);
 
         var repositoryTypes = AppDomain
@@ -155,9 +155,9 @@ internal class StringToListOfShiftFileDto : ITypeConverter<string?, List<ShiftFi
     }
 }
 
-internal class ShiftEntityToShiftEntitySelectDTO : ITypeConverter<ShiftEntityBase, ShiftEntitySelectDTO>
+internal class ShiftEntityToShiftEntitySelectDTO : ITypeConverter<ShiftEntityBase, ShiftEntitySelectDTO?>
 {
-    public ShiftEntitySelectDTO Convert(ShiftEntityBase source, ShiftEntitySelectDTO destination, ResolutionContext context)
+    public ShiftEntitySelectDTO? Convert(ShiftEntityBase source, ShiftEntitySelectDTO? destination, ResolutionContext context)
     {
         string value = "";
         string? text = null;
@@ -172,8 +172,12 @@ internal class ShiftEntityToShiftEntitySelectDTO : ITypeConverter<ShiftEntityBas
 
                 text = source.GetType().GetProperty(attribute.Text)?.GetValue(source)?.ToString() ?? string.Empty;
             }
-        }
 
-        return new ShiftEntitySelectDTO { Value = value, Text = text };
+            return new ShiftEntitySelectDTO { Value = value, Text = text };
+        }
+        else
+        {
+            return null;
+        }
     }
 }
