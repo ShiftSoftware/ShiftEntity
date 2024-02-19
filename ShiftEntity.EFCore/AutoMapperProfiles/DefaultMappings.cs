@@ -20,6 +20,8 @@ public class DefaultMappings : Profile
         var repositoryTypes = AppDomain
             .CurrentDomain
             .GetAssemblies()
+            //The following shows up when calling GetTypes(). So I just excluded it by using the Name: Could not load type 'SqlGuidCaster' from assembly Microsoft.Data.SqlClient: https://github.com/dotnet/SqlClient/issues/1930
+            .Where(x => !x.GetName().FullName.StartsWith("Microsoft.Data.SqlClient"))
             .SelectMany(x => x.GetTypes())
             .Where(type => type.IsClass && !type.IsAbstract && typeof(ShiftRepositoryBase).IsAssignableFrom(type))
             .ToList();

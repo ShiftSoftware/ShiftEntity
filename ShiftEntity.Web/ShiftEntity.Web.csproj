@@ -2,7 +2,7 @@
 	<Import Project="..\..\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\ShiftFrameworkGlobalSettings.props')" />
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
@@ -27,9 +27,9 @@
 	<ItemGroup>
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.0" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.20" />
-		<PackageReference Include="Microsoft.OData.Client" Version="7.16.0" />
+		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.4" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.2" />
+		<PackageReference Include="Microsoft.OData.Client" Version="7.20.0" />
 		<PackageReference Include="Scrutor" Version="4.2.2" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="$(ShiftFrameworkVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
 		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="$(ShiftFrameworkVersion)" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
