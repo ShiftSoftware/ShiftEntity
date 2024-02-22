@@ -31,7 +31,7 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.2" />
 		<PackageReference Include="Microsoft.OData.Client" Version="7.20.0" />
 		<PackageReference Include="Scrutor" Version="4.2.2" />
-		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="$(ShiftFrameworkVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
+		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
 		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="$(ShiftFrameworkVersion)" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
 	</ItemGroup>
 
