@@ -33,19 +33,28 @@ public class DefaultAutoMapperProfile : Profile
             {
                 var baseGenericArguments = repositoryType.BaseType.GetGenericArguments();
 
-                var entity = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityBase)));
+                var entity = baseGenericArguments
+                    .Where(x => x.BaseType is not null)
+                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityBase)))
+                    .FirstOrDefault();
 
-                var listDto = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityListDTO)));
+                var listDto = baseGenericArguments
+                    .Where(x => x.BaseType is not null)
+                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityListDTO)))
+                    .FirstOrDefault();
 
-                var viewAndUpsertDTO = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityViewAndUpsertDTO)));
+                var viewAndUpsertDTOorMixedDTO = baseGenericArguments
+                    .Where(x => x.BaseType is not null)
+                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityViewAndUpsertDTO)) || x.BaseType!.IsAssignableTo(typeof(ShiftEntityMixedDTO)))
+                    .FirstOrDefault();
 
-                var mixedDTO = baseGenericArguments.FirstOrDefault(x => x.BaseType is not null && x.BaseType.IsAssignableTo(typeof(ShiftEntityMixedDTO)));
 
                 if (listDto is not null)
                     CreateMap(entity, listDto);
 
-                if (viewAndUpsertDTO is not null)
-                    CreateMap(entity, viewAndUpsertDTO)
+                if (viewAndUpsertDTOorMixedDTO is not null)
+                {
+                    CreateMap(entity, viewAndUpsertDTOorMixedDTO)
                         .AfterMap((entity, dto) =>
                         {
                             foreach (var property in dto.GetType().GetProperties())
@@ -126,9 +135,7 @@ public class DefaultAutoMapperProfile : Profile
 
                             return true;
                         }));
-
-                if (mixedDTO is not null)
-                    CreateMap(entity, mixedDTO).ReverseMap();
+                }
             }
         }
     }
