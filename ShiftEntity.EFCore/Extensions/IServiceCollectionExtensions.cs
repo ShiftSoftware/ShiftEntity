@@ -71,7 +71,7 @@ public static class IServiceCollectionExtensions
             services.RegisterIShiftEntityPrepareForReplication(assembly);
 
             var repositoryTypes = assembly.GetTypes()
-           .Where(type => typeof(ShiftRepositoryBase).IsAssignableFrom(type))
+           .Where(type => type.IsClass && !type.IsAbstract && typeof(ShiftRepositoryBase).IsAssignableFrom(type))
            .ToList();
 
             foreach (var type in repositoryTypes)
