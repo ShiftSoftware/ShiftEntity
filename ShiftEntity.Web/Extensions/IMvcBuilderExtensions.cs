@@ -32,7 +32,6 @@ public static class IMvcBuilderExtensions
 
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
     {
-        shiftEntityOptions.AutoMapperAssemblies.Insert(0, typeof(ShiftSoftware.ShiftEntity.EFCore.AutoMapperProfiles.DefaultMappings).Assembly);
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization()

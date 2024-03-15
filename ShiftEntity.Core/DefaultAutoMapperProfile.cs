@@ -1,15 +1,16 @@
-﻿
-using AutoMapper;
-using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Model;
+﻿using AutoMapper;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.AutoMapperProfiles;
+namespace ShiftSoftware.ShiftEntity.Core;
 
-public class DefaultMappings : Profile
+public class DefaultAutoMapperProfile : Profile
 {
-    public DefaultMappings()
+    public DefaultAutoMapperProfile()
     {
         CreateMap<List<ShiftFileDTO>?, string?>().ConvertUsing<ListOfShiftFileDtoToString>();
         CreateMap<string?, List<ShiftFileDTO>?>().ConvertUsing<StringToListOfShiftFileDto>();
