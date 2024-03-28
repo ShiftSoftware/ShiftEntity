@@ -469,15 +469,16 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         });
         this.cosmosDatabase = client.GetDatabase(this.cosmosDbDatabaseId);
 
-        foreach (var action in this.upsertActions)
-        {
-            this.ResetUpsertSuccess();
-            await action.Invoke();
-        }
 
         foreach (var action in this.deleteActions)
         {
             this.ResetDeleteSuccess();
+            await action.Invoke();
+        }
+
+        foreach (var action in this.upsertActions)
+        {
+            this.ResetUpsertSuccess();
             await action.Invoke();
         }
 
