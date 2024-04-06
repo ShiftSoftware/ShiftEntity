@@ -46,23 +46,21 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             if (prepareForReplication is not null)
                 entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
 
-            this.logger.LogInformation($"CosmosDB Syncing is starting to Sync {entity.GetType()} - With ID: {entity.ID}");
+            this.logger.LogInformation("CosmosDB Syncing is starting to Sync {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
             _ = Task.Run(async () =>
             {
-                this.logger.LogInformation($"CosmosDB Syncing Task is Running {entity.GetType()} - With ID: {entity.ID}");
+                this.logger.LogInformation("CosmosDB Syncing Task is Running {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
 
                 await this.cosmosDbTriggerActions.RunAsync(entity, serviceProvider, context.ChangeType);
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted)
                 {
-                    this.logger.LogError($"CosmosDB Syncing Failed for {entity.GetType()} - With ID: {entity.ID} with Exception:");
-                    
-                    throw t.Exception;
+                    this.logger.LogError("CosmosDB Syncing Failed for {entityType} - With ID: {entityID} with Exception: {exception}", entity.GetType(), entity.ID, t.Exception);
                 }
                 else
                 {
-                    this.logger.LogInformation($"CosmosDB Syncing Succeeded for {entity.GetType()} - With ID: {entity.ID}");
+                    this.logger.LogInformation("CosmosDB Syncing Succeeded for {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
                 }
             });
         }
