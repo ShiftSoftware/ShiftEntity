@@ -1,5 +1,6 @@
 ﻿using EntityFrameworkCore.Triggered;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.Model.Enums;
@@ -14,15 +15,18 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
     private readonly CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions;
     private readonly IServiceProvider serviceProvider;
     private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;
+    private readonly ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger;
 
     public ReplicateToCosmosDbAfterSaveTrigger(
         IServiceProvider serviceProvider,
+        ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger,
         CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions = null,
         IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication = null)
     {
         this.cosmosDbTriggerActions = cosmosDbTriggerActions;
         this.serviceProvider = serviceProvider;
         this.prepareForReplication = prepareForReplication;
+        this.logger = logger;
     }
 
     //Make the trigger excute the last one
@@ -42,27 +46,23 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             if (prepareForReplication is not null)
                 entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
 
-            Console.Error.WriteLine($"CosmosDB Syncing is starting to Sync {entity.GetType()} - With ID: {entity.ID}");
+            this.logger.LogInformation($"CosmosDB Syncing is starting to Sync {entity.GetType()} - With ID: {entity.ID}");
             _ = Task.Run(async () =>
             {
-                Console.Error.WriteLine($"CosmosDB Syncing Task is Running {entity.GetType()} - With ID: {entity.ID}");
+                this.logger.LogInformation($"CosmosDB Syncing Task is Running {entity.GetType()} - With ID: {entity.ID}");
 
                 await this.cosmosDbTriggerActions.RunAsync(entity, serviceProvider, context.ChangeType);
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted)
                 {
-                    //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
-                    Console.ForegroundColor = ConsoleColor.Red; // Set text color to red
-                    Console.Error.Write($"CosmosDB Syncing Failed for {entity.GetType()} - With ID: {entity.ID} with Exception:");
-                    Console.ResetColor();
-                    //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
-
+                    this.logger.LogError($"CosmosDB Syncing Failed for {entity.GetType()} - With ID: {entity.ID} with Exception:");
+                    
                     throw t.Exception;
                 }
                 else
                 {
-                    Console.Error.WriteLine($"CosmosDB Syncing Succeeded for {entity.GetType()} - With ID: {entity.ID}");
+                    this.logger.LogInformation($"CosmosDB Syncing Succeeded for {entity.GetType()} - With ID: {entity.ID}");
                 }
             });
         }
