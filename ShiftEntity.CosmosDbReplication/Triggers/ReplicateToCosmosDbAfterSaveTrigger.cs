@@ -42,8 +42,11 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             if (prepareForReplication is not null)
                 entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
 
+            Console.Error.WriteLine($"CosmosDB Syncing is starting to Sync {entity.GetType()} - With ID: {entity.ID}");
             _ = Task.Run(async () =>
             {
+                Console.Error.WriteLine($"CosmosDB Syncing Task is Running {entity.GetType()} - With ID: {entity.ID}");
+
                 await this.cosmosDbTriggerActions.RunAsync(entity, serviceProvider, context.ChangeType);
             }).ContinueWith(t =>
             {
@@ -51,10 +54,15 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
                 {
                     //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
                     Console.ForegroundColor = ConsoleColor.Red; // Set text color to red
-                    Console.Error.Write("fail: ");
+                    Console.Error.Write($"CosmosDB Syncing Failed for {entity.GetType()} - With ID: {entity.ID} with Exception:");
                     Console.ResetColor();
-                    Console.Error.WriteLine(t.Exception);
                     //Console.Error.WriteLine("----------------------------------------------------------------------------------------------");
+
+                    throw t.Exception;
+                }
+                else
+                {
+                    Console.Error.WriteLine($"CosmosDB Syncing Succeeded for {entity.GetType()} - With ID: {entity.ID}");
                 }
             });
         }
