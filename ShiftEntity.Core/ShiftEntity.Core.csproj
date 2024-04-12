@@ -1,5 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	<Import Project="..\..\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\ShiftFrameworkGlobalSettings.props')" />
+	<Import Project="..\..\ShiftTemplates\ShiftFrameworkGlobalSettings.props"  Condition="Exists('..\..\ShiftTemplates\ShiftFrameworkGlobalSettings.props')"/>
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
