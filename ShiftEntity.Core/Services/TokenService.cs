@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -55,6 +56,14 @@ public class TokenService
         {
             return false;
         }
+    }
+
+    public static bool ValidateSASToken(string storedToken, string providedToken) {
+
+        ReadOnlySpan<byte> storedTokenBytes = Convert.FromBase64String(storedToken);
+        ReadOnlySpan<byte> providedTokenBytes = Convert.FromBase64String(providedToken);
+
+        return CryptographicOperations.FixedTimeEquals(storedTokenBytes, providedTokenBytes);
     }
 
     public static bool ValidateSASToken(Type type, string id, string expires, string token, string key)
