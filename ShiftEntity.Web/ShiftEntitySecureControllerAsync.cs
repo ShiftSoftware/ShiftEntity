@@ -21,6 +21,7 @@ using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Print;
+using Microsoft.AspNetCore.Http;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -109,7 +110,22 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         {
             foreach (var filter in dynamicActionFilterBuilder.DynamicActionFilters)
             {
-                var accessibleIds = typeAuthService.GetAccessibleItems(filter.DynamicAction, x => x == access);
+                (bool WildCard, List<string> AccessibleIds) accessibleIds = new();
+
+                if (filter.DynamicAction is not null)
+                {
+                    accessibleIds = typeAuthService.GetAccessibleItems(filter.DynamicAction, x => x == access);
+                }
+                else if (filter.AccessibleKeys is not null)
+                {
+                    accessibleIds = new(false, filter.AccessibleKeys);
+                }
+                else if (filter.ClaimId is not null)
+                {
+                    accessibleIds = new(false, this.HttpContext!.User.FindAll(filter.ClaimId).Select(x => x.Value).ToList());
+                }
+                else
+                    continue;
 
                 Expression<Func<Entity, bool>>? filterWhereExpression;
 
@@ -125,19 +141,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
                     if (filter.TKey == typeof(long))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : long.Parse(x)).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOTypeForHashId is null ? long.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId)).ToList();
                     }
                     else if (filter.TKey == typeof(long?))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : long.Parse(x))).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOTypeForHashId is null ? long.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId))).ToList();
                     }
                     else if (filter.TKey == typeof(int))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOType is null ? (int)ShiftEntityHashIdService.Decode<ListDTO>(x) : int.Parse(x)).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOTypeForHashId is null ? int.Parse(x) : (int)ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId)).ToList();
                     }
                     else if (filter.TKey == typeof(int?))
                     {
-                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOType is null ? ShiftEntityHashIdService.Decode<ListDTO>(x) : int.Parse(x))).ToList();
+                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOTypeForHashId is null ? int.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId))).ToList();
                     }
 
                     var containsMethod = ids.GetType().GetMethod(nameof(List<object>.Contains))!;
