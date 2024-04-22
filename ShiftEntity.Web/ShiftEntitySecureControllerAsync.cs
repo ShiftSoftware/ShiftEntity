@@ -22,6 +22,8 @@ using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Print;
 using Microsoft.AspNetCore.Http;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.UserGroup;
+using ShiftSoftware.ShiftEntity.Core.Flags;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -71,6 +73,15 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
             ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
+        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUserGroup<Entity>))))
+        {
+            var accessibleUserGroupsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedUserGroupIDs()?.ToArray());
+
+            List<long?>? accessibleUserGroups = accessibleUserGroupsTypeAuth.WildCard ? null : accessibleUserGroupsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<UserGroupDTO>(x)).ToList();
+
+            companyWhere = companyWhere.AndAlso(x => ((accessibleUserGroups == null || (x as IEntityHasUserGroup<Entity>)!.UserGroupID == null) ? true : accessibleUserGroups.Contains((x as IEntityHasUserGroup<Entity>)!.UserGroupID)));
+        }
+
         var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
 
         var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
@@ -96,6 +107,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (entity?.CompanyBranchID is not null)
         {
             if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, access, ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value), this.HttpContext.GetHashedCompanyBranchID()))
+                return false;
+        }
+
+        if (entity is IEntityHasUserGroup<Entity> entityWithUserGroup && entityWithUserGroup.UserGroupID is not null)
+        {
+            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups, access, ShiftEntityHashIdService.Encode<UserGroupDTO>(entityWithUserGroup.UserGroupID.Value), this.HttpContext.GetHashedUserGroupIDs()?.ToArray()))
                 return false;
         }
 
