@@ -144,6 +144,14 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                 else
                     continue;
 
+                if (filter.SelfClaimId is not null)
+                {
+                    var selfIds = HttpContext.GetClaimValues(filter.SelfClaimId);
+
+                    if (selfIds is not null)
+                        accessibleIds.AccessibleIds.AddRange(selfIds);
+                }
+
                 Expression<Func<Entity, bool>>? filterWhereExpression;
 
                 if (accessibleIds.WildCard)

@@ -8,7 +8,7 @@ namespace Microsoft.AspNetCore.Mvc;
 
 public static class HttpContextExtensions
 {
-    private static List<string>? GetClaimValues(HttpContext httpContext, string claimId)
+    internal static List<string>? GetClaimValues(this HttpContext httpContext, string claimId)
     {
         if (httpContext is null || httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
             return null;
@@ -20,7 +20,7 @@ public static class HttpContextExtensions
 
         return value;
     }
-    private static List<long>? GetDecodedClaimValues<T>(HttpContext httpContext, string claimId)
+    internal static List<long>? GetDecodedClaimValues<T>(this HttpContext httpContext, string claimId)
     {
         var values = GetClaimValues(httpContext, claimId);
         
