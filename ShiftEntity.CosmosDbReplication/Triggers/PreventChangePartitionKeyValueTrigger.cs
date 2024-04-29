@@ -36,11 +36,11 @@ internal class PreventChangePartitionKeyValueTrigger<EntityType> : IBeforeSaveTr
         object unmodifiefItem;
         object item;
 
-        if(this.cosmosDbTriggerActions.ReplicateMipping is not null)
+        if(this.cosmosDbTriggerActions.ReplicateMapping is not null)
         {
-            unmodifiefItem = this.cosmosDbTriggerActions.ReplicateMipping(
+            unmodifiefItem = this.cosmosDbTriggerActions.ReplicateMapping(
                 new EntityWrapper<EntityType>(context.UnmodifiedEntity!, this.serviceProvider));
-            item = this.cosmosDbTriggerActions.ReplicateMipping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
+            item = this.cosmosDbTriggerActions.ReplicateMapping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
         }
         else
         {

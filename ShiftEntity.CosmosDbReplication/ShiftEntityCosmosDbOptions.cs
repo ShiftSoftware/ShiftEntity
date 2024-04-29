@@ -111,7 +111,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel1Action { get; private set; }
     internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel2Action { get; private set; }
     internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel3Action { get; private set; }
-    internal Func<EntityWrapper<Entity>, object>? ReplicateMipping { get; private set; }
+    internal Func<EntityWrapper<Entity>, object>? ReplicateMapping { get; private set; }
     internal Type ReplicateComsomsDbItemType { get; private set; }
 
     private Func<Entity, IServiceProvider, Database, Task<bool>> replicateAction;
@@ -143,7 +143,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         this.ReplicateContainerId = cosmosContainerId;
 
         SetPartitonKeyActions(partitionKeyLevel1Expression, partitionKeyLevel2Expression, partitionKeyLevel3Expression);
-        this.ReplicateMipping = mapping is not null ? new Func<EntityWrapper<Entity>, object>(x => mapping(x)!) : null;
+        this.ReplicateMapping = mapping is not null ? new Func<EntityWrapper<Entity>, object>(x => mapping(x)!) : null;
         this.ReplicateComsomsDbItemType = typeof(CosmosDbItem);
 
         this.replicateAction = async (entity, services, db) =>

@@ -35,8 +35,8 @@ internal class LogDeletedRowsTrigger<EntityType> : IBeforeSaveTrigger<EntityType
 
         object item;
 
-        if (this.cosmosDbTriggerActions.ReplicateMipping is not null)
-            item = this.cosmosDbTriggerActions.ReplicateMipping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
+        if (this.cosmosDbTriggerActions.ReplicateMapping is not null)
+            item = this.cosmosDbTriggerActions.ReplicateMapping(new EntityWrapper<EntityType>(context.Entity, this.serviceProvider));
         else
             item = this.mapper!.Map(context.Entity!, typeof(EntityType), this.cosmosDbTriggerActions.ReplicateComsomsDbItemType);
 
