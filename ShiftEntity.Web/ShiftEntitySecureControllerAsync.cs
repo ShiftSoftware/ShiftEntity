@@ -64,14 +64,14 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID());
         var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID());
 
-        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
-        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
-        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
+        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
+        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
+        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
 
         Expression<Func<Entity, bool>> companyWhere = x =>
-            ((accessibleRegions == null || x.RegionID == null) ? true : accessibleRegions.Contains(x.RegionID)) &&
-            ((accessibleCompanies == null || x.CompanyID == null) ? true : accessibleCompanies.Contains(x.CompanyID)) &&
-            ((accessibleBranches == null || x.CompanyBranchID == null) ? true : accessibleBranches.Contains(x.CompanyBranchID));
+            (accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
+            (accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
+            (accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
         if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUserGroup<Entity>))))
         {
@@ -92,28 +92,51 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
-        if (entity?.RegionID is not null)
+
+        if (!typeAuthService.Can(
+            ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions,
+            access,
+            entity?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entity.RegionID.Value),
+            this.HttpContext.GetHashedRegionID()!
+        ))
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, access, ShiftEntityHashIdService.Encode<RegionDTO>(entity.RegionID.Value), this.HttpContext.GetHashedRegionID()))
-                return false;
+            return false;
         }
 
-        if (entity?.CompanyID is not null)
+
+        if (!typeAuthService.Can(
+            ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies,
+            access,
+            entity?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entity.CompanyID.Value),
+            this.HttpContext.GetHashedCompanyID()!
+        ))
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, access, ShiftEntityHashIdService.Encode<CompanyDTO>(entity.CompanyID.Value), this.HttpContext.GetHashedCompanyID()))
-                return false;
+            return false;
         }
 
-        if (entity?.CompanyBranchID is not null)
+
+        if (!typeAuthService.Can(
+            ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches,
+            access,
+            entity?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value),
+            this.HttpContext.GetHashedCompanyBranchID()!
+        ))
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, access, ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value), this.HttpContext.GetHashedCompanyBranchID()))
-                return false;
+            return false;
         }
 
-        if (entity is IEntityHasUserGroup<Entity> entityWithUserGroup && entityWithUserGroup.UserGroupID is not null)
+
+        if (entity is IEntityHasUserGroup<Entity> entityWithUserGroup)
         {
-            if (!typeAuthService.Can(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups, access, ShiftEntityHashIdService.Encode<UserGroupDTO>(entityWithUserGroup.UserGroupID.Value), this.HttpContext.GetHashedUserGroupIDs()?.ToArray()))
+            if (!typeAuthService.Can(
+                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups,
+                access,
+                entityWithUserGroup.UserGroupID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<UserGroupDTO>(entityWithUserGroup.UserGroupID.Value),
+                this.HttpContext.GetHashedUserGroupIDs()?.ToArray()
+            ))
+            {
                 return false;
+            }
         }
 
         return true;
