@@ -595,16 +595,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             query = query.Where(x => x.PartitionKeyLevelThreeValue == partitionKeyDetails.Value.level3!.Value.value &&
                 x.PartitionKeyLevelThreeType == partitionKeyDetails.Value.level3!.Value.type);
 
-        var log = await query.SingleOrDefaultAsync();
+        var logs = await query.ToListAsync();
         
-        if (log is not null)
+        if (logs is not null)
             if(this.removeDeleteRowLog)
-                dbContext.DeletedRowLogs.Remove(log);
+                dbContext.DeletedRowLogs.RemoveRange(logs);
             else
             {
-                log.LastReplicationDate = DateTime.UtcNow;
-                dbContext.Attach(log);
-                dbContext.Entry(log).Property(nameof(DeletedRowLog.LastReplicationDate)).IsModified = true;
+                foreach (var log in logs)
+                {
+                    log.LastReplicationDate = DateTime.UtcNow;
+                    dbContext.Attach(log);
+                    dbContext.Entry(log).Property(nameof(DeletedRowLog.LastReplicationDate)).IsModified = true;
+                }
             }
     }
 }
