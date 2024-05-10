@@ -22,7 +22,7 @@ using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Print;
 using Microsoft.AspNetCore.Http;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.UserGroup;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -73,13 +73,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             (accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
             (accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUserGroup<Entity>))))
+        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
         {
-            var accessibleUserGroupsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedUserGroupIDs()?.ToArray());
+            var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
 
-            List<long?>? accessibleUserGroups = accessibleUserGroupsTypeAuth.WildCard ? null : accessibleUserGroupsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<UserGroupDTO>(x)).ToList();
+            List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
 
-            companyWhere = companyWhere.AndAlso(x => ((accessibleUserGroups == null || (x as IEntityHasUserGroup<Entity>)!.UserGroupID == null) ? true : accessibleUserGroups.Contains((x as IEntityHasUserGroup<Entity>)!.UserGroupID)));
+            companyWhere = companyWhere.AndAlso(x => ((accessibleTeams == null || (x as IEntityHasTeam<Entity>)!.TeamID == null) ? true : accessibleTeams.Contains((x as IEntityHasTeam<Entity>)!.TeamID)));
         }
 
         var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
@@ -126,13 +126,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         }
 
 
-        if (entity is IEntityHasUserGroup<Entity> entityWithUserGroup)
+        if (entity is IEntityHasTeam<Entity> entityWithTeam)
         {
             if (!typeAuthService.Can(
-                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.UserGroups,
+                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams,
                 access,
-                entityWithUserGroup.UserGroupID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<UserGroupDTO>(entityWithUserGroup.UserGroupID.Value),
-                this.HttpContext.GetHashedUserGroupIDs()?.ToArray()
+                entityWithTeam.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
+                this.HttpContext.GetHashedTeamIDs()?.ToArray()
             ))
             {
                 return false;

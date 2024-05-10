@@ -60,12 +60,12 @@ public static class HttpContextExtensions
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.User.UserDTO>(httpContext, ClaimTypes.NameIdentifier)?.FirstOrDefault();
     }
 
-    internal static List<string>? GetHashedUserGroupIDs(this HttpContext httpContext)
+    internal static List<string>? GetHashedTeamIDs(this HttpContext httpContext)
     {
-        return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.UserGroupIdsClaim);
+        return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.TeamIdsClaim);
     }
-    internal static List<long>? GetUserGroupIDs(this HttpContext httpContext)
+    internal static List<long>? GetTeamIDs(this HttpContext httpContext)
     {
-        return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.UserGroup.UserGroupDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.UserGroupIdsClaim);
+        return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Team.TeamDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.TeamIdsClaim);
     }
 }

@@ -1,7 +1,7 @@
 ﻿namespace ShiftSoftware.ShiftEntity.Core.Flags;
 
-public interface IEntityHasUserGroup<Entity>
+public interface IEntityHasTeam<Entity>
     where Entity : ShiftEntityBase, new()
 {
-    long? UserGroupID { get; set; }
+    long? TeamID { get; set; }
 }
