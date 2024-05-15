@@ -13,9 +13,9 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> wher
     public long? LastSavedByUserID { get; internal set; }
     public bool IsDeleted { get; internal set; }
 
-    public long? RegionID { get; set; }
-    public long? CompanyID { get; set; }
-    public long? CompanyBranchID { get; set; }
+    //public long? RegionID { get; set; }
+    //public long? CompanyID { get; set; }
+    //public long? CompanyBranchID { get; set; }
 
     [NotMapped]
     public bool ReloadAfterSave { get; set; }

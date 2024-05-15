@@ -68,10 +68,10 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
         List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
 
-        Expression<Func<Entity, bool>> companyWhere = x =>
-            (accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
-            (accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
-            (accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
+        Expression<Func<Entity, bool>> companyWhere = x => true;
+            //(accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
+            //(accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
+            //(accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
         if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
         {
@@ -96,7 +96,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (!typeAuthService.Can(
             ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions,
             access,
-            entity?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entity.RegionID.Value),
+            "", //entity?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entity.RegionID.Value),
             this.HttpContext.GetHashedRegionID()!
         ))
         {
@@ -107,7 +107,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (!typeAuthService.Can(
             ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies,
             access,
-            entity?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entity.CompanyID.Value),
+            "", //entity?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entity.CompanyID.Value),
             this.HttpContext.GetHashedCompanyID()!
         ))
         {
@@ -118,7 +118,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (!typeAuthService.Can(
             ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches,
             access,
-            entity?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value),
+            "", //entity?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entity.CompanyBranchID.Value),
             this.HttpContext.GetHashedCompanyBranchID()!
         ))
         {
