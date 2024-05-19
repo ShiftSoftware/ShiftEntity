@@ -16,10 +16,12 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
     private readonly IServiceProvider serviceProvider;
     private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;
     private readonly ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger;
+    private readonly ShiftEntityCosmosDbOptions? options;
 
     public ReplicateToCosmosDbAfterSaveTrigger(
         IServiceProvider serviceProvider,
         ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger,
+        ShiftEntityCosmosDbOptions? options = null,
         CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions = null,
         IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication = null)
     {
@@ -27,6 +29,7 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         this.serviceProvider = serviceProvider;
         this.prepareForReplication = prepareForReplication;
         this.logger = logger;
+        this.options = options;
     }
 
     //Make the trigger excute the last one
@@ -36,34 +39,41 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
     {
         var entityType = context.Entity.GetType();
 
-        if (this.cosmosDbTriggerActions is not null)
+        if (this.options is null)
+            return;
+
+        using var internalService = this.options.internalServices.BuildServiceProvider();
+        var operations = internalService.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();
+
+        if (operations is null)
+            return;
+
+        var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
+
+        var entity = context.Entity;
+        var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
+
+        if (prepareForReplication is not null)
+            entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
+
+        this.logger.LogInformation("CosmosDB Syncing is starting to Sync {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
+        _ = Task.Run(async () =>
         {
-            var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
+            this.logger.LogInformation("CosmosDB Syncing Task is Running {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
 
-            var entity = context.Entity;
-            var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
-
-            if (prepareForReplication is not null)
-                entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
-
-            this.logger.LogInformation("CosmosDB Syncing is starting to Sync {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
-            _ = Task.Run(async () =>
+            await operations.RunAsync(entity, serviceProvider, context.ChangeType);
+        }).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
             {
-                this.logger.LogInformation("CosmosDB Syncing Task is Running {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
-
-                await this.cosmosDbTriggerActions.RunAsync(entity, serviceProvider, context.ChangeType);
-            }).ContinueWith(t =>
+                this.logger.LogError("CosmosDB Syncing Failed for {entityType} - With ID: {entityID} with Exception: {exception}", entity.GetType(), entity.ID, t.Exception);
+            }
+            else
             {
-                if (t.IsFaulted)
-                {
-                    this.logger.LogError("CosmosDB Syncing Failed for {entityType} - With ID: {entityID} with Exception: {exception}", entity.GetType(), entity.ID, t.Exception);
-                }
-                else
-                {
-                    this.logger.LogInformation("CosmosDB Syncing Succeeded for {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
-                }
-            });
-        }
+                this.logger.LogInformation("CosmosDB Syncing Succeeded for {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
+            }
+        });
+
     }
 
     private ReplicationChangeType ConvertChangeTypeToReplicationChangeType(ChangeType changeType)

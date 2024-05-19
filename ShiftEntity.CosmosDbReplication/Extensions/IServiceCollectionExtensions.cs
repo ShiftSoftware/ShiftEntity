@@ -12,29 +12,21 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {
-    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, ShiftEntityCosmosDbOptions options)
+    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
     {
-        //Set IServiceCollection to options
-        options.Services = services;
+        
 
-        //Register triggers
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
+        services.AddScoped(x =>
+        {
+            ShiftEntityCosmosDbOptions o = new(x);
+            optionBuilder.Invoke(o);
+            return o;
+        });
 
         return services;
-    }
-
-    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
-    {
-        ShiftEntityCosmosDbOptions o = new();
-
-        //Set IServiceCollection to options
-        o.Services = services;
-
-        optionBuilder.Invoke(o);
-
-        return services.AddShiftEntityCosmosDbReplicationTrigger(o);
     }
 
     public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services)

@@ -18,14 +18,28 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
 public class ShiftEntityCosmosDbOptions
 {
-    internal IServiceCollection Services { get; set; }
+    internal readonly IServiceCollection internalServices = new ServiceCollection();
+    public IServiceProvider Services { get; private set; }
+
+    public ShiftEntityCosmosDbOptions(IServiceProvider serviceProvider)
+    {
+        this.Services = serviceProvider;
+    }
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
         where Entity : ShiftEntity<Entity>
         where DB : ShiftDbContext
     {
-        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.Services, typeof(DB), removeDeleteRowLog);
+        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
+    }
+
+    public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
+        where Entity : ShiftEntity<Entity>
+        where DB : ShiftDbContext
+    {
+        return new(client, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
     }
 }
 
@@ -39,6 +53,15 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     {
         this.cosmosDbTriggerReferenceOperations =
             new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping,
+            dbContextType, removeDeleteRowLog);
+        services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
+    }
+
+    public CosmosDbTriggerReplicateOperation(CosmosClient client, string cosmosDataBaseId,
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType, bool removeDeleteRowLog)
+    {
+        this.cosmosDbTriggerReferenceOperations =
+            new CosmosDbTriggerReferenceOperations<Entity>(client, cosmosDataBaseId, setupMapping,
             dbContextType, removeDeleteRowLog);
         services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
     }
@@ -105,6 +128,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
     internal readonly Type dbContextType;
     private readonly bool removeDeleteRowLog;
+    private CosmosClient? client;
     private List<string> cosmosContainerIds = new();
 
     internal string ReplicateContainerId { get; private set; }
@@ -126,6 +150,16 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType, bool removeDeleteRowLog)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
+        this.cosmosDataBaseId = cosmosDataBaseId;
+        this.setupMapping = setupMapping;
+        this.dbContextType = dbContextType;
+        this.removeDeleteRowLog = removeDeleteRowLog;
+    }
+
+    internal CosmosDbTriggerReferenceOperations(CosmosClient client, string cosmosDataBaseId,
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType, bool removeDeleteRowLog)
+    {
+        this.client = client;
         this.cosmosDataBaseId = cosmosDataBaseId;
         this.setupMapping = setupMapping;
         this.dbContextType = dbContextType;
@@ -502,15 +536,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             entity = await setupMapping(new EntityWrapper<Entity>(entity, serviceProvider));
 
         //Prepare the lists of the container that used, to the connection
-        List<(string databaseId, string continerId)> containers = new();
-        foreach (var containerId in this.cosmosContainerIds)
-            containers.Add((this.cosmosDataBaseId, containerId));
-
-        //Connect to the cosmos selected database and containers
-        using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers, new CosmosClientOptions()
+        if(this.client is null)
         {
-            AllowBulkExecution = true
-        });
+            List<(string databaseId, string continerId)> containers = new();
+            foreach (var containerId in this.cosmosContainerIds)
+                containers.Add((this.cosmosDataBaseId, containerId));
+
+            //Connect to the cosmos selected database and containers
+            this.client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers);
+        }
+
+        //Set the client to allow bulk execution
+        client.ClientOptions.AllowBulkExecution = true;
+
         var db = client.GetDatabase(this.cosmosDataBaseId);
 
         //If the change type is added or modified, then do the upsert action
