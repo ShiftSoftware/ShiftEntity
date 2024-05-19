@@ -12,7 +12,6 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
     where EntityType : ShiftEntity<EntityType>
 {
-    private readonly CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions;
     private readonly IServiceProvider serviceProvider;
     private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;
     private readonly ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger;
@@ -22,10 +21,8 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         IServiceProvider serviceProvider,
         ILogger<ReplicateToCosmosDbAfterSaveTrigger<EntityType>> logger,
         ShiftEntityCosmosDbOptions? options = null,
-        CosmosDbTriggerReferenceOperations<EntityType>? cosmosDbTriggerActions = null,
         IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication = null)
     {
-        this.cosmosDbTriggerActions = cosmosDbTriggerActions;
         this.serviceProvider = serviceProvider;
         this.prepareForReplication = prepareForReplication;
         this.logger = logger;
