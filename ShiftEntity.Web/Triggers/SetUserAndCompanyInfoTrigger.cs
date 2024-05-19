@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Flags;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -9,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Triggers;
 
-internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>
+internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>, new()
 {
     private readonly IHttpContextAccessor? http;
 
@@ -45,14 +46,29 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
                 long? companyId = http!.HttpContext!.GetCompanyID();
                 long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
 
-                //if (context.Entity.RegionID is null)
-                //    context.Entity.RegionID = regionId;
+                if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
+                {
+                    var entityWithRegion = (IEntityHasRegion<Entity>)context.Entity;
 
-                //if (context.Entity.CompanyID is null)
-                //    context.Entity.CompanyID = companyId;
+                    if (entityWithRegion.RegionID is null)
+                        entityWithRegion.RegionID = regionId;
+                }
 
-                //if (context.Entity.CompanyBranchID is null)
-                //    context.Entity.CompanyBranchID = companyBranchId;
+                if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
+                {
+                    var entityWithCompany = (IEntityHasCompany<Entity>)context.Entity;
+
+                    if (entityWithCompany.CompanyID is null)
+                        entityWithCompany.CompanyID = companyId;
+                }
+
+                if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
+                {
+                    var entityWithCompanyBranch = (IEntityHasCompanyBranch<Entity>)context.Entity;
+
+                    if (entityWithCompanyBranch.CompanyBranchID is null)
+                        entityWithCompanyBranch.CompanyBranchID = companyBranchId;
+                }
             }
         }
 
