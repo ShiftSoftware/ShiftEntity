@@ -250,7 +250,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             }
         }
 
-        await repository.SaveChangesAsync();
+        try
+        {
+            await repository.SaveChangesAsync();
+        }
+        catch (ShiftEntityException ex)
+        {
+            return new(HandleException(ex), null);
+        }
 
         return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item))
         {
@@ -298,7 +305,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             }
         }
 
-        await repository.SaveChangesAsync();
+        try
+        {
+            await repository.SaveChangesAsync();
+        }
+        catch (ShiftEntityException ex)
+        {
+            return new(HandleException(ex), null);
+        }
 
         if (item.ReloadAfterSave)
             item = await repository.FindAsync(item.ID);
