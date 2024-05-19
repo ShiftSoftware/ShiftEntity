@@ -33,15 +33,24 @@ public class CosmosDBReplication
     {
         return new CosmosDbReplicationOperation<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
+
+    public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
+        where DB : ShiftDbContext
+        where Entity : ShiftEntity<Entity>
+    {
+        return new CosmosDbReplicationOperation<DB, Entity>(client, cosmosDataBaseId, services, query);
+    }
 }
 public class CosmosDbReplicationOperation<DB, Entity>
     where DB : ShiftDbContext
     where Entity : ShiftEntity<Entity>
 {
-    private readonly string cosmosDbConnectionString;
+    private readonly string? cosmosDbConnectionString;
     private readonly string cosmosDbDatabaseId;
     private readonly IServiceProvider services;
     private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
+    private readonly CosmosClient? client;
 
     public CosmosDbReplicationOperation(
         string cosmosDbConnectionString,
@@ -50,6 +59,18 @@ public class CosmosDbReplicationOperation<DB, Entity>
         Func<IQueryable<Entity>, IQueryable<Entity>>? query)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
+        this.cosmosDbDatabaseId = cosmosDbDatabaseId;
+        this.services = services;
+        this.query = query;
+    }
+
+    public CosmosDbReplicationOperation(
+        CosmosClient client,
+        string cosmosDbDatabaseId,
+        IServiceProvider services,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query)
+    {
+        this.client = client;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
         this.services = services;
         this.query = query;
@@ -64,8 +85,12 @@ public class CosmosDbReplicationOperation<DB, Entity>
     /// <returns></returns>
     public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
-        CosmosDbReferenceOperation<DB, Entity> referenceOperations = new(this.cosmosDbConnectionString, this.cosmosDbDatabaseId,
-            this.services, this.query);
+        CosmosDbReferenceOperation<DB, Entity> referenceOperations;
+
+        if (this.client is null)
+            referenceOperations = new(this.cosmosDbConnectionString!, this.cosmosDbDatabaseId, this.services, this.query);
+        else
+            referenceOperations = new(this.client, this.cosmosDbDatabaseId, this.services, this.query);
 
         return referenceOperations.Replicate<CosmosDBItem>(containerId, mapping);
     }
@@ -76,6 +101,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     where Entity : ShiftEntity<Entity>
 {
     private readonly string cosmosDbConnectionString;
+    private CosmosClient client;
     private readonly string cosmosDbDatabaseId;
     private readonly IMapper mapper;
     private readonly DB db;
@@ -102,6 +128,20 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         Func<IQueryable<Entity>, IQueryable<Entity>>? query)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
+        this.cosmosDbDatabaseId = cosmosDbDatabaseId;
+        this.mapper = services.GetRequiredService<IMapper>();
+        this.db = services.GetRequiredService<DB>();
+        this.dbSet = this.db.Set<Entity>();
+        this.query = query;
+    }
+
+    public CosmosDbReferenceOperation(
+        CosmosClient client,
+        string cosmosDbDatabaseId,
+        IServiceProvider services,
+        Func<IQueryable<Entity>, IQueryable<Entity>>? query)
+    {
+        this.client = client;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
         this.mapper = services.GetRequiredService<IMapper>();
         this.db = services.GetRequiredService<DB>();
@@ -457,16 +497,20 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         if ((this.entities is null || this.entities?.Count() == 0) && (this.deletedRows is null || this.deletedRows?.Count() == 0))
             return;
 
-        //Prepare the lists of the container that used, to the connection
-        List<(string databaseId, string continerId)> containers = new();
-        foreach (var containerId in this.cosmosContainerIds)
-            containers.Add((this.cosmosDbDatabaseId, containerId));
-
-        //Connect to the cosmos selected database and containers
-        using var client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers, new CosmosClientOptions()
+        if(this.client is null)
         {
-            AllowBulkExecution = true
-        });
+            //Prepare the lists of the container that used, to the connection
+            List<(string databaseId, string continerId)> containers = new();
+            foreach (var containerId in this.cosmosContainerIds)
+                containers.Add((this.cosmosDbDatabaseId, containerId));
+
+            //Connect to the cosmos selected database and containers
+            this.client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers);
+        }
+
+        //Set cosmos client options
+        this.client.ClientOptions.AllowBulkExecution = true;
+
         this.cosmosDatabase = client.GetDatabase(this.cosmosDbDatabaseId);
 
 
