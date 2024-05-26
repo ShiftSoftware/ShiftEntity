@@ -70,26 +70,38 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
         Expression<Func<Entity, bool>> companyWhere = x => true;
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
-            companyWhere = companyWhere.AndAlso(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<Entity>)!.RegionID));
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultRegionFilter)
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<Entity>)!.RegionID));
+        }
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
-            companyWhere = companyWhere.AndAlso(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<Entity>)!.CompanyID));
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter)
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<Entity>)!.CompanyID));
+        }
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
-            companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter)
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
+        }
 
         //(accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
         //(accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
         //(accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultTeamFilter)
         {
-            var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
+            {
+                var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
 
-            List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
+                List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
 
-            companyWhere = companyWhere.AndAlso(x => ((accessibleTeams == null || (x as IEntityHasTeam<Entity>)!.TeamID == null) ? true : accessibleTeams.Contains((x as IEntityHasTeam<Entity>)!.TeamID)));
+                companyWhere = companyWhere.AndAlso(x => accessibleTeams == null ? true : accessibleTeams.Contains((x as IEntityHasTeam<Entity>)!.TeamID));
+            }
         }
 
         var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
@@ -102,64 +114,76 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultRegionFilter)
         {
-            IEntityHasRegion<Entity>? entityWithRegion = entity is null ? null : (IEntityHasRegion<Entity>)entity;
-
-            if (!typeAuthService.Can(
-                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions,
-                access,
-                entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
-                this.HttpContext.GetHashedRegionID()!
-            ))
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
             {
-                return false;
+                IEntityHasRegion<Entity>? entityWithRegion = entity is null ? null : (IEntityHasRegion<Entity>)entity;
+
+                if (!typeAuthService.Can(
+                    ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions,
+                    access,
+                    entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
+                    this.HttpContext.GetHashedRegionID()!
+                ))
+                {
+                    return false;
+                }
             }
         }
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter)
         {
-            IEntityHasCompany<Entity>? entityWithCompany = entity is null ? null : (IEntityHasCompany<Entity>)entity;
-
-            if (!typeAuthService.Can(
-                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies,
-                access,
-                entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
-                this.HttpContext.GetHashedCompanyID()!
-            ))
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
             {
-                return false;
+                IEntityHasCompany<Entity>? entityWithCompany = entity is null ? null : (IEntityHasCompany<Entity>)entity;
+
+                if (!typeAuthService.Can(
+                    ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies,
+                    access,
+                    entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
+                    this.HttpContext.GetHashedCompanyID()!
+                ))
+                {
+                    return false;
+                }
             }
         }
 
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter)
         {
-            IEntityHasCompanyBranch<Entity>? entityWithCompanyBranch = entity is null ? null : (IEntityHasCompanyBranch<Entity>)entity;
-
-            if (!typeAuthService.Can(
-                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches,
-                access,
-                entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
-                this.HttpContext.GetHashedCompanyBranchID()!
-            ))
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
             {
-                return false;
+                IEntityHasCompanyBranch<Entity>? entityWithCompanyBranch = entity is null ? null : (IEntityHasCompanyBranch<Entity>)entity;
+
+                if (!typeAuthService.Can(
+                    ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches,
+                    access,
+                    entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
+                    this.HttpContext.GetHashedCompanyBranchID()!
+                ))
+                {
+                    return false;
+                }
             }
         }
 
-        if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
+        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultTeamFilter)
         {
-            IEntityHasTeam<Entity>? entityWithTeam = entity is null ? null : (IEntityHasTeam<Entity>)entity;
-
-            if (!typeAuthService.Can(
-                ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams,
-                access,
-                entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
-                this.HttpContext.GetHashedTeamIDs()?.ToArray()
-            ))
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
             {
-                return false;
+                IEntityHasTeam<Entity>? entityWithTeam = entity is null ? null : (IEntityHasTeam<Entity>)entity;
+
+                if (!typeAuthService.Can(
+                    ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams,
+                    access,
+                    entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
+                    this.HttpContext.GetHashedTeamIDs()?.ToArray()
+                ))
+                {
+                    return false;
+                }
             }
         }
 
@@ -260,14 +284,16 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             }
         }
 
-        if (dynamicActionFilterBuilder?.DynamicActionExpressionBuilder is not null)
-        {
-            var expressionBuilder = new DynamicActionExpressionBuilder(this.HttpContext.RequestServices, x => x == access, this.GetUserID());
 
-            var dynamicActionExpression = dynamicActionFilterBuilder.DynamicActionExpressionBuilder.Invoke(expressionBuilder);
+        //Implement Later as another overload
+        //if (dynamicActionFilterBuilder?.DynamicActionExpressionBuilder is not null)
+        //{
+        //    var expressionBuilder = new DynamicActionExpressionBuilder(this.HttpContext.RequestServices, x => x == access, this.GetUserID());
 
-            dynamicActionWhere = dynamicActionWhere is null ? dynamicActionExpression : (expressionBuilder.CombineWithExistingFiltersWith == Operator.Or ? dynamicActionWhere.Or(dynamicActionExpression) : dynamicActionWhere.AndAlso(dynamicActionExpression));
-        }
+        //    var dynamicActionExpression = dynamicActionFilterBuilder.DynamicActionExpressionBuilder.Invoke(expressionBuilder);
+
+        //    dynamicActionWhere = dynamicActionWhere is null ? dynamicActionExpression : (expressionBuilder.CombineWithExistingFiltersWith == Operator.Or ? dynamicActionWhere.Or(dynamicActionExpression) : dynamicActionWhere.AndAlso(dynamicActionExpression));
+        //}
 
         return dynamicActionWhere;
     }
