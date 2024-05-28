@@ -1,4 +1,6 @@
-﻿using Microsoft.Azure.Functions.Worker;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
@@ -30,18 +32,18 @@ internal class ReCaptchaMiddleware : IFunctionsWorkerMiddleware
         }
         else
         {
-            var request = await context.GetHttpRequestDataAsync();
+            var httpContext = context.GetHttpContext()!;
 
-            var reCaptchaToken = request?
-                .Headers?
+            var reCaptchaToken = httpContext.Request.Headers
                 .LastOrDefault(x => x.Key.ToLower().Equals(options.HeaderKey, StringComparison.InvariantCultureIgnoreCase))
-                .Value?
-                .LastOrDefault();
+                .Value.LastOrDefault();
 
             if (string.IsNullOrWhiteSpace(reCaptchaToken))
             {
-                var response = request?.CreateResponse(HttpStatusCode.Unauthorized);
-                context.GetInvocationResult().Value = response;
+                await new UnauthorizedResult().ExecuteResultAsync(new ActionContext
+                {
+                    HttpContext = httpContext
+                });
                 return;
             }
 
@@ -51,8 +53,10 @@ internal class ReCaptchaMiddleware : IFunctionsWorkerMiddleware
 
             if (reCaptchaResponse is null || reCaptchaResponse.Score < minScopre || !reCaptchaResponse.Success)
             {
-                var response = request?.CreateResponse(HttpStatusCode.Forbidden);
-                context.GetInvocationResult().Value = response;
+                await new StatusCodeResult(StatusCodes.Status403Forbidden).ExecuteResultAsync(new ActionContext
+                {
+                    HttpContext = httpContext
+                });
                 return;
             }
 
