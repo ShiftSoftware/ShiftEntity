@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<RootNamespace>ShiftSoftware.ShiftEntity.Functions</RootNamespace>
+		<Authors>Shift Software</Authors>
+		<Product>ShiftEntity.Functions</Product>
+		<Version>$(ShiftFrameworkVersion)</Version>
+		<AssemblyName>ShiftSoftware.ShiftEntity.Functions</AssemblyName>
+		<PackageId>ShiftSoftware.ShiftEntity.Functions</PackageId>
+		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
+		<Description></Description>
+		<Copyright>Copyright (c) Shift Software 2022</Copyright>
+		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
+		<PackageIcon>icon.png</PackageIcon>
+		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageTags></PackageTags>
+		<Title>ShiftEntity.Functions</Title>
+		<PackageReleaseNotes></PackageReleaseNotes>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+	</PropertyGroup>
+
+</Project>
