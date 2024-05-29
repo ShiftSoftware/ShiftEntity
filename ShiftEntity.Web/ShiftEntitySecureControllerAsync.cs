@@ -70,19 +70,19 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
         Expression<Func<Entity, bool>> companyWhere = x => true;
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultRegionFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultRegionFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
                 companyWhere = companyWhere.AndAlso(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<Entity>)!.RegionID));
         }
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
                 companyWhere = companyWhere.AndAlso(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<Entity>)!.CompanyID));
         }
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
                 companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
@@ -92,7 +92,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         //(accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
         //(accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultTeamFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultTeamFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
             {
@@ -114,7 +114,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultRegionFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultRegionFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
             {
@@ -132,7 +132,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             }
         }
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
             {
@@ -150,8 +150,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             }
         }
 
-
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
             {
@@ -169,7 +168,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
             }
         }
 
-        if (this.dynamicActionFilterBuilder is not null && !this.dynamicActionFilterBuilder.DisableDefaultTeamFilter)
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultTeamFilter))
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
             {
