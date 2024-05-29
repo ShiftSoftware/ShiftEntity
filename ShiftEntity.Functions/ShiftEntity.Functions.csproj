@@ -1,10 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\..\ShiftTemplates\ShiftFrameworkGlobalSettings.props"  Condition="Exists('..\..\ShiftTemplates\ShiftFrameworkGlobalSettings.props')"/>
+
+	<!--The Azure Pipeline clones ShiftTemplates into a directory called 's' by default-->
+	<Import Project="..\..\s\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\s\ShiftFrameworkGlobalSettings.props')" />
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<LangVersion>latest</LangVersion>
 		<RootNamespace>ShiftSoftware.ShiftEntity.Functions</RootNamespace>
 		<Authors>Shift Software</Authors>
 		<Product>ShiftEntity.Functions</Product>
@@ -12,7 +15,6 @@
 		<AssemblyName>ShiftSoftware.ShiftEntity.Functions</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.Functions</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
-		<Description></Description>
 		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
@@ -20,13 +22,20 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageTags></PackageTags>
 		<Title>ShiftEntity.Functions</Title>
-		<PackageReleaseNotes></PackageReleaseNotes>
+		<PackageReleaseNotes>
+
+		</PackageReleaseNotes>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.2.0" />
-	  <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="1.3.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.2.0" />
+		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="1.3.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
+		<Folder Include="Images\" />
 	</ItemGroup>
 
 </Project>
