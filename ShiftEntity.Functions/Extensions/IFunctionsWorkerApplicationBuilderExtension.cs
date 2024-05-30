@@ -1,6 +1,7 @@
 ﻿using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 using ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
 
 namespace ShiftSoftware.ShiftEntity.Functions.Extensions;
@@ -20,6 +21,13 @@ public static class IFunctionsWorkerApplicationBuilderExtension
 
         });
         builder.UseMiddleware<ReCaptchaMiddleware>();
+
+        return builder;
+    }
+
+    public static IFunctionsWorkerApplicationBuilder RequireValidModels(this IFunctionsWorkerApplicationBuilder builder)
+    {
+        builder.UseMiddleware<ModelValidationMiddleware>();
 
         return builder;
     }
