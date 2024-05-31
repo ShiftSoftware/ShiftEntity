@@ -34,11 +34,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     where ViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
     where ListDTO : ShiftEntityDTOBase
 {
-    private readonly ReadWriteDeleteAction action;
+    private readonly ReadWriteDeleteAction? action;
 
     private readonly DynamicActionFilterBuilder<Entity>? dynamicActionFilterBuilder;
 
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction? action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null)
     {
         this.action = action;
 
@@ -57,7 +57,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanRead(action))
+        if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID()!);
@@ -303,7 +303,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanRead(action))
+        if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         var result = await base.GetSingleItem(key, asOf, entity =>
@@ -330,7 +330,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
         var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
-        if (!typeAuthService.CanRead(action))
+        if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         var url = Url.Action(nameof(Print), new { key = key });
@@ -362,7 +362,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanRead(action))
+        if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         return Ok(await base.GetRevisionListing(key));
@@ -374,7 +374,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanWrite(action))
+        if (action is not null && !typeAuthService.CanWrite(action))
             return Forbid();
 
         var result = await base.PostItem(dto, entity =>
@@ -400,7 +400,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanWrite(action))
+        if (action is not null && !typeAuthService.CanWrite(action))
             return Forbid();
 
         var result = await base.PutItem(key, dto, entity =>
@@ -426,7 +426,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
-        if (!typeAuthService.CanDelete(action))
+        if (action is not null && !typeAuthService.CanDelete(action))
             return Forbid();
 
         var result = await base.DeleteItem(key, isHardDelete, entity =>
