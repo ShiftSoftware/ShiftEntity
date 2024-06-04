@@ -21,7 +21,8 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
         var requestBody = await reader.ReadToEndAsync();
         request.Body.Position = 0;
 
-        List<ModelValidationResult> results = new();
+        ModelValidationResult result = new() { IsValid = true };
+
         var parameters = context.FunctionDefinition.Parameters;
 
         foreach (var parameter in methodInfo.GetParameters())
@@ -31,23 +32,26 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
 
             if (type.IsClass && !type.IsAbstract && !type.IsInterface && attribute is not null)
             {
-                var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType);
-
-                if (value != null)
+                try
                 {
-                    var result = ModelValidator.Validate(value);
+                    if(string.IsNullOrWhiteSpace(requestBody))
+                        requestBody= "{}";
 
-                    if (!result.IsValid)
-                    {
-                        results.Add(result);
-                    }
+                    var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType);
+                
+                    result = ModelValidator.Validate(value);
+                }
+                catch (Exception)
+                {
+
+                    throw;
                 }
             }
         }
 
-        if (results.Any(x => !x.IsValid))
+        if (!result.IsValid)
         {
-            var errors = results.SelectMany(r => r.Results);
+            var errors = result.Results;
             var errorResponse = new
             {
                 errors
