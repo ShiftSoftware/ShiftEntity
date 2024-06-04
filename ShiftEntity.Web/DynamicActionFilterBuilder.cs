@@ -16,6 +16,7 @@ public class DynamicActionFilterBuilder<Entity>
     public bool DisableDefaultCompanyFilter { get; set; }
     public bool DisableDefaultCompanyBranchFilter { get; set; }
     public bool DisableDefaultTeamFilter { get; set; }
+    public bool DisableDefaultBrandFilter { get; set; }
 
     public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, DynamicAction dynamicAction)
     {

@@ -24,6 +24,7 @@ using ShiftSoftware.ShiftEntity.Print;
 using Microsoft.AspNetCore.Http;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -63,10 +64,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID()!);
         var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID()!);
         var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID()!);
+        var accessibleBrandsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Brands, x => x == TypeAuth.Core.Access.Read);
 
         List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
         List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
         List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
+        List<long?>? accessibleBrands = accessibleBrandsTypeAuth.WildCard ? null : accessibleBrandsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<BrandDTO>(x)).ToList();
 
         Expression<Func<Entity, bool>> companyWhere = x => true;
 
@@ -86,6 +89,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         {
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
                 companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultBrandFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasBrand<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleBrands == null ? true : accessibleBrands.Contains((x as IEntityHasBrand<Entity>)!.BrandID));
         }
 
         //(accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
@@ -161,6 +170,23 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                     access,
                     entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
                     this.HttpContext.GetHashedCompanyBranchID()!
+                ))
+                {
+                    return false;
+                }
+            }
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultBrandFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasBrand<Entity>))))
+            {
+                IEntityHasBrand<Entity>? entityWithBrand = entity is null ? null : (IEntityHasBrand<Entity>)entity;
+
+                if (!typeAuthService.Can(
+                    ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Brands,
+                    access,
+                    entityWithBrand?.BrandID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<BrandDTO>(entityWithBrand.BrandID.Value)
                 ))
                 {
                     return false;
