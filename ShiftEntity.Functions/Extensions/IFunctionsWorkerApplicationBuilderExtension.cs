@@ -25,8 +25,14 @@ public static class IFunctionsWorkerApplicationBuilderExtension
         return builder;
     }
 
-    public static IFunctionsWorkerApplicationBuilder RequireValidModels(this IFunctionsWorkerApplicationBuilder builder)
+    public static IFunctionsWorkerApplicationBuilder RequireValidModels(this IFunctionsWorkerApplicationBuilder builder,
+        bool wrapValidationErrorResponseWithShiftEntityResponse = false)
     {
+        builder.Services.AddScoped(x => new ModelValidatorOptions
+        {
+            WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponseWithShiftEntityResponse
+        });
+
         builder.UseMiddleware<ModelValidationMiddleware>();
 
         return builder;

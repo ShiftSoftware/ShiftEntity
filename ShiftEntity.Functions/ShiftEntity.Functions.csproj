@@ -38,4 +38,8 @@
 		<Folder Include="Images\" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
+	</ItemGroup>
+
 </Project>

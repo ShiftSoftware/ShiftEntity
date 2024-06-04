@@ -1,8 +1,11 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
+using ShiftSoftware.ShiftEntity.Model;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +14,13 @@ namespace ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 
 internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
 {
+    private readonly ModelValidatorOptions options;
+
+    public ModelValidationMiddleware(ModelValidatorOptions options)
+    {
+        this.options = options;
+    }
+
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var methodInfo = context.GetTargetFunctionMethod();
@@ -21,7 +31,8 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
         var requestBody = await reader.ReadToEndAsync();
         request.Body.Position = 0;
 
-        ModelValidationResult result = new() { IsValid = true };
+        ModelStateDictionary result = new();
+
 
         var parameters = context.FunctionDefinition.Parameters;
 
@@ -34,35 +45,48 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
             {
                 try
                 {
-                    if(string.IsNullOrWhiteSpace(requestBody))
-                        requestBody= "{}";
+                    if (string.IsNullOrWhiteSpace(requestBody))
+                        requestBody = "{}";
 
                     var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType);
-                
-                    result = ModelValidator.Validate(value);
+                    var r = ModelValidator.Validate(value);
+                    result.Merge(r);
                 }
                 catch (Exception)
                 {
-
-                    throw;
+                    result.AddModelError("Invalid", "Invalid request body");
                 }
             }
         }
 
         if (!result.IsValid)
         {
-            var errors = result.Results;
-            var errorResponse = new
+            if (!options.WrapValidationErrorResponseWithShiftEntityResponse)
             {
-                errors
-            };
+                var errorResponse = new SerializableError(result);
+                var r = new BadRequestObjectResult(errorResponse);
+                await r.ExecuteResultAsync(new ActionContext
+                {
+                    HttpContext = httpContext
+                });
+                return;
+            }
+            else
+            {
+                var errors = result.Select(x => new { x.Key, x.Value?.Errors }).ToDictionary(x => x.Key, x => x.Errors);
 
-            var r = new BadRequestObjectResult(errorResponse);
-            await r.ExecuteResultAsync(new ActionContext
-            {
-                HttpContext = httpContext
-            });
-            return;
+                var response = new ShiftEntityResponse<object>
+                {
+                    Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                };
+
+                var r = new BadRequestObjectResult(response);
+                await r.ExecuteResultAsync(new ActionContext
+                {
+                    HttpContext = httpContext
+                });
+                return;
+            }
         }
 
         await next(context);
