@@ -332,7 +332,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
-        var result = await base.GetSingleItem(key, asOf, entity =>
+        var result = await base.GetSingle(key, asOf, entity =>
         {
             var expression = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
 

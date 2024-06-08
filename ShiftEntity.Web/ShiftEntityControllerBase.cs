@@ -1,8 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
@@ -71,7 +74,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingleItem(string key, DateTimeOffset? asOf, Action<Entity>? beforeGetValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTimeOffset? asOf, Action<Entity>? beforeGetValidation)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -152,9 +155,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         Entity newItem;
 
+        Guid? idempotencyKey = null;
+
         try
         {
-            newItem = await repository.CreateAsync(dto, this.GetUserID());
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasIdempotencyKey<Entity>))))
+                idempotencyKey = Guid.Parse(HttpContext.Request.Headers["Idempotency-Key"].ToString());
+
+            newItem = await repository.CreateAsync(dto, this.GetUserID(), idempotencyKey);
         }
         catch (ShiftEntityException ex)
         {
@@ -169,12 +177,38 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         {
             await repository.SaveChangesAsync(true);
         }
+        catch (DbUpdateException dbUpdateException)
+        {
+            var sqlException = dbUpdateException.InnerException as SqlException;
+
+            //2601: This error occurs when you attempt to put duplicate index values into a column or columns that have a unique index.
+            //Message looks something like: {"Cannot insert duplicate key row in object 'dbo.Countries' with unique index 'IX_Countries_IdempotencyKey'. The duplicate key value is (88320ba8-345f-410a-9aa4-3e8a7112c040)."}
+
+            if (sqlException != null && sqlException.Errors.OfType<SqlError>().Any(se => se.Number == 2601 && se.Message.Contains(idempotencyKey!.ToString()!)))
+            {
+                var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
+
+                var existingDto = await repository.ViewAsync(existingItem!);
+
+                return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(existingDto)
+                {
+                    Message = repository.ResponseMessage,
+                    Additional = repository.AdditionalResponseData
+                }), existingItem);
+            }
+            else
+            {
+                throw;
+            }
+        }
         catch (ShiftEntityException ex)
         {
             return new(HandleException(ex), null);
         }
 
-        return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(newItem))
+        var createdDto = await repository.ViewAsync(newItem);
+
+        return new(CreatedAtAction(nameof(GetSingle), new { key = createdDto.ID }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData

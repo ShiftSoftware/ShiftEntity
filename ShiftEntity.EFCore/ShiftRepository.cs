@@ -3,6 +3,7 @@ using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
@@ -46,9 +47,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
     }
 
-    public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null)
+    public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null, Guid? idempotencyKey = null)
     {
         entity = mapper.Map(dto, entity);
+
+        if (idempotencyKey != null)
+        {
+            (entity as IEntityHasIdempotencyKey<EntityType>)!.IdempotencyKey = idempotencyKey;
+        }
 
         return new ValueTask<EntityType>(entity);
     }
@@ -80,7 +86,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     //    return Find(id, asOf, includes);
     //}
 
-    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null)
+    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null, Guid? idempotencyKey = null)
     {
         List<string>? includes = null;
 
@@ -98,9 +104,20 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         var q = GetIQueryable(asOf, includes);
 
-        var entity = await q.FirstOrDefaultAsync(x =>
-            EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-        );
+        EntityType? entity = null;
+
+        if (id != 0)
+        {
+            entity = await q.FirstOrDefaultAsync(x =>
+                EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
+            );
+        }
+        else if (idempotencyKey != null)
+        {
+            entity = await q.FirstOrDefaultAsync(x =>
+                EF.Property<Guid?>(x, nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey)) == idempotencyKey
+            );
+        }
 
         if (entity is not null && includes?.Count > 0)
             entity.ReloadAfterSave = true;
@@ -111,6 +128,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null)
     {
         return await BaseFindAsync(id, asOf);
+    }
+
+    public virtual async Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey)
+    {
+        return await BaseFindAsync(0, null, idempotencyKey);
     }
 
     private IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf, List<string>? includes)

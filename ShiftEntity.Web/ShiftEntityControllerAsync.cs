@@ -40,7 +40,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpGet("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
-        return (await base.GetSingleItem(key, asOf, null)).ActionResult;
+        return (await base.GetSingle(key, asOf, null)).ActionResult;
     }
 
     [HttpGet]

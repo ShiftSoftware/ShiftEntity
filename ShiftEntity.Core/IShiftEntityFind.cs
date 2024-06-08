@@ -11,4 +11,5 @@ public interface IShiftEntityFind<EntityType> where EntityType : ShiftEntity<Ent
     public Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null);
     public Task<List<RevisionDTO>> GetRevisionsAsync(long id);
     public Task<Stream> PrintAsync(string id);
+    public Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey);
 }

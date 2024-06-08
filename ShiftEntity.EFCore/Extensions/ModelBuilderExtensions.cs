@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Flags;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -6,12 +7,12 @@ public static class ModelBuilderExtensions
 {
     public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder, bool useTemporal)
     {
-        if (useTemporal)
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-            {
-                var clrType = entityType.ClrType;
+            var clrType = entityType.ClrType;
 
+            if (useTemporal)
+            {
                 var isTemporal = clrType.GetCustomAttributes(true).LastOrDefault(x => x as TemporalShiftEntity != null);
 
                 if (isTemporal != null)
@@ -19,6 +20,13 @@ public static class ModelBuilderExtensions
                     //Make the tables temporal that has TemporalShiftEntyty attribute 
                     modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
                 }
+            }
+
+            if (clrType.GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasIdempotencyKey<>))))
+            {
+                var idempotencyKeyName = nameof(IEntityHasIdempotencyKey.IdempotencyKey);
+
+                modelBuilder.Entity(clrType).HasIndex(idempotencyKeyName).IsUnique().HasFilter($"{idempotencyKeyName} IS NOT NULL");
             }
         }
 

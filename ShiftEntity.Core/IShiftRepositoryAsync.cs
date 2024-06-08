@@ -24,14 +24,14 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
     Message? ResponseMessage { get; set; }
     Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-    ValueTask<Entity> IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>.CreateAsync(ViewAndUpsertDTO dto, long? userId)
+    ValueTask<Entity> IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>.CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey)
     {
-        return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId);
+        return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId, idempotencyKey);
     }
 
     ValueTask<Entity> IShiftEntityUpdateAsync<Entity, ViewAndUpsertDTO>.UpdateAsync(Entity entity, ViewAndUpsertDTO dto, long? userId)
     {
-        return UpsertAsync(entity, dto, ActionTypes.Update, userId);
+        return UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
     }
 
     /// <summary>
@@ -43,7 +43,7 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
     /// <param name="userId"></param>
     /// <returns></returns>
     /// <exception cref="NotImplementedException"></exception>
-    public ValueTask<Entity> UpsertAsync(Entity entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null)
+    public ValueTask<Entity> UpsertAsync(Entity entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null, Guid? idempotencyKey = null)
     {
         throw new NotImplementedException();
     }
