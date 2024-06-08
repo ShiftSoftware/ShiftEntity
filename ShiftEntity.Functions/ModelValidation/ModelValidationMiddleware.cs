@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using FluentValidation;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
@@ -15,10 +16,12 @@ namespace ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
 {
     private readonly ModelValidatorOptions options;
+    private readonly IServiceProvider services;
 
-    public ModelValidationMiddleware(ModelValidatorOptions options)
+    public ModelValidationMiddleware(ModelValidatorOptions options, IServiceProvider services)
     {
         this.options = options;
+        this.services = services;
     }
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
@@ -45,12 +48,24 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
             {
                 try
                 {
+                    //Get the request body
                     if (string.IsNullOrWhiteSpace(requestBody))
                         requestBody = "{}";
-
                     var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType);
+
+                    //Validate data annotations
                     var r = ModelValidator.Validate(value);
                     result.Merge(r);
+
+                    //Validate FluentValidation
+                    var validator = services.GetService(typeof(IValidator<>).MakeGenericType(parameter.ParameterType));
+                    if (validator is not null)
+                    {
+                        var validationResult = await ((IValidator)validator).ValidateAsync(
+                            new FluentValidation.ValidationContext<object>(value));
+                        if (!validationResult.IsValid)
+                            validationResult.AddToModelState(result);
+                    }
                 }
                 catch (Exception)
                 {
