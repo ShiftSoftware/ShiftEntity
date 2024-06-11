@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure.Functions.Worker;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ShiftSoftware.ShiftEntity.Functions.ModelValidation;
@@ -20,7 +21,10 @@ public static class IFunctionsWorkerApplicationBuilderExtension
             MinScore = minScopre,
 
         });
-        builder.UseMiddleware<ReCaptchaMiddleware>();
+
+        builder.UseWhen<ReCaptchaMiddleware>(context =>
+            context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger")
+        );
 
         return builder;
     }
@@ -33,7 +37,9 @@ public static class IFunctionsWorkerApplicationBuilderExtension
             WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponseWithShiftEntityResponse
         });
 
-        builder.UseMiddleware<ModelValidationMiddleware>();
+        builder.UseWhen<ModelValidationMiddleware>(context =>
+            context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger")
+        );
 
         return builder;
     }
