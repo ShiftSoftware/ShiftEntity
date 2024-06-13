@@ -51,7 +51,8 @@ internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
                     //Get the request body
                     if (string.IsNullOrWhiteSpace(requestBody))
                         requestBody = "{}";
-                    var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType);
+                    var value = JsonSerializer.Deserialize(requestBody!, parameter.ParameterType, 
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
                     //Validate data annotations
                     var r = ModelValidator.Validate(value);
