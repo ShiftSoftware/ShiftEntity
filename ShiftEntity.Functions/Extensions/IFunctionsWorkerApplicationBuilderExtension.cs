@@ -49,6 +49,7 @@ public static class IFunctionsWorkerApplicationBuilderExtension
 
         builder.UseWhen<AppCheckMiddleware>(context =>
             {
+                bool hasCheckAppCheckAttribute = context.GetTargetFunctionMethod().CustomAttributes.FirstOrDefault(x => x.AttributeType.Name.Equals(nameof(CheckAppCheckAttribute))) != null;
                 /*bool hasCustomerAuthorizeAttribute = context.GetTargetFunctionMethod().CustomAttributes.FirstOrDefault(x => x.AttributeType.Name == "CustomerAuthorizeAttribute") != null;
 
                 bool hasAuhorizationHeader = false;
@@ -58,7 +59,7 @@ public static class IFunctionsWorkerApplicationBuilderExtension
                     hasAuhorizationHeader = !string.IsNullOrEmpty(auhorizationHeader) && !string.IsNullOrWhiteSpace(auhorizationHeader);
                 }*/
 
-                return context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger")/* &&
+                return context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger") && hasCheckAppCheckAttribute /* &&
                  hasAuhorizationHeader == false*/;
             }
         );
