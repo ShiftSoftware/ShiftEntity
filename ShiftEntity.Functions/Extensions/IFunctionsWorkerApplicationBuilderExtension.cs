@@ -28,20 +28,20 @@ public static class IFunctionsWorkerApplicationBuilderExtension
 
         return builder;
     }
-
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="appCheckProjectNumber">Firebase Project Number</param>
+    /// <param name="appCheckServiceAccount">a Google Cloud Service Account's Json Key as String with proper permssion for Firebase AppCheck API</param>
     public static IFunctionsWorkerApplicationBuilder AddFirebaseAppCheck(this IFunctionsWorkerApplicationBuilder builder, string appCheckProjectNumber,
-        string appCheckServiceAccountProjectId, string appCheckServiceAccountPrivateKey, string appCheckServiceAccountPrivateKeyId, string appCheckServiceAccountClientEmail, string appCheckServiceAccountClientId, string hmsClientID, string hmsClientSecret, string hmsAppId, string headerKey = "Verification-Token")
+        string appCheckServiceAccount, string hmsClientID, string hmsClientSecret, string hmsAppId, string headerKey = "Verification-Token")
     {
         builder.Services.AddTransient<AntiBotService>();
         builder.Services.AddScoped(x => new AntiBotOptions
         {
             HeaderKey = headerKey,
             AppCheckProjectNumber = appCheckProjectNumber,
-            AppCheckServiceAccountClientEmail = appCheckServiceAccountClientEmail,
-            AppCheckServiceAccountClientId = appCheckServiceAccountClientId,
-            AppCheckServiceAccountPrivateKey = appCheckServiceAccountPrivateKey,
-            AppCheckServiceAccountPrivateKeyId = appCheckServiceAccountPrivateKeyId,
-            AppCheckServiceAccountProjectId = appCheckServiceAccountProjectId,
+            AppCheckServiceAccount = appCheckServiceAccount,
             HMSClientID = hmsClientID,
             HMSClientSecret = hmsClientSecret,
             HMSAppId = hmsAppId,

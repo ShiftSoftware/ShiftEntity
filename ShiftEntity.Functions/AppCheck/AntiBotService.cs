@@ -20,17 +20,8 @@ public class AntiBotService
     {
         if (platform == Platforms.Android || platform == Platforms.IOS)
         {
-            GoogleCredential googleCredentials = GoogleCredential.FromJsonParameters(new JsonCredentialParameters
-            {
-                Type = JsonCredentialParameters.ServiceAccountCredentialType,
-                ProjectId = antiBotOptions.AppCheckServiceAccountProjectId,
-                PrivateKey = antiBotOptions.AppCheckServiceAccountPrivateKey,
-                PrivateKeyId = antiBotOptions.AppCheckServiceAccountPrivateKeyId,
-                ClientEmail = antiBotOptions.AppCheckServiceAccountClientEmail,
-                ClientId = antiBotOptions.AppCheckServiceAccountClientId,
-                TokenUrl = "https://oauth2.googleapis.com/token",
-            }).CreateScoped(new string[] { FirebaseappcheckService.Scope.Firebase });
-
+            GoogleCredential googleCredentials = GoogleCredential.FromJson(antiBotOptions.AppCheckServiceAccount).CreateScoped(new string[] { FirebaseappcheckService.Scope.Firebase });
+            
             var appCheck = new FirebaseappcheckService(initializer: new()
             {
                 HttpClientInitializer = googleCredentials,
