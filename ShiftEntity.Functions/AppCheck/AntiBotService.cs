@@ -27,7 +27,7 @@ public class AntiBotService
                 HttpClientInitializer = googleCredentials,
             });
 
-            try
+            //try
             {
                 var appCheckResult = await appCheck.Projects.VerifyAppCheckToken(body: new GoogleFirebaseAppcheckV1betaVerifyAppCheckTokenRequest
                 {
@@ -39,10 +39,10 @@ public class AntiBotService
                     return false;
                 }
             }
-            catch (Exception)
-            {
-                return true;
-            }
+            //catch (Exception)
+            //{
+            //    return true;
+            //}
 
             return true;
         }
