@@ -80,4 +80,11 @@ internal class SoftDeleteQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
             nodeIn.TypeReference
         );
     }
+
+    public override SingleValueNode Visit(AnyNode nodeIn)
+    {
+        nodeIn.Body = nodeIn.Body.Accept(this);
+
+        return nodeIn;
+    }
 }
