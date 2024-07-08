@@ -13,14 +13,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.EFCore", "Shift
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.CosmosDbReplication", "ShiftEntity.CosmosDbReplication\ShiftEntity.CosmosDbReplication.csproj", "{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.VSIX.Template", "ShiftEntity.VSIX.Template\ShiftEntity.VSIX.Template.csproj", "{5A03F7EE-29E6-44E2-8A81-FF472974571E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Print", "ShiftEntity.Print\ShiftEntity.Print.csproj", "{371083F4-5F4A-466B-ADB6-F276320F2270}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Pipeline Template", "Pipeline Template", "{0C219210-F2B6-4B96-BD02-C38229A07531}"
-	ProjectSection(SolutionItems) = preProject
-		Pipeline Template\pipeline-template.yml = Pipeline Template\pipeline-template.yml
-	EndProjectSection
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.Print", "ShiftEntity.Print\ShiftEntity.Print.csproj", "{371083F4-5F4A-466B-ADB6-F276320F2270}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Functions", "ShiftEntity.Functions\ShiftEntity.Functions.csproj", "{7A58FF77-F48E-498D-871F-CD638511B30A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -92,18 +87,6 @@ Global
 		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Release|arm64.Build.0 = Release|Any CPU
 		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Release|x86.ActiveCfg = Release|Any CPU
 		{F6A8AE1C-6F0F-4404-8487-A2F7D15C014C}.Release|x86.Build.0 = Release|Any CPU
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|arm64.ActiveCfg = Debug|arm64
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|arm64.Build.0 = Debug|arm64
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|x86.ActiveCfg = Debug|x86
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Debug|x86.Build.0 = Debug|x86
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|arm64.ActiveCfg = Release|arm64
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|arm64.Build.0 = Release|arm64
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|x86.ActiveCfg = Release|x86
-		{5A03F7EE-29E6-44E2-8A81-FF472974571E}.Release|x86.Build.0 = Release|x86
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Debug|arm64.ActiveCfg = Debug|Any CPU
@@ -116,6 +99,18 @@ Global
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Release|arm64.Build.0 = Release|Any CPU
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Release|x86.ActiveCfg = Release|Any CPU
 		{371083F4-5F4A-466B-ADB6-F276320F2270}.Release|x86.Build.0 = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|arm64.ActiveCfg = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|arm64.Build.0 = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Debug|x86.Build.0 = Debug|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|arm64.ActiveCfg = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|arm64.Build.0 = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|x86.ActiveCfg = Release|Any CPU
+		{7A58FF77-F48E-498D-871F-CD638511B30A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

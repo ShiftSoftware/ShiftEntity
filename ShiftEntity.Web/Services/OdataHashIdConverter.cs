@@ -116,11 +116,11 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
     }
 }
 
-public class HashIdQueryNodeVisitor : 
+public class HashIdQueryNodeVisitor :
     QueryNodeVisitor<SingleValueNode>
 {
     public JsonHashIdConverterAttribute? JsonConverterAttribute { get; set; }
-    
+
     public override SingleValueNode Visit(ConstantNode nodeIn)
     {
         if (JsonConverterAttribute is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
@@ -131,17 +131,17 @@ public class HashIdQueryNodeVisitor :
 
         return nodeIn;
     }
-    
+
     public override SingleValueNode Visit(BinaryOperatorNode nodeIn)
     {
         var visitor = new HashIdQueryNodeVisitor();
 
-        var visitedLeft = nodeIn.Left is BinaryOperatorNode leftBinary ? 
-            Visit(leftBinary) : 
+        var visitedLeft = nodeIn.Left is BinaryOperatorNode leftBinary ?
+            Visit(leftBinary) :
             nodeIn.Left.Accept(visitor);
 
         var visitedRight = nodeIn.Right is BinaryOperatorNode rightBinary ?
-            Visit(rightBinary) : 
+            Visit(rightBinary) :
             nodeIn.Right.Accept(visitor);
 
         if (visitor.JsonConverterAttribute is not null && !HashId.acceptUnencodedIds && !(nodeIn.OperatorKind == BinaryOperatorKind.Equal || nodeIn.OperatorKind == BinaryOperatorKind.NotEqual))
@@ -182,6 +182,13 @@ public class HashIdQueryNodeVisitor :
             nodeIn.Parameters.Select(x => x.Accept(this)),
             nodeIn.TypeReference
         );
+    }
+
+    public override SingleValueNode Visit(AnyNode nodeIn)
+    {
+        nodeIn.Body = nodeIn.Body.Accept(this);
+
+        return nodeIn;
     }
 
     private JsonHashIdConverterAttribute HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
