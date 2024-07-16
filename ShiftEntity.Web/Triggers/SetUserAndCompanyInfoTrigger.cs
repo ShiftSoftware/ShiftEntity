@@ -45,6 +45,7 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
                 long? regionId = http!.HttpContext!.GetRegionID();
                 long? companyId = http!.HttpContext!.GetCompanyID();
                 long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
+                long? cityId = http!.HttpContext!.GetCityID();
 
                 if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
                 {
@@ -60,6 +61,14 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
 
                     if (entityWithCompany.CompanyID is null)
                         entityWithCompany.CompanyID = companyId;
+                }
+
+                if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCity<Entity>))))
+                {
+                    var entityWithCity = (IEntityHasCity<Entity>)context.Entity;
+
+                    if (entityWithCity.CityID is null)
+                        entityWithCity.CityID = cityId;
                 }
 
                 if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))

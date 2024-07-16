@@ -20,6 +20,7 @@ public static class HttpContextExtensions
 
         return value;
     }
+
     internal static List<long>? GetDecodedClaimValues<T>(this HttpContext httpContext, string claimId)
     {
         var values = GetClaimValues(httpContext, claimId);
@@ -34,22 +35,37 @@ public static class HttpContextExtensions
     {
         return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.RegionIdClaim)?.FirstOrDefault();
     }
+
     internal static long? GetRegionID(this HttpContext httpContext)
     {
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Region.RegionDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.RegionIdClaim)?.FirstOrDefault();
     }
+
     internal static string? GetHashedCompanyID(this HttpContext httpContext)
     {
         return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyIdClaim)?.FirstOrDefault();
     }
+
     internal static long? GetCompanyID(this HttpContext httpContext)
     {
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Company.CompanyDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyIdClaim)?.FirstOrDefault();
     }
+
+    internal static string? GetHashedCityID(this HttpContext httpContext)
+    {
+        return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CityIdClaim)?.FirstOrDefault();
+    }
+
+    internal static long? GetCityID(this HttpContext httpContext)
+    {
+        return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.City.CityDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CityIdClaim)?.FirstOrDefault();
+    }
+
     internal static string? GetHashedCompanyBranchID(this HttpContext httpContext)
     {
         return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyBranchIdClaim)?.FirstOrDefault();
     }
+
     internal static long? GetCompanyBranchID(this HttpContext httpContext)
     {
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch.CompanyBranchDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyBranchIdClaim)?.FirstOrDefault();
@@ -64,6 +80,7 @@ public static class HttpContextExtensions
     {
         return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.TeamIdsClaim);
     }
+
     internal static List<long>? GetTeamIDs(this HttpContext httpContext)
     {
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Team.TeamDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.TeamIdsClaim);
