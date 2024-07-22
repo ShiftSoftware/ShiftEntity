@@ -55,7 +55,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     [HttpGet]
     [EnableQueryWithHashIdConverter]
     [Authorize]
-    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
+    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -126,8 +126,8 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
         var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
 
-        //return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, companyWhere));
-        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows, finalWhere));
+        //return Ok(base.GetOdataListing(oDataQueryOptions, companyWhere));
+        return Ok(base.GetOdataListing(oDataQueryOptions, finalWhere));
     }
 
     private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)

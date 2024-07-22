@@ -7,7 +7,7 @@ public interface IShiftOdataList<EntityType, ListDTO>
     where ListDTO : ShiftEntityDTOBase
     where EntityType : class
 {
-    public IQueryable<ListDTO> OdataList(bool showDeletedRows = false, IQueryable<EntityType>? queryable = null);
+    public IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null);
 
-    public IQueryable<EntityType> GetIQueryable(bool showDeletedRows = false);
+    public IQueryable<EntityType> GetIQueryable();
 }

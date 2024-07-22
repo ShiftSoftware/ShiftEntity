@@ -34,10 +34,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
     }
 
-    public virtual IQueryable<ListDTO> OdataList(bool showDeletedRows = false, IQueryable<EntityType>? queryable = null)
+    public virtual IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null)
     {
         if (queryable is null)
-            queryable = GetIQueryable(showDeletedRows);
+            queryable = GetIQueryable();
 
         return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
     }
@@ -167,14 +167,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     //    return GetIQueryable(asOf, includes);
     //}
 
-    public virtual IQueryable<EntityType> GetIQueryable(bool showDeletedRows = false)
+    public virtual IQueryable<EntityType> GetIQueryable()
     {
         var query = dbSet.AsQueryable();
 
         if (db?.ShiftDbContextOptions?.UseTemporal ?? false)
         {
-            if (showDeletedRows)
-            {
+            //if (showDeletedRows)
+            //{
                 //query = dbSet.TemporalAll()
                 //.Where(x => !dbSet.Any(p => p.ID == x.ID))
                 //.Select(x => new
@@ -185,7 +185,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 //.AsSubQuery()
                 //.Where(x => x.RowNumber <= 1)
                 //.Select(x => x.Entity);
-            }
+            //}
         }
 
         return query;

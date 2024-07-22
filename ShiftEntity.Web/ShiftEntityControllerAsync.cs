@@ -32,9 +32,9 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpGet]
     [EnableQueryWithHashIdConverter]
 
-    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions, [FromQuery] bool showDeletedRows = false)
+    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
     {
-        return Ok(base.GetOdataListing(oDataQueryOptions, showDeletedRows));
+        return Ok(base.GetOdataListing(oDataQueryOptions));
     }
 
     [HttpGet("{key}")]
