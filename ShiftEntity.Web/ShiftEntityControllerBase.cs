@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
@@ -375,5 +376,66 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                 Additional = ex.AdditionalData,
             });
         }
+    }
+
+    [NonAction]
+    public virtual async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var data = repository.GetIQueryable().Where(x => !x.IsDeleted);
+
+        if (ids.All)
+        {
+            var listDTOData = repository.OdataList();
+
+            if (!string.IsNullOrWhiteSpace(ids.Filter))
+            {
+                ShiftEntityODataOptions options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
+
+                this.Request.QueryString = this.Request.QueryString.Add("$filter", ids.Filter);
+
+                ODataQueryContext oDataQueryContext = new ODataQueryContext(options.EdmModel, typeof(ListDTO), new());
+
+                ODataQueryOptions<ListDTO> modifiedODataQueryOptions = new(oDataQueryContext, this.Request);
+
+                var modifiedFilterNode = modifiedODataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+
+                FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, modifiedODataQueryOptions.Filter.FilterClause.RangeVariable);
+
+                ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri("", UriKind.Relative));
+
+                var odataUri = parser.ParseUri();
+
+                odataUri.Filter = modifiedFilterClause;
+
+                var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
+
+                var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
+
+                this.Request.QueryString = newQueryString;
+
+                ODataQueryOptions<ListDTO> modifiedODataQueryOptions2 = new(oDataQueryContext, this.Request);
+
+                listDTOData = modifiedODataQueryOptions2.Filter.ApplyTo(listDTOData, new ODataQuerySettings()) as IQueryable<ListDTO>;
+
+                var filteredIds = listDTOData!.Select(x => x.ID!.ToLong()).ToList();
+
+                data = data.Where(x => filteredIds.Contains(x.ID));
+            }
+        }
+        else
+        {
+            var longIds = ids.Items.Select(x => x.ID!.ToLong());
+
+            return await data
+                .Where(x => longIds.Contains(x.ID))
+                .ToListAsync();
+        }
+
+        if (data != null)
+            return await data.ToListAsync();
+
+        return new List<Entity>();
     }
 }

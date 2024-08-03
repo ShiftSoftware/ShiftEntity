@@ -73,20 +73,4 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     {
         return (await base.Print(key));
     }
-
-    [NonAction]
-    public virtual async Task<List<ListDTO>> GetSelectedItemsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions)
-    {
-        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-        var list = repository.OdataList();
-
-        if (oDataQueryOptions.Filter != null)
-            list = oDataQueryOptions.Filter.ApplyTo(list, new()) as IQueryable<ListDTO>;
-
-        if (list != null)
-            return await list.ToListAsync();
-
-        return new List<ListDTO>();
-    }
 }
