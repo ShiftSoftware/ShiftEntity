@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -117,6 +119,13 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             {
                 return new(HandleException(ex), null);
             }
+        }
+
+        var isTemporal = item.GetType().GetCustomAttributes(typeof(TemporalShiftEntity)).Any();
+
+        if (isTemporal)
+        {
+            Response.Headers.Append(Constants.HttpHeaderVersioning, "Temporal");
         }
 
         return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item))
