@@ -8,4 +8,7 @@ public class ShiftEntitySelectDTO
 
     [JsonConverter(typeof(LocalizedTextJsonConverter))]
     public string? Text { get; set; }
+
+    [JsonIgnore]
+    public object? Data { get; set; }
 }
