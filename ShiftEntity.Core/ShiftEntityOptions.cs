@@ -9,6 +9,7 @@ public class ShiftEntityOptions
 {
     internal bool _WrapValidationErrorResponseWithShiftEntityResponse;
     internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
+    internal List<Assembly> DataAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
@@ -21,6 +22,12 @@ public class ShiftEntityOptions
     public ShiftEntityOptions AddAutoMapper(params Assembly[] assemblies)
     {
         AutoMapperAssemblies.AddRange(assemblies);
+        return this;
+    }
+
+    public ShiftEntityOptions AddDataAssembly(params Assembly[] assemblies)
+    {
+        DataAssemblies.AddRange(assemblies);
         return this;
     }
 

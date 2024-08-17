@@ -27,9 +27,12 @@ public static class IServiceCollectionExtensions
         if (shiftEntityOptions.azureStorageOptions.Count > 0)
             services.TryAddSingleton(new AzureStorageService(shiftEntityOptions.azureStorageOptions));
 
-        shiftEntityOptions.AutoMapperAssemblies.Insert(0, typeof(DefaultAutoMapperProfile).Assembly);
+        //shiftEntityOptions.AutoMapperAssemblies.Insert(0, typeof(DefaultAutoMapperProfile).Assembly);
 
-        services.AddAutoMapper(shiftEntityOptions.AutoMapperAssemblies);
+        services.AddAutoMapper(x =>
+        {
+            x.AddProfile(new DefaultAutoMapperProfile(shiftEntityOptions.DataAssemblies.ToArray()));
+        }, shiftEntityOptions.AutoMapperAssemblies);
 
         return services;
     }

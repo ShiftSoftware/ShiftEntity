@@ -5,12 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
 public class DefaultAutoMapperProfile : Profile
 {
-    public DefaultAutoMapperProfile()
+    public DefaultAutoMapperProfile(params Assembly[] assemblies)
     {
         CreateMap<List<ShiftFileDTO>?, string?>().ConvertUsing<ListOfShiftFileDtoToString>();
         CreateMap<string?, List<ShiftFileDTO>?>().ConvertUsing<StringToListOfShiftFileDto>();
@@ -18,9 +19,7 @@ public class DefaultAutoMapperProfile : Profile
         CreateMap<ShiftEntityBase, ShiftEntitySelectDTO?>().ConvertUsing<ShiftEntityToShiftEntitySelectDTO>();
         CreateMap<ShiftEntitySelectDTO, ShiftEntityBase>().ConstructUsing(x => null);
 
-        var repositoryTypes = AppDomain
-            .CurrentDomain
-            .GetAssemblies()
+        var repositoryTypes = assemblies
             //The following shows up when calling GetTypes(). So I just excluded it by using the Name: Could not load type 'SqlGuidCaster' from assembly Microsoft.Data.SqlClient: https://github.com/dotnet/SqlClient/issues/1930
             .Where(x => !x.GetName().FullName.StartsWith("Microsoft.Data.SqlClient"))
             .SelectMany(x => x.GetTypes())
