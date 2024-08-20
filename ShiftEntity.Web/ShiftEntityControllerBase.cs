@@ -69,6 +69,76 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
+    public async Task<ODataDTO<ListDTO>> GetOdataListingNew(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        bool isFilteringByIsDeleted = false;
+
+        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
+
+        if (filterClause is not null)
+        {
+            var visitor = new SoftDeleteQueryNodeVisitor();
+
+            var visited = filterClause.Expression.Accept(visitor);
+
+            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
+        }
+
+        var queryable = repository.GetIQueryable();
+
+        if (where is not null)
+            queryable = queryable.Where(where);
+
+        var data = repository.OdataList(queryable);
+
+        if (!isFilteringByIsDeleted)
+            data = data.Where(x => x.IsDeleted == false);
+
+        if (oDataQueryOptions.Filter != null)
+        {
+            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+
+            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
+
+            ODataUriParser parser = new ODataUriParser(oDataQueryOptions.Context.Model, new Uri("", UriKind.Relative));
+
+            var odataUri = parser.ParseUri();
+
+            odataUri.Filter = modifiedFilterClause;
+
+            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
+
+            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
+
+            this.Request.QueryString = newQueryString;
+
+            var modifiedODataQueryOptions = new ODataQueryOptions<ListDTO>(oDataQueryOptions.Context, Request);
+
+            data = (modifiedODataQueryOptions.Filter.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<ListDTO>)!;
+        }
+
+        if (oDataQueryOptions.OrderBy != null)
+            data = oDataQueryOptions.OrderBy.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<ListDTO>;
+
+        var count = await data.CountAsync();
+
+        if (oDataQueryOptions.Skip != null)
+            data = data.Skip(oDataQueryOptions.Skip.Value);
+
+        if (oDataQueryOptions.Top != null)
+            data = data.Take(oDataQueryOptions.Top.Value);
+
+        return new ODataDTO<ListDTO>
+        {
+            Count = count,
+            Value = await data.ToListAsync(),
+        };
+    }
+
+
+    [NonAction]
     public async Task<List<RevisionDTO>> GetRevisionListing(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
