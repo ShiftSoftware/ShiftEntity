@@ -1,10 +1,7 @@
-﻿
-using Microsoft.Extensions.DependencyInjection.Extensions;
+﻿using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using System;
-using System.Linq;
-using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +24,7 @@ public static class IServiceCollectionExtensions
         if (shiftEntityOptions.azureStorageOptions.Count > 0)
             services.TryAddSingleton(new AzureStorageService(shiftEntityOptions.azureStorageOptions));
 
-        //shiftEntityOptions.AutoMapperAssemblies.Insert(0, typeof(DefaultAutoMapperProfile).Assembly);
+        shiftEntityOptions.AutoMapperAssemblies.Insert(0, typeof(DefaultAutoMapperProfile).Assembly);
 
         services.AddAutoMapper(x =>
         {
