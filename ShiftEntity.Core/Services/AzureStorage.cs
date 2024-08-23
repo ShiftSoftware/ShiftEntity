@@ -88,7 +88,7 @@ public class AzureStorageService
         return blobName;
     }
 
-    public static string GetServiceSasUriForBlob(string blobName, string containerName, string accountName, string accountKey, int expireAfter_Seconds = 3600)
+    public static string GetServiceSasUriForBlob(string blobName, BlobSasPermissions blobSasPermissions, string containerName, string accountName, string accountKey, int expireAfter_Seconds = 3600)
     {
         var sasBuilder = new BlobSasBuilder()
         {
@@ -98,14 +98,14 @@ public class AzureStorageService
             ExpiresOn = DateTimeOffset.UtcNow.AddSeconds(expireAfter_Seconds),
         };
 
-        sasBuilder.SetPermissions(BlobSasPermissions.All);
+        sasBuilder.SetPermissions(blobSasPermissions);
 
         var sharedKeyCredential = new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey);
 
         return sasBuilder.ToSasQueryParameters(sharedKeyCredential).ToString();
     }
 
-    public string GetSignedURL(string blobName, string? containerName = null, string? accountName = null)
+    public string GetSignedURL(string blobName, BlobSasPermissions blobSasPermissions, string? containerName = null, string? accountName = null, int expireAfter_Seconds = 3600)
     {
         accountName = accountName ?? defaultAccountName;
 
@@ -114,7 +114,7 @@ public class AzureStorageService
         if (containerName == null)
             containerName = account.DefaultContainerName;
 
-        return $"{account.EndPoint}/{containerName}/{blobName}?{GetServiceSasUriForBlob(blobName, containerName!, account.AccountName!, account.AccountKey!)}";
+        return $"{account.EndPoint}/{containerName}/{blobName}?{GetServiceSasUriForBlob(blobName, blobSasPermissions, containerName!, account.AccountName!, account.AccountKey!, expireAfter_Seconds)}";
     }
 
     public string GetDefaultAccountName()
@@ -189,7 +189,7 @@ class JsonShiftFileDTOConverter : JsonConverter<ShiftFileDTO>
             return;
         }
 
-        value.Url = azureStorageService.GetSignedURL(value.Blob!, value.ContainerName, value.AccountName);
+        value.Url = azureStorageService.GetSignedURL(value.Blob!, BlobSasPermissions.Read, value.ContainerName, value.AccountName);
 
         writer.WriteRawValue(JsonSerializer.Serialize(value));
     }
