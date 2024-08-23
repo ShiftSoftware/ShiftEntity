@@ -8,8 +8,8 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 public class ShiftFileDTO
 {
     public string? Name { get; set; }
-    public string AccountName { get; set; } = default!;
-    public string ContainerName { get; set; } = default!;
+    public string? AccountName { get; set; } = default!;
+    public string? ContainerName { get; set; } = default!;
     public string? Blob { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

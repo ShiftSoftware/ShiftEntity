@@ -98,7 +98,7 @@ public class AzureStorageService
             ExpiresOn = DateTimeOffset.UtcNow.AddSeconds(expireAfter_Seconds),
         };
 
-        sasBuilder.SetPermissions(BlobSasPermissions.Read);
+        sasBuilder.SetPermissions(BlobSasPermissions.All);
 
         var sharedKeyCredential = new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey);
 
