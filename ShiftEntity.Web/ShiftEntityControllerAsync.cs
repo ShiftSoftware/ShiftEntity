@@ -1,16 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
-using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OData;
 
 
 
@@ -29,12 +24,18 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
 
     }
 
-    [HttpGet]
-    [EnableQueryWithHashIdConverter]
+    //[HttpGet]
+    //[EnableQueryWithHashIdConverter]
 
-    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
+    //public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
+    //{
+    //    return Ok(base.GetOdataListing(oDataQueryOptions));
+    //}
+
+    [HttpGet]
+    public virtual async Task<ActionResult<ODataDTO<ListDTO>>> GetNew(ODataQueryOptions<ListDTO> oDataQueryOptions)
     {
-        return Ok(base.GetOdataListing(oDataQueryOptions));
+        return Ok(await base.GetOdataListingNew(oDataQueryOptions));
     }
 
     [HttpGet("{key}")]
@@ -43,11 +44,17 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
         return (await base.GetSingle(key, asOf, null)).ActionResult;
     }
 
-    [HttpGet]
-    [EnableQueryWithHashIdConverter]
-    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
+    //[HttpGet]
+    //[EnableQueryWithHashIdConverter]
+    //public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
+    //{
+    //    return Ok(await base.GetRevisionListing(key));
+    //}
+
+    [HttpGet("{key}/revisions")]
+    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
-        return Ok(await base.GetRevisionListing(key));
+        return Ok(await base.GetRevisionListingNew(key, oDataQueryOptions));
     }
 
     [HttpPost]

@@ -87,47 +87,47 @@ public static class IMvcBuilderExtensions
 
         return builder;
     }
-    public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
-    {
-        ShiftEntityODataOptions o = new();
-        shiftEntityODataOptionsBuilder.Invoke(o);
+    //public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, Action<ShiftEntityODataOptions> shiftEntityODataOptionsBuilder)
+    //{
+    //    ShiftEntityODataOptions o = new();
+    //    shiftEntityODataOptionsBuilder.Invoke(o);
 
-        return AddShiftEntityOdata(builder, o);
-    }
-    public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, ShiftEntityODataOptions shiftEntityODataOptions)
-    {
-        builder.Services.TryAddSingleton(shiftEntityODataOptions);
+    //    return AddShiftEntityOdata(builder, o);
+    //}
+    //public static IMvcBuilder AddShiftEntityOdata(this IMvcBuilder builder, ShiftEntityODataOptions shiftEntityODataOptions)
+    //{
+    //    builder.Services.TryAddSingleton(shiftEntityODataOptions);
 
-        shiftEntityODataOptions.GenerateEdmModel();
+    //    shiftEntityODataOptions.GenerateEdmModel();
 
-        //Configre OData
-        builder.AddOData(oDataoptions =>
-        {
-            //oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
+    //    //Configre OData
+    //    builder.AddOData(oDataoptions =>
+    //    {
+    //        //oDataoptions.Count().Filter().Expand().Select().OrderBy().SetMaxTop(1000);
 
-            if (shiftEntityODataOptions._Count)
-                oDataoptions.Count();
-            if (shiftEntityODataOptions._Filter)
-                oDataoptions.Filter();
-            if (shiftEntityODataOptions._Expand)
-                oDataoptions.Expand();
-            if (shiftEntityODataOptions._Select)
-                oDataoptions.Select();
-            if (shiftEntityODataOptions._OrderBy)
-                oDataoptions.OrderBy();
+    //        if (shiftEntityODataOptions._Count)
+    //            oDataoptions.Count();
+    //        if (shiftEntityODataOptions._Filter)
+    //            oDataoptions.Filter();
+    //        if (shiftEntityODataOptions._Expand)
+    //            oDataoptions.Expand();
+    //        if (shiftEntityODataOptions._Select)
+    //            oDataoptions.Select();
+    //        if (shiftEntityODataOptions._OrderBy)
+    //            oDataoptions.OrderBy();
 
-            oDataoptions.SetMaxTop(shiftEntityODataOptions._MaxTop);
+    //        oDataoptions.SetMaxTop(shiftEntityODataOptions._MaxTop);
 
-            oDataoptions.AddRouteComponents(shiftEntityODataOptions.RoutePrefix, shiftEntityODataOptions.EdmModel, serviceCollection =>
-            {
-                serviceCollection
-                .AddHttpContextAccessor();
-                //.TryAddSingleton<TimeZoneService>();
+    //        oDataoptions.AddRouteComponents(shiftEntityODataOptions.RoutePrefix, shiftEntityODataOptions.EdmModel, serviceCollection =>
+    //        {
+    //            serviceCollection
+    //            .AddHttpContextAccessor();
+    //            //.TryAddSingleton<TimeZoneService>();
 
-                serviceCollection.RegisterConverters();
-            });
-        });
+    //            serviceCollection.RegisterConverters();
+    //        });
+    //    });
 
-        return builder;
-    }
+    //    return builder;
+    //}
 }

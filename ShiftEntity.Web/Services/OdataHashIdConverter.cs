@@ -41,59 +41,59 @@ public static class OdataHashIdConverter
     }
 }
 
-public class EnableQueryWithHashIdConverter : EnableQueryAttribute
-{
-    public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
-    {
-        ShiftEntityODataOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
+//public class EnableQueryWithHashIdConverter : EnableQueryAttribute
+//{
+//    public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
+//    {
+//        ShiftEntityODataOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
 
-        if (!HashId.Enabled)
-        {
-            base.OnActionExecuting(actionExecutingContext);
+//        if (!HashId.Enabled)
+//        {
+//            base.OnActionExecuting(actionExecutingContext);
 
-            return;
-        }
+//            return;
+//        }
 
-        var queryStringValue = actionExecutingContext.HttpContext.Request.QueryString.Value;
+//        var queryStringValue = actionExecutingContext.HttpContext.Request.QueryString.Value;
 
-        var originalUrl = actionExecutingContext.HttpContext.Request.GetEncodedUrl();
+//        var originalUrl = actionExecutingContext.HttpContext.Request.GetEncodedUrl();
 
-        if (!string.IsNullOrWhiteSpace(queryStringValue) && queryStringValue.Contains("$filter") && !actionExecutingContext.HttpContext.Request.Path.Value!.EndsWith("revisions"))
-        {
-            //This will remove the base url all the way to the odata prefix
-            //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
-            ///ToDo?$filter=ID eq 'MQaLZ'
-            var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.RoutePrefix) + options.RoutePrefix.Length);
+//        if (!string.IsNullOrWhiteSpace(queryStringValue) && queryStringValue.Contains("$filter") && !actionExecutingContext.HttpContext.Request.Path.Value!.EndsWith("revisions"))
+//        {
+//            //This will remove the base url all the way to the odata prefix
+//            //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
+//            ///ToDo?$filter=ID eq 'MQaLZ'
+//            var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.RoutePrefix) + options.RoutePrefix.Length);
 
-            ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri(relativePath, UriKind.Relative));
+//            ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri(relativePath, UriKind.Relative));
 
-            var odataUri = parser.ParseUri();
+//            var odataUri = parser.ParseUri();
 
-            FilterClause filterClause = parser.ParseFilter();
+//            FilterClause filterClause = parser.ParseFilter();
 
-            if (filterClause == null)
-            {
-                base.OnActionExecuting(actionExecutingContext);
+//            if (filterClause == null)
+//            {
+//                base.OnActionExecuting(actionExecutingContext);
 
-                return;
-            }
+//                return;
+//            }
 
-            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+//            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor());
 
-            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
+//            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
 
-            odataUri.Filter = modifiedFilterClause;
+//            odataUri.Filter = modifiedFilterClause;
 
-            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
+//            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
 
-            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
+//            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
 
-            actionExecutingContext.HttpContext.Request.QueryString = newQueryString;
-        }
+//            actionExecutingContext.HttpContext.Request.QueryString = newQueryString;
+//        }
 
-        base.OnActionExecuting(actionExecutingContext);
-    }
-}
+//        base.OnActionExecuting(actionExecutingContext);
+//    }
+//}
 
 public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode>
 {

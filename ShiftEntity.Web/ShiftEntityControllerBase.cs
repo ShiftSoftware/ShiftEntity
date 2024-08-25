@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
+using Microsoft.OData.ModelBuilder;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
@@ -96,54 +97,26 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         if (!isFilteringByIsDeleted)
             data = data.Where(x => x.IsDeleted == false);
 
-        if (oDataQueryOptions.Filter != null)
-        {
-            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor());
-
-            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
-
-            ODataUriParser parser = new ODataUriParser(oDataQueryOptions.Context.Model, new Uri("", UriKind.Relative));
-
-            var odataUri = parser.ParseUri();
-
-            odataUri.Filter = modifiedFilterClause;
-
-            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
-
-            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
-
-            this.Request.QueryString = newQueryString;
-
-            var modifiedODataQueryOptions = new ODataQueryOptions<ListDTO>(oDataQueryOptions.Context, Request);
-
-            data = (modifiedODataQueryOptions.Filter.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<ListDTO>)!;
-        }
-
-        if (oDataQueryOptions.OrderBy != null)
-            data = oDataQueryOptions.OrderBy.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<ListDTO>;
-
-        var count = await data.CountAsync();
-
-        if (oDataQueryOptions.Skip != null)
-            data = data.Skip(oDataQueryOptions.Skip.Value);
-
-        if (oDataQueryOptions.Top != null)
-            data = data.Take(oDataQueryOptions.Top.Value);
-
-        return new ODataDTO<ListDTO>
-        {
-            Count = count,
-            Value = await data.ToListAsync(),
-        };
+        return await ODataIqueryable.GetOdataDTOFromIQueryable(data, oDataQueryOptions, Request);
     }
 
 
+    //[NonAction]
+    //public async Task<ODataDTO<RevisionDTO>> GetRevisionListing(string key)
+    //{
+    //    var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+    //    return await repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+    //}
+
     [NonAction]
-    public async Task<List<RevisionDTO>> GetRevisionListing(string key)
+    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNew(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        return await repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+
+        return await ODataIqueryable.GetOdataDTOFromIQueryable(data, oDataQueryOptions, Request);
     }
 
     [NonAction]
@@ -470,11 +443,17 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
             if (!string.IsNullOrWhiteSpace(ids.Filter))
             {
-                ShiftEntityODataOptions options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
+                //ShiftEntityODataOptions options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
+
+                var builder = new ODataConventionModelBuilder();
+
+                builder.EntitySet<ListDTO>("ListDTOs");
+
+                var model = builder.GetEdmModel();
 
                 this.Request.QueryString = this.Request.QueryString.Add("$filter", ids.Filter);
 
-                ODataQueryContext oDataQueryContext = new ODataQueryContext(options.EdmModel, typeof(ListDTO), new());
+                ODataQueryContext oDataQueryContext = new ODataQueryContext(model, typeof(ListDTO), new());
 
                 ODataQueryOptions<ListDTO> modifiedODataQueryOptions = new(oDataQueryContext, this.Request);
 
@@ -482,7 +461,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
                 FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, modifiedODataQueryOptions.Filter.FilterClause.RangeVariable);
 
-                ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri("", UriKind.Relative));
+                ODataUriParser parser = new ODataUriParser(model, new Uri("", UriKind.Relative));
 
                 var odataUri = parser.ParseUri();
 
@@ -498,7 +477,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
                 listDTOData = modifiedODataQueryOptions2.Filter.ApplyTo(listDTOData, new ODataQuerySettings()) as IQueryable<ListDTO>;
 
-                var filteredIds = listDTOData!.Select(x => x.ID!.ToLong()).ToList();
+                var filteredIds = await listDTOData!.Select(x => x.ID!.ToLong()).ToListAsync();
 
                 data = data.Where(x => filteredIds.Contains(x.ID));
             }

@@ -191,9 +191,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return query;
     }
 
-    public virtual async Task<List<RevisionDTO>> GetRevisionsAsync(long id)
+    public virtual IQueryable<RevisionDTO> GetRevisionsAsync(long id)
     {
-        var items = (await dbSet
+        return dbSet
                 .TemporalAll()
                 .AsNoTracking()
                 .Where(x => EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id)
@@ -204,17 +204,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                     ValidTo = EF.Property<DateTime>(x, "PeriodEnd"),
                     SavedByUserID = EF.Property<long?>(x, nameof(ShiftEntity<EntityType>.LastSavedByUserID)),
                 })
-                .OrderByDescending(x => x.ValidTo)
-                .ToListAsync())
                 .Select(x => new RevisionDTO
                 {
                     ID = x.ID.ToString(),
-                    ValidFrom = new DateTimeOffset(x.ValidFrom, TimeSpan.Zero),
-                    ValidTo = new DateTimeOffset(x.ValidTo, TimeSpan.Zero),
+                    ValidFrom = x.ValidFrom,
+                    ValidTo = x.ValidTo,
                     SavedByUserID = x.SavedByUserID == null ? null : x.SavedByUserID.ToString(),
-                }).ToList();
-
-        return items;
+                });
     }
 
     public virtual void Add(EntityType entity)

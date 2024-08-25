@@ -28,6 +28,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="ShiftEntityODataOptions.cs" />
+	  <Compile Remove="ShiftEntityODataSerializerProvider.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="8.2.5" />

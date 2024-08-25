@@ -1,31 +1,29 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OData;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
+using ShiftSoftware.ShiftEntity.Print;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
+using ShiftSoftware.TypeAuth.Core;
+using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OData;
-using ShiftSoftware.TypeAuth.Core.Actions;
-using Microsoft.AspNetCore.Authorization;
-using ShiftSoftware.TypeAuth.AspNetCore.Services;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using System.Linq.Expressions;
-using ShiftSoftware.TypeAuth.Core;
-using ShiftSoftware.ShiftEntity.Model.HashIds;
-using ShiftSoftware.ShiftEntity.Core.Services;
-using ShiftSoftware.ShiftEntity.Print;
-using Microsoft.AspNetCore.Http;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
-using ShiftSoftware.ShiftEntity.Core.Flags;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
 
@@ -52,87 +50,10 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         }
     }
 
-    [HttpGet]
-    [EnableQueryWithHashIdConverter]
-    [Authorize]
-    public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
-    {
-        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
-
-        if (action is not null && !typeAuthService.CanRead(action))
-            return Forbid();
-
-        var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID()!);
-        var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID()!);
-        var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID()!);
-        var accessibleBrandsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Brands, x => x == TypeAuth.Core.Access.Read);
-        var accessibleCitiesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Cities, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCityID()!);
-
-        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
-        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
-        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
-        List<long?>? accessibleBrands = accessibleBrandsTypeAuth.WildCard ? null : accessibleBrandsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<BrandDTO>(x)).ToList();
-        List<long?>? accessibleCities = accessibleCitiesTypeAuth.WildCard ? null : accessibleCitiesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CityDTO>(x)).ToList();
-
-        Expression<Func<Entity, bool>> companyWhere = x => true;
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultRegionFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
-                companyWhere = companyWhere.AndAlso(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<Entity>)!.RegionID));
-        }
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
-                companyWhere = companyWhere.AndAlso(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<Entity>)!.CompanyID));
-        }
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
-                companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
-        }
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultBrandFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasBrand<Entity>))))
-                companyWhere = companyWhere.AndAlso(x => accessibleBrands == null ? true : accessibleBrands.Contains((x as IEntityHasBrand<Entity>)!.BrandID));
-        }
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCityFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCity<Entity>))))
-                companyWhere = companyWhere.AndAlso(x => accessibleCities == null ? true : accessibleCities.Contains((x as IEntityHasCity<Entity>)!.CityID));
-        }
-
-        //(accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
-        //(accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
-        //(accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
-
-        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultTeamFilter))
-        {
-            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
-            {
-                var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
-
-                List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
-
-                companyWhere = companyWhere.AndAlso(x => accessibleTeams == null ? true : accessibleTeams.Contains((x as IEntityHasTeam<Entity>)!.TeamID));
-            }
-        }
-
-        var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
-
-        var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
-
-        //return Ok(base.GetOdataListing(oDataQueryOptions, companyWhere));
-        return Ok(base.GetOdataListing(oDataQueryOptions, finalWhere));
-    }
-
     //[HttpGet]
+    //[EnableQueryWithHashIdConverter]
     //[Authorize]
-    //public virtual async Task<ActionResult<ODataDTO<ListDTO>>> GetNew(ODataQueryOptions<ListDTO> oDataQueryOptions)
+    //public virtual ActionResult<ODataDTO<IQueryable<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
     //{
     //    var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
@@ -203,8 +124,85 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     //    var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
 
-    //    return Ok(await base.GetOdataListingNew(oDataQueryOptions, finalWhere));
+    //    //return Ok(base.GetOdataListing(oDataQueryOptions, companyWhere));
+    //    return Ok(base.GetOdataListing(oDataQueryOptions, finalWhere));
     //}
+
+    [HttpGet]
+    [Authorize]
+    public virtual async Task<ActionResult<ODataDTO<ListDTO>>> GetNew(ODataQueryOptions<ListDTO> oDataQueryOptions)
+    {
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+        if (action is not null && !typeAuthService.CanRead(action))
+            return Forbid();
+
+        var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID()!);
+        var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID()!);
+        var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID()!);
+        var accessibleBrandsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Brands, x => x == TypeAuth.Core.Access.Read);
+        var accessibleCitiesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Cities, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCityID()!);
+
+        List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
+        List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
+        List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
+        List<long?>? accessibleBrands = accessibleBrandsTypeAuth.WildCard ? null : accessibleBrandsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<BrandDTO>(x)).ToList();
+        List<long?>? accessibleCities = accessibleCitiesTypeAuth.WildCard ? null : accessibleCitiesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CityDTO>(x)).ToList();
+
+        Expression<Func<Entity, bool>> companyWhere = x => true;
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultRegionFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<Entity>)!.RegionID));
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<Entity>)!.CompanyID));
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCompanyBranchFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<Entity>)!.CompanyBranchID));
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultBrandFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasBrand<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleBrands == null ? true : accessibleBrands.Contains((x as IEntityHasBrand<Entity>)!.BrandID));
+        }
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultCityFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCity<Entity>))))
+                companyWhere = companyWhere.AndAlso(x => accessibleCities == null ? true : accessibleCities.Contains((x as IEntityHasCity<Entity>)!.CityID));
+        }
+
+        //(accessibleRegions == null ? true : accessibleRegions.Contains(x.RegionID)) &&
+        //(accessibleCompanies == null ? true : accessibleCompanies.Contains(x.CompanyID)) &&
+        //(accessibleBranches == null ? true : accessibleBranches.Contains(x.CompanyBranchID));
+
+        if (!(this.dynamicActionFilterBuilder is not null && this.dynamicActionFilterBuilder.DisableDefaultTeamFilter))
+        {
+            if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<Entity>))))
+            {
+                var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
+
+                List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
+
+                companyWhere = companyWhere.AndAlso(x => accessibleTeams == null ? true : accessibleTeams.Contains((x as IEntityHasTeam<Entity>)!.TeamID));
+            }
+        }
+
+        var dynamicActionWhere = GetDynamicActionExpression(typeAuthService, Access.Read, this.HttpContext.GetUserID());
+
+        var finalWhere = dynamicActionWhere is null ? companyWhere : companyWhere.AndAlso(dynamicActionWhere);
+
+        return Ok(await base.GetOdataListingNew(oDataQueryOptions, finalWhere));
+    }
 
     private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
     {
@@ -485,16 +483,16 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     }
 
     [Authorize]
-    [HttpGet]
-    [EnableQueryWithHashIdConverter]
-    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key)
+    [HttpGet("{key}/revisions")]
+    //[EnableQueryWithHashIdConverter]
+    public virtual async Task<ActionResult<ODataDTO<List<RevisionDTO>>>> GetRevisions(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
-        return Ok(await base.GetRevisionListing(key));
+        return Ok(await base.GetRevisionListingNew(key, oDataQueryOptions));
     }
 
     [Authorize]
