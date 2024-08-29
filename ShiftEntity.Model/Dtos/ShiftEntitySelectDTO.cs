@@ -9,6 +9,8 @@ public class ShiftEntitySelectDTO
     [JsonConverter(typeof(LocalizedTextJsonConverter))]
     public string? Text { get; set; }
 
+    public List<ShiftEntitySelectDTO>? Nested { get; set; }
+
     [JsonIgnore]
     public object? Data { get; set; }
 }
