@@ -1,15 +1,8 @@
 ﻿using Microsoft.Azure.Cosmos;
-using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 

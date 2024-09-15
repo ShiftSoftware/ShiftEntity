@@ -5,6 +5,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 

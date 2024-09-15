@@ -1,5 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Entities;
 

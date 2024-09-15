@@ -1,4 +1,4 @@
-﻿namespace ShiftSoftware.ShiftEntity.Core;
+﻿namespace ShiftSoftware.ShiftEntity.Model.Enums;
 
 public enum PartitionKeyTypes
 {
