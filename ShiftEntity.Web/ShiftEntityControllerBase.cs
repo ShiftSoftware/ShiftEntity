@@ -16,6 +16,7 @@ using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -430,12 +431,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         }
     }
 
-    [NonAction]
-    public virtual async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids)
+    internal async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids, Expression<Func<Entity, bool>>? defaultFilterExpression)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         var data = repository.GetIQueryable().Where(x => !x.IsDeleted);
+
+        if (defaultFilterExpression is not null)
+            data = data.Where(defaultFilterExpression);
 
         if (ids.All)
         {
