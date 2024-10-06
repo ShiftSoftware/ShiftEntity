@@ -41,6 +41,16 @@ public static class HttpContextExtensions
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Region.RegionDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.RegionIdClaim)?.FirstOrDefault();
     }
 
+    internal static string? GetHashedCountryID(this HttpContext httpContext)
+    {
+        return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CountryIdClaim)?.FirstOrDefault();
+    }
+
+    internal static long? GetCountryID(this HttpContext httpContext)
+    {
+        return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.Country.CountryDTO>(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CountryIdClaim)?.FirstOrDefault();
+    }
+
     internal static string? GetHashedCompanyID(this HttpContext httpContext)
     {
         return GetClaimValues(httpContext, ShiftSoftware.ShiftEntity.Core.Constants.CompanyIdClaim)?.FirstOrDefault();
