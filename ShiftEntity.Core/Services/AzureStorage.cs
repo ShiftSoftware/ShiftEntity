@@ -126,6 +126,12 @@ public class AzureStorageService
     {
         return azureStorageAccounts[accountName].DefaultContainerName;
     }
+
+    public BlobServiceClient GetBlobServiceClient(string? accountName = null)
+    {
+        accountName = accountName ?? defaultAccountName;
+        return blobServiceClients[accountName];
+    }
 }
 
 
