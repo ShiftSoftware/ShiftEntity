@@ -1,8 +1,10 @@
-﻿using ShiftSoftware.ShiftEntity.Model.Replication;
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
-public class RegionModel : ReplicationModel
+public class CityRegionModel : ReplicationModel
 {
     public string CountryID { get; set; } = default!;
     public string RegionID { get; set; } = default!;
@@ -10,5 +12,6 @@ public class RegionModel : ReplicationModel
     public string? IntegrationId { get; set; } = default!;
     public string? ShortCode { get; set; }
     public bool BuiltIn { get; set; }
-    public string ItemType { get; set; } = default!;
+
+    public CountryModel Country { get; set; }
 }
