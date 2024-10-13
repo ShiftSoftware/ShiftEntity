@@ -1,11 +1,12 @@
 ﻿using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
 
 public class ZipResponse
 {
     [QueueOutput(Queues.Zip)]
-    public ZipMessages[] Messages { get; set; }
+    public ZipOptionsDTO[] Messages { get; set; }
     public HttpResponseData HttpResponse { get; set; }
 }
