@@ -6,12 +6,12 @@ using System.IO.Compression;
 
 namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
 
-public class FMM
+public class ArchiveOperations
 {
     private AzureStorageService azureStorageService;
     private CompressionLevel Level = CompressionLevel.NoCompression;
 
-    public FMM(AzureStorageService azureStorageService)
+    public ArchiveOperations(AzureStorageService azureStorageService)
     {
         this.azureStorageService = azureStorageService;
     }
