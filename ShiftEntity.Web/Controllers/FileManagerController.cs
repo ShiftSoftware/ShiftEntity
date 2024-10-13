@@ -53,7 +53,7 @@ public class FileManagerController : ControllerBase
         filePath = filePath.Replace("../", "");
 
         // create an empty dir if the root dir doesn't exist
-        var rootDirItem = blob.GetBlobContainerClient(AzureAccount.DefaultContainerName).GetBlobClient(rootDir + "/About.txt");
+        var rootDirItem = blob.GetBlobContainerClient(AzureAccount.DefaultContainerName).GetBlobClient(rootDir + "/" + Constants.FileManagerHiddenFilename);
         if (!rootDirItem.Exists())
         {
             rootDirItem.Upload(new MemoryStream());
@@ -86,7 +86,7 @@ public class FileManagerController : ControllerBase
             case "read":
                 // Reads the file(s) or folder(s) from the given path.
                 var response = this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data);
-                response.Files = response.Files.Where(x => x.Name != "About.txt");
+                response.Files = response.Files.Where(x => x.Name != Constants.FileManagerHiddenFilename);
 
                 try
                 {

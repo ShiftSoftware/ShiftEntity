@@ -1,5 +1,7 @@
-﻿using Azure.Storage.Blobs.Models;
+﻿using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System.IO.Compression;
@@ -18,17 +20,15 @@ public class ArchiveOperations
 
     public async Task ZipFiles(ZipOptionsDTO zipOptions, CancellationToken cancellationToken)
     {
-        var accountName = azureStorageService.GetDefaultAccountName();
-        var client = azureStorageService.GetBlobServiceClient(accountName);
-        var containerName = azureStorageService.GetDefaultContainerName(accountName);
-        var container = client.GetBlobContainerClient(containerName);
+        var container = GetContainer(zipOptions.ContainerName);
 
         var zipFileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}.{Guid.NewGuid().ToString().Substring(0, 4)}.zip";
-
-        var blob = container.GetBlockBlobClient(zipOptions.Path.AddUrlPath(zipFileName));
+        var zipFileFullname = zipOptions.Path.AddUrlPath(zipFileName);
+        var blob = container.GetBlockBlobClient(zipFileFullname);
 
         try
         {
+            // create an empty zip file
             var zipStream = await blob.OpenWriteAsync(true, options: new BlockBlobOpenWriteOptions
             {
                 HttpHeaders = new BlobHttpHeaders
@@ -44,10 +44,10 @@ public class ArchiveOperations
             {
                 var filesToArchive = new List<string>();
 
+                // get all files, including files in sub directories
                 foreach (var fileName in zipOptions.Names)
                 {
                     var filePath = zipOptions.Path.AddUrlPath(fileName);
-
                     var blockBlobClient = container.GetBlockBlobClient(filePath);
                     if (blockBlobClient.Exists())
                     {
@@ -59,11 +59,12 @@ public class ArchiveOperations
                         var files = container
                             .GetBlobs(BlobTraits.None, BlobStates.None, filePath + "/", cancellationToken)
                             .Select(x => x.Name)
-                            .Where(x => !x.EndsWith("/About.txt"));
+                            .Where(x => !x.EndsWith("/" + Constants.FileManagerHiddenFilename));
                         filesToArchive.AddRange(files);
                     }
                 }
                 
+                // add the selected files to the zip file
                 foreach (var filePath in filesToArchive)
                 {
                     var blockBlobClient = container.GetBlockBlobClient(filePath);
@@ -80,6 +81,7 @@ public class ArchiveOperations
         }
         catch (Exception)
         {
+            // delete the zip file if the operation fails midway
             var res = await blob.DeleteIfExistsAsync(cancellationToken: CancellationToken.None);
             throw;
         }
@@ -88,21 +90,21 @@ public class ArchiveOperations
 
     public async Task UnzipFiles(ZipOptionsDTO zipOptions, CancellationToken cancellationToken)
     {
-        var accountName = azureStorageService.GetDefaultAccountName();
-        var client = azureStorageService.GetBlobServiceClient(accountName);
-        var containerName = azureStorageService.GetDefaultContainerName(accountName);
-        var container = client.GetBlobContainerClient(containerName);
+        var container = GetContainer(zipOptions.ContainerName);
 
         var fileName = zipOptions.Names.First();
-        var blob = container.GetBlockBlobClient(zipOptions.Path.AddUrlPath(fileName));
+        var fileFullName = zipOptions.Path.AddUrlPath(fileName);
+        var blob = container.GetBlockBlobClient(fileFullName);
 
         var zipStream = await blob.OpenReadAsync(cancellationToken: cancellationToken);
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, false))
         {
             foreach (var entry in archive.Entries)
             {
-                if (entry.Length == 0) continue;
+                // check if entry is a folder then don't create a file for it
+                if (entry.FullName.EndsWith("/")) continue;
 
+                // create a file for each entry in the zip file
                 var blockBlobClient = container.GetBlockBlobClient(zipOptions.Path.AddUrlPath(entry.FullName));
 
                 using var entryStream = entry.Open();
@@ -118,6 +120,14 @@ public class ArchiveOperations
         }
 
         zipStream.Dispose();
+    }
+
+    private BlobContainerClient GetContainer(string? _containerName)
+    {
+        var accountName = azureStorageService.GetDefaultAccountName();
+        var client = azureStorageService.GetBlobServiceClient(accountName);
+        var containerName = _containerName ?? azureStorageService.GetDefaultContainerName(accountName);
+        return client.GetBlobContainerClient(containerName);
     }
     
 }

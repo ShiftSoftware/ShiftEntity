@@ -9,4 +9,5 @@ public class Constants
     public const string TeamIdsClaim = "ShiftSoftware/ShiftEntity/Claims/TeamIds";
     public const string CityIdClaim = "ShiftSoftware/ShiftEntity/Claims/CityId";
     public const string HttpHeaderVersioning = "Versioning";
+    public const string FileManagerHiddenFilename = "About.txt";
 }
