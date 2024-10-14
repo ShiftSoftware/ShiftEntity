@@ -11,8 +11,15 @@ internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity 
         {
             var now = DateTime.UtcNow;
 
-            context.Entity.LastSaveDate = now;
-            context.Entity.CreateDate = now;
+
+            //context.Entity.Create() method allows setting the CreateDate and LastSaveDate properties
+            //If it's set, we don't override it
+
+            if (context.Entity.LastSaveDate == default)
+                context.Entity.LastSaveDate = now;
+
+            if (context.Entity.CreateDate == default)
+                context.Entity.CreateDate = now;
 
             context.Entity.IsDeleted = false;
         }

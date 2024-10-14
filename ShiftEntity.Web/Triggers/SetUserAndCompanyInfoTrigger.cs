@@ -42,10 +42,19 @@ internal class SetUserAndCompanyInfoTrigger<Entity> : IBeforeSaveTrigger<Entity>
 
             if (context.Entity.GetType().GetCustomAttributes<ShiftIdentity.Core.DontSetCompanyInfoOnThisEntityWithAutoTrigger>().Count() == 0)
             {
+                long? countryId = http!.HttpContext!.GetCountryID();
                 long? regionId = http!.HttpContext!.GetRegionID();
                 long? companyId = http!.HttpContext!.GetCompanyID();
                 long? companyBranchId = http!.HttpContext!.GetCompanyBranchID();
                 long? cityId = http!.HttpContext!.GetCityID();
+
+                if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCountry<Entity>))))
+                {
+                    var entityWithCountry = (IEntityHasCountry<Entity>)context.Entity;
+
+                    if (entityWithCountry.CountryID is null)
+                        entityWithCountry.CountryID = countryId;
+                }
 
                 if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<Entity>))))
                 {

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
@@ -39,6 +40,7 @@ public class ShiftEntityOptions
     }
 
     public HashIdOptions HashId { get; set; }
+    public JsonNamingPolicy? JsonNamingPolicy { get; set; } = null;
 
     public ShiftEntityOptions()
     {

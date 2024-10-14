@@ -58,7 +58,7 @@ public static class IMvcBuilderExtensions
         {
             Action<JsonOptions> options = (o) =>
             {
-                o.JsonSerializerOptions.PropertyNamingPolicy = null;
+                o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
                 //o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
 
                 if (shiftEntityOptions.azureStorageOptions.Count > 0)
