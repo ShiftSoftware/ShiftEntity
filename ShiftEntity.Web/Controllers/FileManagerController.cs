@@ -1,25 +1,20 @@
-﻿using Azure.Storage.Blobs.Models;
-using Azure.Storage.Blobs;
-using Azure;
-using Azure.Storage.Sas;
+﻿using Azure.Storage.Sas;
 using Microsoft.AspNetCore.Mvc;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
-using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.TypeAuth.AspNetCore;
-using ShiftSoftware.TypeAuth.Core;
 using Syncfusion.EJ2.FileManager.AzureFileProvider;
 using Syncfusion.EJ2.Linq;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -31,6 +26,8 @@ public class FileManagerController : ControllerBase
     public AzureFileProvider operation;
     private AzureStorageService azureStorageService;
     private AzureStorageOption AzureAccount;
+    private HttpClient httpClient;
+    private string AzureFunctionsEndpoint;
 
     public string blobPath { get; set; }
     public string filePath { get; set; }
@@ -38,10 +35,19 @@ public class FileManagerController : ControllerBase
     private string rootDir = "FileManager";
 
     [Obsolete]
-    public FileManagerController(AzureStorageService azureStorageService)
+    public FileManagerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration)
     {
         this.azureStorageService = azureStorageService;
+        this.httpClient = httpClient;
         this.operation = new AzureFileProvider();
+
+        // temp
+        var endpoint = configuration.GetValue<string>("AzureFunctions:Endpoint");
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            throw new ArgumentNullException("AzureFunctions:Endpoint not found in appsettings.json");
+        }
+        this.AzureFunctionsEndpoint = endpoint; 
 
         var accountName = azureStorageService.GetDefaultAccountName();
         AzureAccount = azureStorageService.azureStorageAccounts[accountName];
@@ -146,6 +152,20 @@ public class FileManagerController : ControllerBase
             Response.HttpContext.Features.Get<IHttpResponseFeature>().ReasonPhrase = uploadResponse.Error.Message;
         }
         return Ok();
+    }
+
+    [HttpPost("ZipFiles")]
+    public async Task<ActionResult> ZipFiles(ZipOptionsDTO zipOptions)
+    {
+        var res = await httpClient.PostAsJsonAsync(AzureFunctionsEndpoint + "/api/zip", zipOptions);
+        return StatusCode((int)res.StatusCode);
+    }
+
+    [HttpPost("UnzipFiles")]
+    public async Task<ActionResult> UnzipFiles(ZipOptionsDTO zipOptions)
+    {
+        var res = await httpClient.PostAsJsonAsync(AzureFunctionsEndpoint+ "/api/unzip", zipOptions);
+        return StatusCode((int)res.StatusCode);
     }
 
     public string ToCamelCase(object userData)
