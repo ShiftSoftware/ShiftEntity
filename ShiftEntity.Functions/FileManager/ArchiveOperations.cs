@@ -2,6 +2,7 @@
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System.IO.Compression;
@@ -35,6 +36,10 @@ public class ArchiveOperations
                 {
                     ContentType = "application/zip",
                 },
+                Metadata = new Dictionary<string, string>()
+                {
+                    [Constants.FileManagerHiddenMetadataKey] = "true",
+                },
             }, cancellationToken: cancellationToken);
 
             //var stream = DeflateStream.Synchronized(zipStream);
@@ -48,19 +53,18 @@ public class ArchiveOperations
                 foreach (var fileName in zipOptions.Names)
                 {
                     var filePath = zipOptions.Path.AddUrlPath(fileName);
-                    var blockBlobClient = container.GetBlockBlobClient(filePath);
-                    if (blockBlobClient.Exists())
+
+                    if (fileName.EndsWith("/"))
                     {
-                        filesToArchive.Add(blockBlobClient.Name);
-                    }
-                    else
-                    {
-                        // if the blob can't be found then assume it is a virtual directory
                         var files = container
                             .GetBlobs(BlobTraits.None, BlobStates.None, filePath + "/", cancellationToken)
                             .Select(x => x.Name)
                             .Where(x => !x.EndsWith("/" + Constants.FileManagerHiddenFilename));
                         filesToArchive.AddRange(files);
+                    }
+                    else
+                    {
+                        filesToArchive.Add(filePath);
                     }
                 }
                 
@@ -78,6 +82,7 @@ public class ArchiveOperations
             zipStream.Dispose();
             cancellationToken.ThrowIfCancellationRequested();
 
+            blob.SetMetadata(null, cancellationToken: cancellationToken);
         }
         catch (Exception)
         {

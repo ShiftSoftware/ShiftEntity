@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
+namespace ShiftSoftware.ShiftEntity.Core.Extensions;
 
 public static class StringExtension
 {
