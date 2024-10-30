@@ -56,6 +56,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
         public AzureFileProvider(AzureStorageService azureStorageService)
         {
+            this.azureStorageService = azureStorageService;
             var accountName = azureStorageService.GetDefaultAccountName();
             var containerName = azureStorageService.GetDefaultContainerName(accountName);
             var client = azureStorageService.blobServiceClients[accountName];
