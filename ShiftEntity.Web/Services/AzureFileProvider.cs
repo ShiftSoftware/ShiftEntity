@@ -46,17 +46,18 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         public HttpContext HttpContext;
 
         private AzureStorageService? azureStorageService;
-        private const string rootDir = "FileManager";
-
+        private readonly string rootDir;
 
         public AzureFileProvider()
         {
 
         }
 
-        public AzureFileProvider(AzureStorageService azureStorageService)
+        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir)
         {
             this.azureStorageService = azureStorageService;
+            this.rootDir = rootDir;
+
             var accountName = azureStorageService.GetDefaultAccountName();
             var containerName = azureStorageService.GetDefaultContainerName(accountName);
             var client = azureStorageService.blobServiceClients[accountName];
@@ -109,7 +110,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             try
             {
                 // Check if there are any items in this dir or any sub dirs
-                var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 1).GetAsyncEnumerator();
+                var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 100).GetAsyncEnumerator();
                 await blobPages.MoveNextAsync();
 
                 if (!blobPages.Current.Values.Any())
@@ -135,10 +136,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
                     {
-                        var isHidden = item.Metadata.TryGetValue(Constants.FileManagerHiddenMetadataKey, out _);
+                        //var isHidden = item.Metadata.TryGetValue(Constants.FileManagerHiddenMetadataKey, out _);
                         var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileManagerHiddenFilename);
                         var fileTypeIsFiltered = Array.IndexOf(extensions, "*." + item.Name.ToString().Trim().Split('.')[item.Name.ToString().Trim().Split('.').Length - 1]) < 0;
-                        var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile || isHidden;
+                        var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile;// || isHidden;
                         if (skip) continue;
 
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
@@ -165,10 +166,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
-                        entry.HasChild = await HasChildDirectory(dir);
+                        //entry.HasChild = await HasChildDirectory(dir);
                         entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
-                        entry.DateModified = await DirectoryLastModified(dir);
-                        entry.Permission = GetPathPermission(dir, isFile: false);
+                        //entry.DateModified = await DirectoryLastModified(dir);
+                        //entry.Permission = GetPathPermission(dir, isFile: false);
                         lastUpdated = prevUpdated = DateTime.MinValue;
                         details.Add(entry);
                     }
