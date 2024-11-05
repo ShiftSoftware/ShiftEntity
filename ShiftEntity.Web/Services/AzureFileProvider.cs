@@ -26,24 +26,16 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
     {
         List<FileManagerDirectoryContent> directoryContentItems = new List<FileManagerDirectoryContent>();
         BlobContainerClient container;
-        AccessDetails AccessDetails = new AccessDetails();
-        private string rootName = string.Empty;
-        private string accessMessage = string.Empty;
-        string pathValue;
         public string blobPath;
         public string filesPath;
         long size;
         static string rootPath;
-        string currentFolderName = "";
-        string previousFolderName = "";
-        string initialFolderName = "";
         List<string> existFiles = new List<string>();
         List<string> missingFiles = new List<string>();
         bool isFolderAvailable = false;
         List<FileManagerDirectoryContent> copiedFiles = new List<FileManagerDirectoryContent>();
         DateTime lastUpdated = DateTime.MinValue;
         DateTime prevUpdated = DateTime.MinValue;
-        public HttpContext HttpContext;
 
         private AzureStorageService? azureStorageService;
         private readonly string rootDir;
@@ -88,12 +80,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             rootPath = filesPath.Replace(blobPath, "");
         }
 
-        public void SetRules(AccessDetails details)
-        {
-            AccessDetails = details;
-            DirectoryInfo root = new DirectoryInfo(rootPath);
-            rootName = root.Name;
-        }
         // Reads the storage 
         public FileManagerResponse GetFiles(string path, bool showHiddenItems, FileManagerDirectoryContent[] selectedItems)
         {
@@ -129,7 +115,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.Type = "File Folder";
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
-                cwd.Permission = GetPathPermission(path, isFile: false);
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
@@ -150,7 +135,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.DateModified = item.Properties.LastModified.Value.LocalDateTime;
                         entry.HasChild = false;
                         entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
-                        entry.Permission = GetPermission(item.Name.Replace(entry.Name, ""), entry.Name, isFile: true);
 
                         entry.TargetPath = azureStorageService?.GetSignedURL(rootDir + entry.FilterPath + entry.Name, BlobSasPermissions.Read, container.Name);
 
@@ -166,10 +150,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
-                        //entry.HasChild = await HasChildDirectory(dir);
+                        entry.HasChild = false;
                         entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
                         //entry.DateModified = await DirectoryLastModified(dir);
-                        //entry.Permission = GetPathPermission(dir, isFile: false);
                         lastUpdated = prevUpdated = DateTime.MinValue;
                         details.Add(entry);
                     }
@@ -182,29 +165,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             }
             catch (Exception)
             {
-                return readResponse;
-            }
-
-            try
-            {
-                if (cwd.Permission != null && !cwd.Permission.Read)
-                {
-                    readResponse.Files = null;
-                    accessMessage = cwd.Permission.Message;
-                    throw new UnauthorizedAccessException("'" + cwd.Name + "' is not accessible. You need permission to perform the read action.");
-                }
-            }
-            catch (Exception e)
-            {
-                ErrorDetails errorDetails = new ErrorDetails();
-                errorDetails.Message = e.Message.ToString();
-                errorDetails.Code = errorDetails.Message.Contains("is not accessible. You need permission") ? "401" : "417";
-                if (errorDetails.Code == "401" && !string.IsNullOrEmpty(accessMessage))
-                {
-                    errorDetails.Message = accessMessage;
-                }
-
-                readResponse.Error = errorDetails;
                 return readResponse;
             }
 
@@ -348,14 +308,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             isFolderAvailable = false;
             FileManagerResponse createResponse = new FileManagerResponse();
-            AccessPermission PathPermission = GetPathPermission(path, false);
             try
             {
-                if (PathPermission != null && (!PathPermission.Read || !PathPermission.WriteContents))
-                {
-                    accessMessage = PathPermission.Message;
-                    throw new UnauthorizedAccessException("'" + getFileNameFromPath(path) + "' is not accessible. You need permission to perform the writeContents action.");
-                }
                 CreateFolderAsync(path, name, selectedItems).GetAwaiter().GetResult();
                 if (!isFolderAvailable)
                 {
@@ -378,8 +332,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 ErrorDetails er = new ErrorDetails();
                 er.Message = e.Message.ToString();
-                er.Code = er.Message.Contains("is not accessible. You need permission") ? "401" : "417";
-                if (er.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { er.Message = accessMessage; }
+                er.Code = "417";
                 createResponse.Error = er;
                 return createResponse;
             }
@@ -418,12 +371,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
             try
             {
-                AccessPermission permission = GetPermission(GetPath(path), oldName, selectedItems[0].IsFile);
-                if (permission != null && (!permission.Read || !permission.Write))
-                {
-                    accessMessage = permission.Message;
-                    throw new UnauthorizedAccessException();
-                }
                 bool isAlreadyAvailable = false;
                 bool isFile = false;
                 foreach (FileManagerDirectoryContent fileItem in selectedItems)
@@ -480,9 +427,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             catch (Exception e)
             {
                 ErrorDetails er = new ErrorDetails();
-                er.Message = e.GetType().Name == "UnauthorizedAccessException" ? "'" + getFileNameFromPath(path + oldName) + "' is not accessible. You need permission to perform the write action." : e.Message.ToString();
-                er.Code = er.Message.Contains("is not accessible. You need permission") ? "401" : "417";
-                if (er.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { er.Message = accessMessage; }
+                er.Message = e.Message.ToString();
+                er.Code = "417";
                 renameResponse.Error = er;
                 return renameResponse;
             }
@@ -502,21 +448,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
             try
             {
-                foreach (FileManagerDirectoryContent item in selectedItems)
-                {
-                    AccessPermission permission = GetPermission(path, item.Name, item.IsFile);
-                    if (permission != null && (!permission.Read || !permission.Write))
-                    {
-                        accessMessage = permission.Message;
-                        throw new UnauthorizedAccessException("'" + path + item.Name + "' is not accessible.  You need permission to perform the write action.");
-                    }
-                    AccessPermission PathPermission = GetPathPermission(path, item.IsFile);
-                    if (PathPermission != null && (!PathPermission.Read || !PathPermission.Write))
-                    {
-                        accessMessage = permission.Message;
-                        throw new UnauthorizedAccessException("'" + getFileNameFromPath(path) + "' is not accessible.  You need permission to perform the write action.");
-                    }
-                }
                 foreach (FileManagerDirectoryContent fileItem in selectedItems)
                 {
                     if (fileItem.IsFile)
@@ -566,277 +497,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 ErrorDetails er = new ErrorDetails();
                 er.Message = e.Message.ToString();
-                er.Code = er.Message.Contains(" is not accessible.  You need permission") ? "401" : "417";
-                if (er.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { er.Message = accessMessage; }
+                er.Code = "417";
                 removeResponse.Error = er;
                 return removeResponse;
             }
             removeResponse.Files = details;
             return removeResponse;
-        }
-
-        // Upload file(s) to the storage
-        public FileManagerResponse Upload(string path, IList<IFormFile> files, string action, params FileManagerDirectoryContent[] data)
-        {
-            return UploadAsync(files, action, path, data).GetAwaiter().GetResult();
-        }
-
-        // Upload file(s) to the storage
-        protected async Task<FileManagerResponse> UploadAsync(IEnumerable<IFormFile> files, string action, string path, IEnumerable<object> selectedItems = null)
-        {
-            FileManagerResponse uploadResponse = new FileManagerResponse();
-            try
-            {
-                AccessPermission PathPermission = GetPathPermission(path, false);
-                if (PathPermission != null && (!PathPermission.Read || !PathPermission.Upload))
-                {
-                    accessMessage = PathPermission.Message;
-                    throw new UnauthorizedAccessException("'" + getFileNameFromPath(path) + "' is not accessible. You need permission to perform the upload action.");
-                }
-                foreach (IFormFile file in files)
-                {
-                    if (files != null)
-                    {
-                        BlockBlobClient blockBlobClient = container.GetBlockBlobClient(path.Replace(blobPath, "") + file.FileName);
-                        BlobClient blockBlob = container.GetBlobClient(path.Replace(blobPath, "") + file.FileName);
-                        string fileName = file.FileName;
-                        string absoluteFilePath = Path.Combine(path, fileName);
-                        if (action == "save")
-                        {
-                            if (!await IsFileExists(absoluteFilePath))
-                            {
-                                await PerformUpload(file, blockBlobClient, blockBlob);
-                            }
-                            else
-                            {
-                                existFiles.Add(fileName);
-                            }
-                        }
-                        else if (action == "replace")
-                        {
-                            if (await IsFileExists(absoluteFilePath))
-                            {
-                                await blockBlob.DeleteAsync();
-                            }
-                            await PerformUpload(file, blockBlobClient, blockBlob);
-                        }
-                        else if (action == "keepboth")
-                        {
-                            string newAbsoluteFilePath = absoluteFilePath;
-                            string newFileName = file.FileName;
-                            int index = absoluteFilePath.LastIndexOf(".");
-                            int indexValue = newFileName.LastIndexOf(".");
-                            if (index >= 0)
-                            {
-                                newAbsoluteFilePath = absoluteFilePath.Substring(0, index);
-                                newFileName = newFileName.Substring(0, indexValue);
-                            }
-                            int fileCount = 0;
-                            while (await IsFileExists(newAbsoluteFilePath + (fileCount > 0 ? "(" + fileCount.ToString() + ")" + Path.GetExtension(fileName) : Path.GetExtension(fileName))))
-                            {
-                                fileCount++;
-                            }
-                            newAbsoluteFilePath = newFileName + (fileCount > 0 ? "(" + fileCount.ToString() + ")" : "") + Path.GetExtension(fileName);
-                            BlobClient newBlob = container.GetBlobClient(path.Replace(blobPath, "") + newAbsoluteFilePath);
-                            BlockBlobClient newBlockBlobClient = container.GetBlockBlobClient(path.Replace(blobPath, "") + file.FileName);
-                            await PerformUpload(file, newBlockBlobClient, newBlob);
-                        }
-                    }
-                }
-                if (existFiles.Count != 0)
-                {
-                    ErrorDetails error = new ErrorDetails();
-                    error.FileExists = existFiles;
-                    error.Code = "400";
-                    error.Message = "File Already Exists";
-                    uploadResponse.Error = error;
-                }
-            }
-            catch (Exception e)
-            {
-                ErrorDetails er = new ErrorDetails();
-
-                er.Message = e.GetType().Name == "UnauthorizedAccessException" ? "'" + getFileNameFromPath(path) + "' is not accessible. You need permission to perform the upload action." : e.Message.ToString();
-                er.Code = er.Message.Contains("is not accessible. You need permission") ? "401" : "417";
-                if (er.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { er.Message = accessMessage; }
-                uploadResponse.Error = er;
-                return uploadResponse;
-            }
-            return uploadResponse;
-        }
-
-        private async Task PerformUpload(IFormFile file, BlockBlobClient blockBlobClient, BlobClient blockBlob)
-        {
-            if (file.ContentType == "application/octet-stream")
-            {
-                if (HttpContext?.Request?.Form != null)
-                {
-                    var chunkIndex = Convert.ToInt32(HttpContext.Request.Form["chunk-index"]);
-                    var totalChunk = Convert.ToInt32(HttpContext.Request.Form["total-chunk"]);
-                    using (var fileStream = file.OpenReadStream())
-                    {
-                        var blockId = Convert.ToBase64String(Encoding.UTF8.GetBytes(chunkIndex.ToString("d6")));
-
-                        await blockBlobClient.StageBlockAsync(blockId, fileStream);
-
-                        if (chunkIndex == totalChunk - 1)
-                        {
-                            var blockList = Enumerable.Range(0, totalChunk)
-                                .Select(i => Convert.ToBase64String(Encoding.UTF8.GetBytes(i.ToString("d6")))).ToList();
-
-                            await blockBlobClient.CommitBlockListAsync(blockList);
-                        }
-                    }
-                }
-                else
-                {
-                    throw new InvalidOperationException("HttpContext or Request Form data is not available.");
-                }
-            }
-            else
-            {
-                await blockBlob.UploadAsync(file.OpenReadStream());
-            }
-        }
-
-        protected async Task CopyFileToTemp(string path, BlobClient blockBlob)
-        {
-            using (FileStream fileStream = File.Create(path))
-            {
-                await blockBlob.DownloadToAsync(fileStream);
-                fileStream.Close();
-            }
-        }
-
-        // Download file(s) from the storage
-        public virtual FileStreamResult Download(string path, string[] names = null, params FileManagerDirectoryContent[] selectedItems)
-        {
-            return DownloadAsync(filesPath + path + "", names, selectedItems).GetAwaiter().GetResult();
-        }
-
-        // Download file(s) from the storage
-        protected async Task<FileStreamResult> DownloadAsync(string path, string[] names = null, params FileManagerDirectoryContent[] selectedItems)
-        {
-            try
-            {
-                foreach (FileManagerDirectoryContent file in selectedItems)
-                {
-                    AccessPermission FilePermission = GetPermission(path.Replace(blobPath, ""), file.Name, file.IsFile);
-                    if (FilePermission != null && (!FilePermission.Read || !FilePermission.Download))
-                    {
-                        throw new UnauthorizedAccessException("'" + rootName + path + file.Name + "' is not accessible. Access is denied.");
-                    }
-                    AccessPermission FolderPermission = GetPathPermission(path.Replace(blobPath, ""), file.IsFile);
-                    if (FolderPermission != null && (!FolderPermission.Read || !FolderPermission.Download))
-                    {
-                        throw new UnauthorizedAccessException("'" + rootName + path + file.Name + "' is not accessible. Access is denied.");
-                    }
-                    if (file.IsFile && selectedItems.Length == 1)
-                    {
-                        string relativeFilePath = filesPath + selectedItems[0].FilterPath;
-                        relativeFilePath = relativeFilePath.Replace(blobPath, "");
-                        // Initialize BlobClient object with the container, relative file path, and the name of the selected item in Azure Blob Storage.
-                        BlobClient blockBlob = container.GetBlobClient(relativeFilePath + selectedItems[0].Name);
-                        string absoluteFilePath = Path.GetTempPath() + selectedItems[0].Name;
-                        // Copy file from Azure Blob Storage to a temporary location using the CopyFileToTemp method.
-                        await CopyFileToTemp(absoluteFilePath, blockBlob);
-                        FileStream fileStreamInput = new FileStream(absoluteFilePath, FileMode.Open, FileAccess.Read, FileShare.Delete);
-                        FileStreamResult fileStreamResult = new FileStreamResult(fileStreamInput, "APPLICATION/octet-stream");
-                        fileStreamResult.FileDownloadName = selectedItems[0].Name;
-                        return fileStreamResult;
-                    }
-                    else
-                    {
-                        ZipArchiveEntry zipEntry = null;
-                        ZipArchive archive;
-                        string tempPath = Path.Combine(Path.GetTempPath(), "temp.zip");
-                        using (archive = ZipFile.Open(tempPath, ZipArchiveMode.Update))
-                        {
-                            foreach (FileManagerDirectoryContent files in selectedItems)
-                            {
-                                if (string.IsNullOrEmpty(files.FilterPath))
-                                {
-                                    files.FilterPath = "/";
-                                }
-                                string relativeFilePath = filesPath + files.FilterPath;
-                                relativeFilePath = relativeFilePath.Replace(blobPath, "");
-                                currentFolderName = files.Name;
-                                if (files.IsFile)
-                                {
-                                    BlobClient blockBlob = container.GetBlobClient(relativeFilePath + files.Name);
-                                    if (File.Exists(Path.Combine(Path.GetTempPath(), files.Name)))
-                                    {
-                                        File.Delete(Path.Combine(Path.GetTempPath(), files.Name));
-                                    }
-                                    string absoluteFilePath = Path.GetTempPath() + files.Name;
-                                    await CopyFileToTemp(absoluteFilePath, blockBlob);
-                                    zipEntry = archive.CreateEntryFromFile(absoluteFilePath, files.Name, CompressionLevel.Fastest);
-                                    if (File.Exists(Path.Combine(Path.GetTempPath(), files.Name)))
-                                    {
-                                        File.Delete(Path.Combine(Path.GetTempPath(), files.Name));
-                                    }
-                                }
-                                else
-                                {
-                                    relativeFilePath = relativeFilePath.Replace(blobPath, "");
-                                    pathValue = relativeFilePath == files.Name + files.FilterPath ? relativeFilePath : relativeFilePath + files.Name + "/";
-                                    previousFolderName = relativeFilePath == files.Name + files.FilterPath ? "" : relativeFilePath;
-                                    await DownloadFolder(relativeFilePath, files.Name, zipEntry, archive);
-                                }
-                            }
-                        }
-                        archive.Dispose();
-                        FileStream fileStreamInput = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Delete);
-                        FileStreamResult fileStreamResult = new FileStreamResult(fileStreamInput, "APPLICATION/octet-stream");
-                        fileStreamResult.FileDownloadName = selectedItems.Length == 1 && selectedItems[0].Name != "" ? selectedItems[0].Name + ".zip" : "Files.zip";
-                        if (File.Exists(Path.Combine(Path.GetTempPath(), "temp.zip")))
-                        {
-                            File.Delete(Path.Combine(Path.GetTempPath(), "temp.zip"));
-                        }
-                        return fileStreamResult;
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-            return null;
-        }
-
-        // Download folder(s) from the storage
-        private async Task DownloadFolder(string path, string folderName, ZipArchiveEntry zipEntry, ZipArchive archive)
-        {
-            zipEntry = archive.CreateEntry(currentFolderName + "/");
-            foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: pathValue, delimiter: "/").AsPages())
-            {
-                foreach (BlobItem item in page.Values.Where(item => item.IsBlob).Select(item => item.Blob))
-                {
-                    BlobClient blob = container.GetBlobClient(item.Name);
-                    int index = blob.Name.LastIndexOf("/");
-                    string fileName = blob.Name.Substring(index + 1);
-                    string absoluteFilePath = Path.GetTempPath() + blob.Name.Split("/").Last();
-                    if (File.Exists(absoluteFilePath))
-                    {
-                        File.Delete(absoluteFilePath);
-                    }
-                    await CopyFileToTemp(absoluteFilePath, blob);
-                    zipEntry = archive.CreateEntryFromFile(absoluteFilePath, currentFolderName + "\\" + fileName, CompressionLevel.Fastest);
-                    if (File.Exists(absoluteFilePath))
-                    {
-                        File.Delete(absoluteFilePath);
-                    }
-                }
-                foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
-                {
-                    string absoluteFilePath = item.Replace(blobPath, ""); // <-- Change your download target path here
-                    pathValue = absoluteFilePath;
-                    string targetPath = item.Replace(filesPath + "/", "");
-                    string folderPath = new DirectoryInfo(targetPath).Name;
-                    currentFolderName = previousFolderName.Length > 1 ? item.Replace(previousFolderName, "").Trim('/') : item.Trim('/');
-                    await DownloadFolder(absoluteFilePath, folderPath, zipEntry, archive);
-                }
-            }
         }
 
         // Check whether the directory has child
@@ -901,18 +567,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         continue;
                     }
                     processedItems.Add(item.Name);
-                    AccessPermission permission = GetPathPermission(path, item.IsFile);
-                    if (permission != null && (!permission.Read || !permission.Copy))
-                    {
-                        accessMessage = permission.Message;
-                        throw new UnauthorizedAccessException("'" + getFileNameFromPath(path) + "' is not accessible. You need permission to perform the copy action.");
-                    }
-                    AccessPermission pathPermission = GetPermission(path, item.Name, item.IsFile);
-                    if (pathPermission != null && (!pathPermission.Read || !pathPermission.Copy))
-                    {
-                        accessMessage = permission.Message;
-                        throw new UnauthorizedAccessException("'" + path + item.Name + "' is not accessible. You need permission to perform the copy action.");
-                    }
+
                     if (item.IsFile)
                     {
                         if (await IsFileExists(targetPath + item.Name))
@@ -997,8 +652,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 ErrorDetails error = new ErrorDetails();
                 error.Message = e.Message.ToString();
-                error.Code = error.Message.Contains("is not accessible. You need permission") ? "401" : "404";
-                if (error.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { error.Message = accessMessage; }
+                error.Code = "404";
                 error.FileExists = copyResponse.Error?.FileExists;
                 copyResponse.Error = error;
                 return copyResponse;
@@ -1057,17 +711,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             });
         }
 
-        // Returns the image 
-        public FileStreamResult GetImage(string path, string id, bool allowCompress, ImageSize size, params FileManagerDirectoryContent[] data)
-        {
-            AccessPermission PathPermission = GetFilePermission("Files" + path);
-            if (PathPermission != null && !PathPermission.Read)
-            {
-                return null;
-            }
-            return new FileStreamResult(new MemoryStream(new WebClient().DownloadData(filesPath + path)), "APPLICATION/octet-stream");
-        }
-
         private async Task MoveItems(string sourcePath, string targetPath, string name, string newName)
         {
             BlobClient existBlob = container.GetBlobClient(sourcePath + name);
@@ -1110,18 +753,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 renamedFiles = renamedFiles ?? Array.Empty<string>();
                 foreach (FileManagerDirectoryContent item in data)
                 {
-                    AccessPermission permission = GetPermission(path, item.Name, item.IsFile);
-                    if (permission != null && (!permission.Read || !permission.Write))
-                    {
-                        accessMessage = permission.Message;
-                        throw new UnauthorizedAccessException("'" + path + item.Name + "' is not accessible. You need permission to perform the write action.");
-                    }
-                    AccessPermission PathPermission = GetPathPermission(path, item.IsFile);
-                    if (PathPermission != null && (!PathPermission.Read || !PathPermission.WriteContents))
-                    {
-                        accessMessage = PathPermission.Message;
-                        throw new UnauthorizedAccessException("'" + getFileNameFromPath(path) + "' is not accessible. You need permission to perform the write action.");
-                    }
                     if (item.IsFile)
                     {
                         if (await IsFileExists(targetPath + item.Name))
@@ -1205,8 +836,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 ErrorDetails error = new ErrorDetails();
                 error.Message = e.Message.ToString();
-                error.Code = error.Message.Contains("is not accessible. You need permission") ? "401" : "404";
-                if (error.Code == "401" && !string.IsNullOrEmpty(accessMessage)) { error.Message = accessMessage; }
+                error.Code = "404";
                 error.FileExists = moveResponse.Error?.FileExists;
                 moveResponse.Error = error;
                 return moveResponse;
@@ -1251,146 +881,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             return "^" + Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$";
         }
 
-        protected virtual string[] GetFolderDetails(string path)
-        {
-            string[] str_array = path.Split('/'), fileDetails = new string[2];
-            string parentPath = "";
-            for (int i = 0; i < str_array.Length - 2; i++)
-            {
-                parentPath += str_array[i] + "/";
-            }
-            fileDetails[0] = parentPath;
-            fileDetails[1] = str_array[str_array.Length - 2];
-            return fileDetails;
-        }
-        protected virtual string GetPath(string path)
-        {
-            string fullPath = blobPath + path;
-            return fullPath;
-        }
-        protected virtual bool HasPermission(Permission rule)
-        {
-            return rule == Permission.Allow ? true : false;
-        }
-        protected virtual AccessPermission UpdateFileRules(AccessPermission filePermission, AccessRule fileRule)
-        {
-            filePermission.Copy = HasPermission(fileRule.Copy);
-            filePermission.Download = HasPermission(fileRule.Download);
-            filePermission.Write = HasPermission(fileRule.Write);
-            filePermission.Read = HasPermission(fileRule.Read);
-            filePermission.Message = string.IsNullOrEmpty(fileRule.Message) ? string.Empty : fileRule.Message;
-            return filePermission;
-        }
-
-        protected virtual AccessPermission GetPermission(string location, string name, bool isFile)
-        {
-            AccessPermission FilePermission = new AccessPermission();
-            if (isFile)
-            {
-                if (AccessDetails.AccessRules == null) return null;
-                string nameExtension = Path.GetExtension(name).ToLower();
-                string fileName = Path.GetFileNameWithoutExtension(name);
-                string currentPath = GetPath(location);
-                //string currentPath = (location + name+"/");
-                foreach (AccessRule fileRule in AccessDetails.AccessRules)
-                {
-                    if (!string.IsNullOrEmpty(fileRule.Path) && fileRule.IsFile && (fileRule.Role == null || fileRule.Role == AccessDetails.Role))
-                    {
-                        if (fileRule.Path.IndexOf("*.*") > -1)
-                        {
-                            string parentPath = fileRule.Path.Substring(0, fileRule.Path.IndexOf("*.*"));
-                            if (currentPath.IndexOf(GetPath(parentPath)) == 0 || parentPath == "")
-                            {
-                                FilePermission = UpdateFileRules(FilePermission, fileRule);
-                            }
-                        }
-                        else if (fileRule.Path.IndexOf("*.") > -1)
-                        {
-                            string pathExtension = Path.GetExtension(fileRule.Path).ToLower();
-                            string parentPath = fileRule.Path.Substring(0, fileRule.Path.IndexOf("*."));
-                            if ((GetPath(parentPath) == currentPath || parentPath == "") && nameExtension == pathExtension)
-                            {
-                                FilePermission = UpdateFileRules(FilePermission, fileRule);
-                            }
-                        }
-                        else if (fileRule.Path.IndexOf(".*") > -1)
-                        {
-                            string pathName = Path.GetFileNameWithoutExtension(fileRule.Path);
-                            string parentPath = fileRule.Path.Substring(0, fileRule.Path.IndexOf(pathName + ".*"));
-                            if ((GetPath(parentPath) == currentPath || parentPath == "") && fileName == pathName)
-                            {
-                                FilePermission = UpdateFileRules(FilePermission, fileRule);
-                            }
-                        }
-                        else if (GetPath(fileRule.Path) == GetPath(location + name) || GetPath(fileRule.Path) == GetPath(location + fileName))
-                        {
-                            FilePermission = UpdateFileRules(FilePermission, fileRule);
-                        }
-                    }
-                }
-                return FilePermission;
-            }
-            else
-            {
-                if (AccessDetails.AccessRules == null) { return null; }
-                foreach (AccessRule folderRule in AccessDetails.AccessRules)
-                {
-                    if (folderRule.Path != null && folderRule.IsFile == false && (folderRule.Role == null || folderRule.Role == AccessDetails.Role))
-                    {
-                        if (folderRule.Path.IndexOf("*") > -1)
-                        {
-                            string parentPath = folderRule.Path.Substring(0, folderRule.Path.IndexOf("*"));
-                            if ((location + name).IndexOf(GetPath(parentPath)) == 0 || parentPath == "")
-                            {
-                                FilePermission = UpdateFolderRules(FilePermission, folderRule);
-                            }
-                        }
-                        else if (GetPath(folderRule.Path) == location + name || GetPath(folderRule.Path) == location + name + Path.DirectorySeparatorChar || GetPath(folderRule.Path) == location + name + "/")
-                        {
-                            FilePermission = UpdateFolderRules(FilePermission, folderRule);
-                        }
-                        else if ((location + name).IndexOf(GetPath(folderRule.Path)) == 0)
-                        {
-                            FilePermission = UpdateFolderRules(FilePermission, folderRule);
-                        }
-                    }
-                }
-                return FilePermission;
-            }
-        }
-        protected virtual AccessPermission UpdateFolderRules(AccessPermission folderPermission, AccessRule folderRule)
-        {
-            folderPermission.Copy = HasPermission(folderRule.Copy);
-            folderPermission.Download = HasPermission(folderRule.Download);
-            folderPermission.Write = HasPermission(folderRule.Write);
-            folderPermission.WriteContents = HasPermission(folderRule.WriteContents);
-            folderPermission.Read = HasPermission(folderRule.Read);
-            folderPermission.Upload = HasPermission(folderRule.Upload);
-            folderPermission.Message = string.IsNullOrEmpty(folderRule.Message) ? string.Empty : folderRule.Message;
-            return folderPermission;
-        }
-
-        protected virtual AccessPermission GetPathPermission(string path, bool isFile)
-        {
-            string[] fileDetails = GetFolderDetails(path);
-            if (isFile)
-            {
-                return GetPermission(GetPath(fileDetails[0]), fileDetails[1], true);
-            }
-            return GetPermission(GetPath(fileDetails[0]), fileDetails[1], false);
-        }
-        private string getFileNameFromPath(string path)
-        {
-            int index = path.LastIndexOf("/");
-            return path.Remove(index);
-        }
-        protected virtual AccessPermission GetFilePermission(string path)
-        {
-            string parentPath = path.Substring(0, path.LastIndexOf("/") + 1);
-            string fileName = Path.GetFileName(path);
-            return GetPermission(parentPath, fileName, true);
-        }
-
         public string ToCamelCase(object userData)
         {
             JsonSerializerOptions options = new JsonSerializerOptions
@@ -1400,5 +890,21 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             return JsonSerializer.Serialize(userData, options);
         }
+
+        public FileManagerResponse Upload(string path, IList<IFormFile> files, string action, params FileManagerDirectoryContent[] data)
+        {
+            throw new NotImplementedException();
+        }
+
+        public virtual FileStreamResult Download(string path, string[] names = null, params FileManagerDirectoryContent[] selectedItems)
+        {
+            throw new NotImplementedException();
+        }
+
+        public FileStreamResult GetImage(string path, string id, bool allowCompress, ImageSize size, params FileManagerDirectoryContent[] data)
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

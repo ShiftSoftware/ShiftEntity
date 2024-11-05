@@ -2,8 +2,6 @@
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Http;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -84,34 +82,6 @@ public class FileManagerController : ControllerBase
         }
 
         return null;
-    }
-
-    [HttpPost("AzureUpload")]
-    public ActionResult AzureUpload(FileManagerDirectoryContent args)
-    {
-        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString());
-
-        if (args.Path != "")
-        {
-            string startPath = operation.blobPath;
-            string originalPath = (operation.filesPath).Replace(startPath, "");
-            args.Path = (originalPath + args.Path).Replace("//", "/");
-            //----------------------
-            //For example
-            //string startPath = "https://azure_service_account.blob.core.windows.net/files/";
-            //string originalPath = ("https://azure_service_account.blob.core.windows.net/files/Files").Replace(startPath, "");
-            //args.Path = (originalPath + args.Path).Replace("//", "/");
-            //----------------------
-        }
-        var uploadResponse = operation.Upload(args.Path, args.UploadFiles, args.Action, args.Data);
-        if (uploadResponse.Error != null)
-        {
-            Response.Clear();
-            Response.ContentType = "application/json; charset=utf-8";
-            Response.StatusCode = Convert.ToInt32(uploadResponse.Error.Code);
-            Response.HttpContext.Features.Get<IHttpResponseFeature>().ReasonPhrase = uploadResponse.Error.Message;
-        }
-        return Ok();
     }
 
     [HttpPost("ZipFiles")]
