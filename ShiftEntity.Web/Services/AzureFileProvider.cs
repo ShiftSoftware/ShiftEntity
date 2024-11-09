@@ -19,6 +19,8 @@ using Azure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using Azure.Storage.Sas;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.Internal;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
@@ -88,12 +90,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             rootPath = filesPath.Replace(blobPath, "");
         }
 
-        public void SetRules(AccessDetails details)
-        {
-            AccessDetails = details;
-            DirectoryInfo root = new DirectoryInfo(rootPath);
-            rootName = root.Name;
-        }
+        //public void SetRules(AccessDetails details)
+        //{
+        //    AccessDetails = details;
+        //    DirectoryInfo root = new DirectoryInfo(rootPath);
+        //    rootName = root.Name;
+        //}
         // Reads the storage 
         public FileManagerResponse GetFiles(string path, bool showHiddenItems, FileManagerDirectoryContent[] selectedItems)
         {
@@ -110,17 +112,17 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             try
             {
                 // Check if there are any items in this dir or any sub dirs
-                var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 100).GetAsyncEnumerator();
-                await blobPages.MoveNextAsync();
+                //var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 100).GetAsyncEnumerator();
+                //await blobPages.MoveNextAsync();
 
-                if (!blobPages.Current.Values.Any())
-                {
-                    ErrorDetails errorDetails = new ErrorDetails();
-                    errorDetails.Message = "Could not find a part of the path '" + path + "'.";
-                    errorDetails.Code = "417";
-                    readResponse.Error = errorDetails;
-                    return readResponse;
-                }
+                //if (!blobPages.Current.Values.Any())
+                //{
+                //    ErrorDetails errorDetails = new ErrorDetails();
+                //    errorDetails.Message = "Could not find a part of the path '" + path + "'.";
+                //    errorDetails.Code = "417";
+                //    readResponse.Error = errorDetails;
+                //    return readResponse;
+                //}
 
                 string[] extensions = (filter.Replace(" ", "") ?? "*").Split(",|;".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
                 var noFilter = extensions[0].Equals("*.*") || extensions[0].Equals("*");
@@ -130,6 +132,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
                 cwd.Permission = GetPathPermission(path, isFile: false);
+
+                var permissions = "/Extra/Downloads|/Extra/{dealer_name} Downloads/{branch_name}|/Extra/{dealer_name} Downloads/Shared|/Extra/TOS/{dealer_name}/{branch_name}|/Extra/TOS/{dealer_name}/Shared|/Extra/TOS/Shared|/Extra/Business Report/{dealer_name}|/Extra/Business Report/Shared|/Extra/Best Practices/{dealer_name}|/Extra/Best Practices/Shared";
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
@@ -141,6 +145,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         var fileTypeIsFiltered = Array.IndexOf(extensions, "*." + item.Name.ToString().Trim().Split('.')[item.Name.ToString().Trim().Split('.').Length - 1]) < 0;
                         var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile;// || isHidden;
                         if (skip) continue;
+
+                        var permission = UserCanRead_WritePath(item.Name, permissions, permissions, permissions, "Al Baaj - Diwanya", "Al Baaj", new List<string> { });
+
+                        if (!permission.Read)
+                            continue;
 
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
                         entry.Name = item.Name.Replace(path, "");
@@ -160,6 +169,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     foreach (string item in page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix))
                     {
+                        var permission = UserCanRead_WritePath(item, permissions, permissions, permissions, "Al Baaj - Diwanya", "Al Baaj", new List<string> { });
+
+                        if (!permission.Read)
+                            continue;
+
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
                         string dir = item;
                         entry.Name = dir.Replace(path, "").Replace("/", "");
@@ -1399,6 +1413,81 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             };
 
             return JsonSerializer.Serialize(userData, options);
+        }
+        
+        public class DownloadableFileAccess
+        {
+            public bool Read { get; set; }
+            public bool Write { get; set; }
+            public bool Remove { get; set; }
+
+            public DownloadableFileAccess(bool read, bool write, bool remove)
+            {
+                this.Read = read;
+                this.Write = write;
+                this.Remove = remove;
+            }
+        }
+
+        public static DownloadableFileAccess UserCanRead_WritePath(string path, string readAccessPaths, string writeAccessPaths, string removeAccessPaths, string userBranchName, string divisionName, List<string> deletedPaths)
+        {
+            string shouldStartWith = "Extra";
+
+            path = path.Replace("//", "/");
+
+            var readAccess = false;
+            var writeAccess = false;
+            var removeAccess = false;
+
+            //var absolutePath = HostingEnvironment.MapPath("/" + path);
+
+            if (
+                    (path.StartsWith(shouldStartWith) || path.StartsWith($"/{shouldStartWith}"))
+                    //&& !ForbiddenPaths.Any(y => path.EndsWith(y))
+                    //&& !(deletedPaths.Contains(absolutePath) && !ShiftSoftware.AuthorizationServer.AllPermissions.FileSystemPermissions.CanSeeRemovedFiles(loggedInUser))
+                )
+            {
+                //var readAccessPaths = ShiftSoftware.AuthorizationServer.AllPermissions.FileSystemPermissions.ReadAccessPaths(loggedInUser);
+                //var writeAccessPaths = ShiftSoftware.AuthorizationServer.AllPermissions.FileSystemPermissions.WriteAccessPaths(loggedInUser);
+                //var removeAccessPaths = ShiftSoftware.AuthorizationServer.AllPermissions.FileSystemPermissions.RemoveAccessPaths(loggedInUser);
+
+                readAccessPaths = readAccessPaths.Replace("{dealer_name}", divisionName);
+                writeAccessPaths = writeAccessPaths.Replace("{dealer_name}", divisionName);
+                removeAccessPaths = removeAccessPaths.Replace("{dealer_name}", divisionName);
+
+                readAccessPaths = readAccessPaths.Replace("{branch_name}", userBranchName);
+                writeAccessPaths = writeAccessPaths.Replace("{branch_name}", userBranchName);
+                removeAccessPaths = removeAccessPaths.Replace("{branch_name}", userBranchName);
+
+                foreach (var accessiblePath in readAccessPaths.Split('|'))
+                {
+                    if (!string.IsNullOrEmpty(accessiblePath) && (path.StartsWith(accessiblePath) || ("/" + path).StartsWith(accessiblePath)) || readAccessPaths.Split('|').Any(x => x.StartsWith("/" + path + "/") || x.StartsWith(path + "/")))
+                    {
+                        readAccess = true;
+                        break;
+                    }
+                }
+
+                foreach (var writablePath in writeAccessPaths.Split('|'))
+                {
+                    if (!string.IsNullOrEmpty(writablePath) && (path.StartsWith(writablePath) || ("/" + path).StartsWith(writablePath)))
+                    {
+                        writeAccess = true;
+                        break;
+                    }
+                }
+
+                foreach (var removablePath in removeAccessPaths.Split('|'))
+                {
+                    if (!string.IsNullOrEmpty(removablePath) && (path.StartsWith(removablePath) || ("/" + path).StartsWith(removablePath)))
+                    {
+                        removeAccess = true;
+                        break;
+                    }
+                }
+            }
+
+            return new DownloadableFileAccess(readAccess, writeAccess, removeAccess);
         }
     }
 }
