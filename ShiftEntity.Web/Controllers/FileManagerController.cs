@@ -16,11 +16,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 public class FileManagerController : ControllerBase
 {
     private readonly AzureStorageService azureStorageService;
+    private readonly IFileManagerAccessControl? fileManagerAccessControl;
     private HttpClient httpClient;
     private string AzureFunctionsEndpoint;
 
     [Obsolete]
-    public FileManagerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration)
+    public FileManagerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration, IFileManagerAccessControl? fileManagerAccessControl = null)
     {
         this.httpClient = httpClient;
         this.azureStorageService = azureStorageService;
@@ -31,13 +32,15 @@ public class FileManagerController : ControllerBase
         {
             throw new ArgumentNullException("AzureFunctions:Endpoint not found in appsettings.json");
         }
-        this.AzureFunctionsEndpoint = endpoint; 
+        this.AzureFunctionsEndpoint = endpoint;
+
+        this.fileManagerAccessControl = fileManagerAccessControl;
     }
 
     [Route("FileOperations")]
     public object FileOperations([FromBody] FileManagerDirectoryContent args)
     {
-        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString());
+        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString(), this.fileManagerAccessControl);
 
         if (args.Path != "")
         {

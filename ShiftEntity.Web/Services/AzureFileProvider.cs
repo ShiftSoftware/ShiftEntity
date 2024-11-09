@@ -40,12 +40,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         private AzureStorageService? azureStorageService;
         private readonly string rootDir;
 
-        public AzureFileProvider()
-        {
+        private readonly IFileManagerAccessControl? fileManagerAccessControl;
 
-        }
-
-        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir)
+        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir, IFileManagerAccessControl? fileManagerAccessControl)
         {
             this.azureStorageService = azureStorageService;
             this.rootDir = rootDir;
@@ -62,6 +59,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             filesPath = filesPath.Replace("../", "");
 
             SetBlobContainer(blobPath, filesPath);
+            this.fileManagerAccessControl = fileManagerAccessControl;
         }
 
 
@@ -118,7 +116,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
-
+                    
                     foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
                     {
                         //var isHidden = item.Metadata.TryGetValue(Constants.FileManagerHiddenMetadataKey, out _);
@@ -129,6 +127,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
                         entry.Name = item.Name.Replace(path, "");
+                        entry.Path = item.Name;
                         entry.Type = Path.GetExtension(item.Name.Replace(path, ""));
                         entry.IsFile = true;
                         entry.Size = item.Properties.ContentLength.Value;
@@ -150,6 +149,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
+                        entry.Path = item;
                         entry.HasChild = false;
                         entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
                         //entry.DateModified = await DirectoryLastModified(dir);
@@ -158,6 +158,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     }
 
                     prefixes = page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix).ToList();
+                }
+
+                if (this.fileManagerAccessControl is not null)
+                {
+                    details = await this.fileManagerAccessControl.FilterWithReadAccessAsync(container, details);
                 }
 
                 cwd.HasChild = prefixes?.Count != 0;
