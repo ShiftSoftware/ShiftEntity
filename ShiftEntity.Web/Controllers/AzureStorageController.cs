@@ -4,6 +4,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.TypeAuth.AspNetCore;
 using ShiftSoftware.TypeAuth.Core;
 using System.Collections.Generic;
@@ -18,10 +19,12 @@ public class AzureStorageController : ControllerBase
 {
 
     private AzureStorageService azureStorageService;
+    private readonly IFileManagerAccessControl? fileManagerAccessControl;
 
-    public AzureStorageController(AzureStorageService azureStorageService)
+    public AzureStorageController(AzureStorageService azureStorageService, IFileManagerAccessControl? fileManagerAccessControl = null)
     {
         this.azureStorageService = azureStorageService;
+        this.fileManagerAccessControl = fileManagerAccessControl;
     }
 
     [HttpPost("generate-file-upload-sas")]
@@ -40,6 +43,11 @@ public class AzureStorageController : ControllerBase
             var ContainerName = file.ContainerName ?? azureStorageService.GetDefaultContainerName(AccountName);
 
             file.Url = azureStorageService.GetSignedURL(file.Blob!, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
+        }
+
+        if (this.fileManagerAccessControl is not null)
+        {
+            files = this.fileManagerAccessControl.FilterWithWriteAccess(files);
         }
 
         res.Entity = files;

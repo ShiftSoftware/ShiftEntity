@@ -443,11 +443,22 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         // Deletes file(s) or folder(s)
         public FileManagerResponse Delete(string path, string[] names, params FileManagerDirectoryContent[] data)
         {
-            return RemoveAsync(names, path, data).GetAwaiter().GetResult();
+            var newData = new List<FileManagerDirectoryContent>();
+
+            if (this.fileManagerAccessControl is not null)
+            {
+                newData = this.fileManagerAccessControl.FilterWithDeleteAccess(data);
+            }
+            else
+            {
+                newData = data.ToList();
+            }
+
+            return RemoveAsync(names, path, newData).GetAwaiter().GetResult();
         }
 
         // Deletes file(s) or folder(s)
-        protected async Task<FileManagerResponse> RemoveAsync(string[] names, string path, params FileManagerDirectoryContent[] selectedItems)
+        protected async Task<FileManagerResponse> RemoveAsync(string[] names, string path, List<FileManagerDirectoryContent> selectedItems)
         {
             FileManagerResponse removeResponse = new FileManagerResponse();
             List<FileManagerDirectoryContent> details = new List<FileManagerDirectoryContent>();
