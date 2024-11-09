@@ -365,7 +365,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         // Renames file(s) or folder(s)
         public FileManagerResponse Rename(string path, string oldName, string newName, bool replace = false, bool showFileExtension = true, params FileManagerDirectoryContent[] data)
         {
-            return RenameAsync(path, oldName, newName, showFileExtension, data).GetAwaiter().GetResult();
+            throw new NotImplementedException();
+            //return RenameAsync(path, oldName, newName, showFileExtension, data).GetAwaiter().GetResult();
         }
 
         // Renames file(s) or folder(s)
@@ -555,148 +556,149 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         // Copies file(s) or folders
         public FileManagerResponse Copy(string path, string targetPath, string[] names, string[] renameFiles, FileManagerDirectoryContent targetData, params FileManagerDirectoryContent[] data)
         {
-            return CopyToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
+            throw new NotImplementedException();
+            //return CopyToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
         }
 
-        private async Task<FileManagerResponse> CopyToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
-        {
-            FileManagerResponse copyResponse = new FileManagerResponse();
-            HashSet<string> processedItems = new HashSet<string>();
-            try
-            {
-                renamedFiles = renamedFiles ?? Array.Empty<string>();
-                foreach (FileManagerDirectoryContent item in data)
-                {
-                    if (processedItems.Contains(item.Name))
-                    {
-                        continue;
-                    }
-                    processedItems.Add(item.Name);
+        //private async Task<FileManagerResponse> CopyToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
+        //{
+        //    FileManagerResponse copyResponse = new FileManagerResponse();
+        //    HashSet<string> processedItems = new HashSet<string>();
+        //    try
+        //    {
+        //        renamedFiles = renamedFiles ?? Array.Empty<string>();
+        //        foreach (FileManagerDirectoryContent item in data)
+        //        {
+        //            if (processedItems.Contains(item.Name))
+        //            {
+        //                continue;
+        //            }
+        //            processedItems.Add(item.Name);
 
-                    if (item.IsFile)
-                    {
-                        if (await IsFileExists(targetPath + item.Name))
-                        {
-                            int index = -1;
-                            if (renamedFiles.Length > 0)
-                            {
-                                index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
-                            }
-                            if (index != -1)
-                            {
-                                string newName = await FileRename(targetPath, item.Name);
-                                CopyItems(rootPath + item.FilterPath, targetPath, item.Name, newName);
-                                copiedFiles.Add(GetFileDetails(targetPath, item));
-                            }
-                            else
-                            {
-                                existFiles.Add(item.Name);
-                            }
-                        }
-                        else
-                        {
-                            CopyItems(rootPath + item.FilterPath, targetPath, item.Name, null);
-                            copiedFiles.Add(GetFileDetails(targetPath, item));
-                        }
-                    }
-                    else
-                    {
-                        if (!await IsFolderExists(rootPath + item.FilterPath + item.Name))
-                        {
-                            missingFiles.Add(item.Name);
-                        }
-                        else if (await IsFolderExists(targetPath + item.Name))
-                        {
-                            int index = -1;
-                            if (renamedFiles.Length > 0)
-                            {
-                                index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
-                            }
-                            if (path == targetPath || index != -1)
-                            {
-                                item.Path = rootPath + item.FilterPath + item.Name;
-                                item.Name = await FileRename(targetPath, item.Name);
-                                CopySubFolder(item, targetPath);
-                                copiedFiles.Add(GetFileDetails(targetPath, item));
-                            }
-                            else
-                            {
-                                existFiles.Add(item.Name);
-                            }
-                        }
-                        else
-                        {
-                            item.Path = rootPath + item.FilterPath + item.Name;
-                            CopySubFolder(item, targetPath);
-                            copiedFiles.Add(GetFileDetails(targetPath, item));
-                        }
-                    }
+        //            if (item.IsFile)
+        //            {
+        //                if (await IsFileExists(targetPath + item.Name))
+        //                {
+        //                    int index = -1;
+        //                    if (renamedFiles.Length > 0)
+        //                    {
+        //                        index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
+        //                    }
+        //                    if (index != -1)
+        //                    {
+        //                        string newName = await FileRename(targetPath, item.Name);
+        //                        CopyItems(rootPath + item.FilterPath, targetPath, item.Name, newName);
+        //                        copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                    }
+        //                    else
+        //                    {
+        //                        existFiles.Add(item.Name);
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    CopyItems(rootPath + item.FilterPath, targetPath, item.Name, null);
+        //                    copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                }
+        //            }
+        //            else
+        //            {
+        //                if (!await IsFolderExists(rootPath + item.FilterPath + item.Name))
+        //                {
+        //                    missingFiles.Add(item.Name);
+        //                }
+        //                else if (await IsFolderExists(targetPath + item.Name))
+        //                {
+        //                    int index = -1;
+        //                    if (renamedFiles.Length > 0)
+        //                    {
+        //                        index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
+        //                    }
+        //                    if (path == targetPath || index != -1)
+        //                    {
+        //                        item.Path = rootPath + item.FilterPath + item.Name;
+        //                        item.Name = await FileRename(targetPath, item.Name);
+        //                        CopySubFolder(item, targetPath);
+        //                        copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                    }
+        //                    else
+        //                    {
+        //                        existFiles.Add(item.Name);
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    item.Path = rootPath + item.FilterPath + item.Name;
+        //                    CopySubFolder(item, targetPath);
+        //                    copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                }
+        //            }
 
-                }
-                copyResponse.Files = copiedFiles;
-                if (existFiles.Count > 0)
-                {
-                    ErrorDetails error = new ErrorDetails();
-                    error.FileExists = existFiles;
-                    error.Code = "400";
-                    error.Message = "File Already Exists";
-                    copyResponse.Error = error;
-                }
-                if (missingFiles.Count > 0)
-                {
-                    string missingFilesList = missingFiles[0];
-                    for (int k = 1; k < missingFiles.Count; k++)
-                    {
-                        missingFilesList = missingFilesList + ", " + missingFiles[k];
-                    }
-                    throw new FileNotFoundException(missingFilesList + " not found in given location.");
-                }
-                return copyResponse;
-            }
-            catch (Exception e)
-            {
-                ErrorDetails error = new ErrorDetails();
-                error.Message = e.Message.ToString();
-                error.Code = "404";
-                error.FileExists = copyResponse.Error?.FileExists;
-                copyResponse.Error = error;
-                return copyResponse;
-            }
-        }
+        //        }
+        //        copyResponse.Files = copiedFiles;
+        //        if (existFiles.Count > 0)
+        //        {
+        //            ErrorDetails error = new ErrorDetails();
+        //            error.FileExists = existFiles;
+        //            error.Code = "400";
+        //            error.Message = "File Already Exists";
+        //            copyResponse.Error = error;
+        //        }
+        //        if (missingFiles.Count > 0)
+        //        {
+        //            string missingFilesList = missingFiles[0];
+        //            for (int k = 1; k < missingFiles.Count; k++)
+        //            {
+        //                missingFilesList = missingFilesList + ", " + missingFiles[k];
+        //            }
+        //            throw new FileNotFoundException(missingFilesList + " not found in given location.");
+        //        }
+        //        return copyResponse;
+        //    }
+        //    catch (Exception e)
+        //    {
+        //        ErrorDetails error = new ErrorDetails();
+        //        error.Message = e.Message.ToString();
+        //        error.Code = "404";
+        //        error.FileExists = copyResponse.Error?.FileExists;
+        //        copyResponse.Error = error;
+        //        return copyResponse;
+        //    }
+        //}
 
         // To iterate and copy subfolder
-        private void CopySubFolder(FileManagerDirectoryContent subFolder, string targetPath)
-        {
-            targetPath = targetPath + subFolder.Name + "/";
-            foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
-            {
-                foreach (BlobItem item in page.Values.Where(item => item.IsBlob).Select(item => item.Blob))
-                {
-                    string name = item.Name.Replace(subFolder.Path + "/", "");
-                    string sourcePath = item.Name.Replace(name, "");
-                    CopyItems(sourcePath, targetPath, name, null);
-                }
-                foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
-                {
-                    FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
-                    itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
-                    itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
-                    CopySubFolder(itemDetail, targetPath);
-                }
-            }
-        }
+        //private void CopySubFolder(FileManagerDirectoryContent subFolder, string targetPath)
+        //{
+        //    targetPath = targetPath + subFolder.Name + "/";
+        //    foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
+        //    {
+        //        foreach (BlobItem item in page.Values.Where(item => item.IsBlob).Select(item => item.Blob))
+        //        {
+        //            string name = item.Name.Replace(subFolder.Path + "/", "");
+        //            string sourcePath = item.Name.Replace(name, "");
+        //            CopyItems(sourcePath, targetPath, name, null);
+        //        }
+        //        foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
+        //        {
+        //            FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
+        //            itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
+        //            itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
+        //            CopySubFolder(itemDetail, targetPath);
+        //        }
+        //    }
+        //}
 
         // To iterate and copy files
-        private void CopyItems(string sourcePath, string targetPath, string name, string newName)
-        {
-            if (newName == null)
-            {
-                newName = name;
-            }
-            BlobClient existBlob = container.GetBlobClient(sourcePath + name);
-            BlobClient newBlob = container.GetBlobClient(targetPath + newName);
-            newBlob.StartCopyFromUri(existBlob.Uri);
-        }
+        //private void CopyItems(string sourcePath, string targetPath, string name, string newName)
+        //{
+        //    if (newName == null)
+        //    {
+        //        newName = name;
+        //    }
+        //    BlobClient existBlob = container.GetBlobClient(sourcePath + name);
+        //    BlobClient newBlob = container.GetBlobClient(targetPath + newName);
+        //    newBlob.StartCopyFromUri(existBlob.Uri);
+        //}
 
         // To rename files incase of duplicates
         private async Task<string> FileRename(string newPath, string fileName)
@@ -716,147 +718,149 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             });
         }
 
-        private async Task MoveItems(string sourcePath, string targetPath, string name, string newName)
-        {
-            BlobClient existBlob = container.GetBlobClient(sourcePath + name);
-            CopyItems(sourcePath, targetPath, name, newName);
-            await existBlob.DeleteAsync();
-        }
+        //private async Task MoveItems(string sourcePath, string targetPath, string name, string newName)
+        //{
+        //    BlobClient existBlob = container.GetBlobClient(sourcePath + name);
+        //    CopyItems(sourcePath, targetPath, name, newName);
+        //    await existBlob.DeleteAsync();
+        //}
 
-        private async void MoveSubFolder(FileManagerDirectoryContent subFolder, string targetPath)
-        {
-            targetPath = targetPath + subFolder.Name + "/";
-            foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
-            {
-                foreach (BlobItem item in page.Values.Where(item => item.IsBlob).Select(item => item.Blob))
-                {
-                    string name = item.Name.Replace(subFolder.Path + "/", "");
-                    string sourcePath = item.Name.Replace(name, "");
-                    await MoveItems(sourcePath, targetPath, name, null);
-                }
-                foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
-                {
-                    FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
-                    itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
-                    itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
-                    MoveSubFolder(itemDetail, targetPath);
-                }
-            }
-        }
+        //private async void MoveSubFolder(FileManagerDirectoryContent subFolder, string targetPath)
+        //{
+        //    targetPath = targetPath + subFolder.Name + "/";
+        //    foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
+        //    {
+        //        foreach (BlobItem item in page.Values.Where(item => item.IsBlob).Select(item => item.Blob))
+        //        {
+        //            string name = item.Name.Replace(subFolder.Path + "/", "");
+        //            string sourcePath = item.Name.Replace(name, "");
+        //            await MoveItems(sourcePath, targetPath, name, null);
+        //        }
+        //        foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
+        //        {
+        //            FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
+        //            itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
+        //            itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
+        //            MoveSubFolder(itemDetail, targetPath);
+        //        }
+        //    }
+        //}
 
         // Moves file(s) or folders
         public FileManagerResponse Move(string path, string targetPath, string[] names, string[] renameFiles, FileManagerDirectoryContent targetData, params FileManagerDirectoryContent[] data)
         {
-            return MoveToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
+            throw new NotImplementedException();
+            //return MoveToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
         }
 
-        private async Task<FileManagerResponse> MoveToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
-        {
-            FileManagerResponse moveResponse = new FileManagerResponse();
-            try
-            {
-                renamedFiles = renamedFiles ?? Array.Empty<string>();
-                foreach (FileManagerDirectoryContent item in data)
-                {
-                    if (item.IsFile)
-                    {
-                        if (await IsFileExists(targetPath + item.Name))
-                        {
-                            int index = -1;
-                            if (renamedFiles.Length > 0)
-                            {
-                                index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
-                            }
-                            if (path == targetPath || index != -1)
-                            {
-                                string newName = await FileRename(targetPath, item.Name);
-                                await MoveItems(rootPath + item.FilterPath, targetPath, item.Name, newName);
-                                copiedFiles.Add(GetFileDetails(targetPath, item));
-                            }
-                            else
-                            {
-                                existFiles.Add(item.Name);
-                            }
-                        }
-                        else
-                        {
-                            await MoveItems(rootPath + item.FilterPath, targetPath, item.Name, null);
-                            copiedFiles.Add(GetFileDetails(targetPath, item));
-                        }
-                    }
-                    else
-                    {
-                        if (!await IsFolderExists(rootPath + item.FilterPath + item.Name))
-                        {
-                            missingFiles.Add(item.Name);
-                        }
-                        else if (await IsFolderExists(targetPath + item.Name))
-                        {
-                            int index = -1;
-                            if (renamedFiles.Length > 0)
-                            {
-                                index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
-                            }
-                            if (path == targetPath || index != -1)
-                            {
-                                item.Path = rootPath + item.FilterPath + item.Name;
-                                item.Name = await FileRename(targetPath, item.Name);
-                                MoveSubFolder(item, targetPath);
-                                copiedFiles.Add(GetFileDetails(targetPath, item));
-                            }
-                            else
-                            {
-                                existFiles.Add(item.Name);
-                            }
-                        }
-                        else
-                        {
-                            item.Path = rootPath + item.FilterPath + item.Name;
-                            MoveSubFolder(item, targetPath);
-                            copiedFiles.Add(GetFileDetails(targetPath, item));
-                        }
-                    }
-                }
-                moveResponse.Files = copiedFiles;
-                if (existFiles.Count > 0)
-                {
-                    ErrorDetails error = new ErrorDetails();
-                    error.FileExists = existFiles;
-                    error.Code = "400";
-                    error.Message = "File Already Exists";
-                    moveResponse.Error = error;
-                }
-                if (missingFiles.Count > 0)
-                {
-                    string nameList = missingFiles[0];
-                    for (int k = 1; k < missingFiles.Count; k++)
-                    {
-                        nameList = nameList + ", " + missingFiles[k];
-                    }
-                    throw new FileNotFoundException(nameList + " not found in given location.");
-                }
-                return moveResponse;
-            }
-            catch (Exception e)
-            {
-                ErrorDetails error = new ErrorDetails();
-                error.Message = e.Message.ToString();
-                error.Code = "404";
-                error.FileExists = moveResponse.Error?.FileExists;
-                moveResponse.Error = error;
-                return moveResponse;
-            }
-        }
+        //private async Task<FileManagerResponse> MoveToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
+        //{
+        //    FileManagerResponse moveResponse = new FileManagerResponse();
+        //    try
+        //    {
+        //        renamedFiles = renamedFiles ?? Array.Empty<string>();
+        //        foreach (FileManagerDirectoryContent item in data)
+        //        {
+        //            if (item.IsFile)
+        //            {
+        //                if (await IsFileExists(targetPath + item.Name))
+        //                {
+        //                    int index = -1;
+        //                    if (renamedFiles.Length > 0)
+        //                    {
+        //                        index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
+        //                    }
+        //                    if (path == targetPath || index != -1)
+        //                    {
+        //                        string newName = await FileRename(targetPath, item.Name);
+        //                        await MoveItems(rootPath + item.FilterPath, targetPath, item.Name, newName);
+        //                        copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                    }
+        //                    else
+        //                    {
+        //                        existFiles.Add(item.Name);
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    await MoveItems(rootPath + item.FilterPath, targetPath, item.Name, null);
+        //                    copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                }
+        //            }
+        //            else
+        //            {
+        //                if (!await IsFolderExists(rootPath + item.FilterPath + item.Name))
+        //                {
+        //                    missingFiles.Add(item.Name);
+        //                }
+        //                else if (await IsFolderExists(targetPath + item.Name))
+        //                {
+        //                    int index = -1;
+        //                    if (renamedFiles.Length > 0)
+        //                    {
+        //                        index = Array.FindIndex(renamedFiles, Items => Items.Contains(item.Name));
+        //                    }
+        //                    if (path == targetPath || index != -1)
+        //                    {
+        //                        item.Path = rootPath + item.FilterPath + item.Name;
+        //                        item.Name = await FileRename(targetPath, item.Name);
+        //                        MoveSubFolder(item, targetPath);
+        //                        copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                    }
+        //                    else
+        //                    {
+        //                        existFiles.Add(item.Name);
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    item.Path = rootPath + item.FilterPath + item.Name;
+        //                    MoveSubFolder(item, targetPath);
+        //                    copiedFiles.Add(GetFileDetails(targetPath, item));
+        //                }
+        //            }
+        //        }
+        //        moveResponse.Files = copiedFiles;
+        //        if (existFiles.Count > 0)
+        //        {
+        //            ErrorDetails error = new ErrorDetails();
+        //            error.FileExists = existFiles;
+        //            error.Code = "400";
+        //            error.Message = "File Already Exists";
+        //            moveResponse.Error = error;
+        //        }
+        //        if (missingFiles.Count > 0)
+        //        {
+        //            string nameList = missingFiles[0];
+        //            for (int k = 1; k < missingFiles.Count; k++)
+        //            {
+        //                nameList = nameList + ", " + missingFiles[k];
+        //            }
+        //            throw new FileNotFoundException(nameList + " not found in given location.");
+        //        }
+        //        return moveResponse;
+        //    }
+        //    catch (Exception e)
+        //    {
+        //        ErrorDetails error = new ErrorDetails();
+        //        error.Message = e.Message.ToString();
+        //        error.Code = "404";
+        //        error.FileExists = moveResponse.Error?.FileExists;
+        //        moveResponse.Error = error;
+        //        return moveResponse;
+        //    }
+        //}
 
         // Search for file(s) or folders
         public FileManagerResponse Search(string path, string searchString, bool showHiddenItems, bool caseSensitive, params FileManagerDirectoryContent[] data)
         {
-            directoryContentItems.Clear();
-            FileManagerResponse searchResponse = GetFiles(path, true, data);
-            directoryContentItems.AddRange(searchResponse.Files);
-            GetAllFiles(path, searchResponse);
-            searchResponse.Files = directoryContentItems.Where(item => new Regex(WildcardToRegex(searchString), caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase).IsMatch(item.Name));
-            return searchResponse;
+            throw new NotImplementedException();
+            //directoryContentItems.Clear();
+            //FileManagerResponse searchResponse = GetFiles(path, true, data);
+            //directoryContentItems.AddRange(searchResponse.Files);
+            //GetAllFiles(path, searchResponse);
+            //searchResponse.Files = directoryContentItems.Where(item => new Regex(WildcardToRegex(searchString), caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase).IsMatch(item.Name));
+            //return searchResponse;
         }
 
         // Gets all files
