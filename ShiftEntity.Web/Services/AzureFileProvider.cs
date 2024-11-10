@@ -160,10 +160,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     prefixes = page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix).ToList();
                 }
 
-                //if (this.fileManagerAccessControl is not null)
-                //{
-                //    details = await this.fileManagerAccessControl.FilterWithReadAccessAsync(container, details);
-                //}
+                if (this.fileExplorerAccessControl is not null)
+                {
+                    details = await this.fileExplorerAccessControl.FilterWithReadAccessAsync(container, details);
+                }
 
                 cwd.HasChild = prefixes?.Count != 0;
                 readResponse.CWD = cwd;
