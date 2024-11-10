@@ -1,5 +1,5 @@
 ﻿
-namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
+namespace ShiftSoftware.ShiftEntity.Functions.FileExplorer;
 
 public static class Queues
 {

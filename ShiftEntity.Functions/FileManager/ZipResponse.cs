@@ -2,7 +2,7 @@
 using Microsoft.Azure.Functions.Worker.Http;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
+namespace ShiftSoftware.ShiftEntity.Functions.FileExplorer;
 
 public class ZipResponse
 {

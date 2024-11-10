@@ -10,6 +10,6 @@ public class Constants
     public const string TeamIdsClaim = "ShiftSoftware/ShiftEntity/Claims/TeamIds";
     public const string CityIdClaim = "ShiftSoftware/ShiftEntity/Claims/CityId";
     public const string HttpHeaderVersioning = "Versioning";
-    public const string FileManagerHiddenFilename = "f7751140-2a59-4edf-955c-406eef7fa0d4";
-    public const string FileManagerHiddenMetadataKey = "hidden";
+    public const string FileExplorerHiddenFilename = "f7751140-2a59-4edf-955c-406eef7fa0d4";
+    public const string FileExplorerHiddenMetadataKey = "hidden";
 }

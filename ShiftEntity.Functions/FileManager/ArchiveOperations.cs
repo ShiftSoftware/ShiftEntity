@@ -7,7 +7,7 @@ using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System.IO.Compression;
 
-namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
+namespace ShiftSoftware.ShiftEntity.Functions.FileExplorer;
 
 public class ArchiveOperations
 {
@@ -38,7 +38,7 @@ public class ArchiveOperations
                 },
                 Metadata = new Dictionary<string, string>()
                 {
-                    [Constants.FileManagerHiddenMetadataKey] = "true",
+                    [Constants.FileExplorerHiddenMetadataKey] = "true",
                 },
             }, cancellationToken: cancellationToken);
 
@@ -59,7 +59,7 @@ public class ArchiveOperations
                         var files = container
                             .GetBlobs(BlobTraits.None, BlobStates.None, filePath + "/", cancellationToken)
                             .Select(x => x.Name)
-                            .Where(x => !x.EndsWith("/" + Constants.FileManagerHiddenFilename));
+                            .Where(x => !x.EndsWith("/" + Constants.FileExplorerHiddenFilename));
                         filesToArchive.AddRange(files);
                     }
                     else

@@ -19,12 +19,12 @@ public class AzureStorageController : ControllerBase
 {
 
     private AzureStorageService azureStorageService;
-    private readonly IFileManagerAccessControl? fileManagerAccessControl;
+    private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
-    public AzureStorageController(AzureStorageService azureStorageService, IFileManagerAccessControl? fileManagerAccessControl = null)
+    public AzureStorageController(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl = null)
     {
         this.azureStorageService = azureStorageService;
-        this.fileManagerAccessControl = fileManagerAccessControl;
+        this.fileExplorerAccessControl = fileExplorerAccessControl;
     }
 
     [HttpPost("generate-file-upload-sas")]
@@ -45,9 +45,9 @@ public class AzureStorageController : ControllerBase
             file.Url = azureStorageService.GetSignedURL(file.Blob!, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
         }
 
-        if (this.fileManagerAccessControl is not null)
+        if (this.fileExplorerAccessControl is not null)
         {
-            files = this.fileManagerAccessControl.FilterWithWriteAccess(files);
+            files = this.fileExplorerAccessControl.FilterWithWriteAccess(files);
         }
 
         res.Entity = files;

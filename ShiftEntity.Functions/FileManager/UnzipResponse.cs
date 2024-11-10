@@ -2,7 +2,7 @@
 using Microsoft.Azure.Functions.Worker;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Functions.FileManager;
+namespace ShiftSoftware.ShiftEntity.Functions.FileExplorer;
 
 public class UnzipResponse
 {

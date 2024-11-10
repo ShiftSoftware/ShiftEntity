@@ -40,9 +40,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         private AzureStorageService? azureStorageService;
         private readonly string rootDir;
 
-        private readonly IFileManagerAccessControl? fileManagerAccessControl;
+        private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
-        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir, IFileManagerAccessControl? fileManagerAccessControl)
+        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir, IFileExplorerAccessControl? fileExplorerAccessControl)
         {
             this.azureStorageService = azureStorageService;
             this.rootDir = rootDir;
@@ -59,7 +59,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             filesPath = filesPath.Replace("../", "");
 
             SetBlobContainer(blobPath, filesPath);
-            this.fileManagerAccessControl = fileManagerAccessControl;
+            this.fileExplorerAccessControl = fileExplorerAccessControl;
         }
 
 
@@ -120,7 +120,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
                     {
                         //var isHidden = item.Metadata.TryGetValue(Constants.FileManagerHiddenMetadataKey, out _);
-                        var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileManagerHiddenFilename);
+                        var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileExplorerHiddenFilename);
                         var fileTypeIsFiltered = Array.IndexOf(extensions, "*." + item.Name.ToString().Trim().Split('.')[item.Name.ToString().Trim().Split('.').Length - 1]) < 0;
                         var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile;// || isHidden;
                         if (skip) continue;
@@ -160,10 +160,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     prefixes = page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix).ToList();
                 }
 
-                if (this.fileManagerAccessControl is not null)
-                {
-                    details = await this.fileManagerAccessControl.FilterWithReadAccessAsync(container, details);
-                }
+                //if (this.fileManagerAccessControl is not null)
+                //{
+                //    details = await this.fileManagerAccessControl.FilterWithReadAccessAsync(container, details);
+                //}
 
                 cwd.HasChild = prefixes?.Count != 0;
                 readResponse.CWD = cwd;
@@ -356,7 +356,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 }
                 else
                 {
-                    BlobClient blob = container.GetBlobClient(path + name + "/" + Constants.FileManagerHiddenFilename);
+                    BlobClient blob = container.GetBlobClient(path + name + "/" + Constants.FileExplorerHiddenFilename);
                     await blob.UploadAsync(new MemoryStream());
                 }
             }
@@ -445,9 +445,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             var newData = new List<FileManagerDirectoryContent>();
 
-            if (this.fileManagerAccessControl is not null)
+            if (this.fileExplorerAccessControl is not null)
             {
-                newData = this.fileManagerAccessControl.FilterWithDeleteAccess(data);
+                newData = this.fileExplorerAccessControl.FilterWithDeleteAccess(data);
             }
             else
             {

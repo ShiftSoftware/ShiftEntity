@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
-public interface IFileManagerAccessControl
+public interface IFileExplorerAccessControl
 {
     public Task<List<FileManagerDirectoryContent>> FilterWithReadAccessAsync(Azure.Storage.Blobs.BlobContainerClient container, List<FileManagerDirectoryContent> details);
     public List<ShiftFileDTO> FilterWithWriteAccess(List<ShiftFileDTO> files);

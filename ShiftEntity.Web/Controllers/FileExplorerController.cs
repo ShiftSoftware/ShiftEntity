@@ -13,15 +13,15 @@ namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class FileManagerController : ControllerBase
+public class FileExplorerController : ControllerBase
 {
     private readonly AzureStorageService azureStorageService;
-    private readonly IFileManagerAccessControl? fileManagerAccessControl;
+    private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private HttpClient httpClient;
     private string AzureFunctionsEndpoint;
 
     [Obsolete]
-    public FileManagerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration, IFileManagerAccessControl? fileManagerAccessControl = null)
+    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration, IFileExplorerAccessControl? fileExplorerAccessControl = null)
     {
         this.httpClient = httpClient;
         this.azureStorageService = azureStorageService;
@@ -34,13 +34,13 @@ public class FileManagerController : ControllerBase
         }
         this.AzureFunctionsEndpoint = endpoint;
 
-        this.fileManagerAccessControl = fileManagerAccessControl;
+        this.fileExplorerAccessControl = fileExplorerAccessControl;
     }
 
     [Route("FileOperations")]
     public object FileOperations([FromBody] FileManagerDirectoryContent args)
     {
-        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString(), this.fileManagerAccessControl);
+        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString(), this.fileExplorerAccessControl);
 
         if (args.Path != "")
         {
