@@ -607,6 +607,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         return result.ActionResult;
     }
 
+    [NonAction]
     public async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
