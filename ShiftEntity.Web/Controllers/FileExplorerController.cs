@@ -37,6 +37,7 @@ public class FileExplorerController : ControllerBase
         this.fileExplorerAccessControl = fileExplorerAccessControl;
     }
 
+    [HttpPost]
     [Route("FileOperations")]
     public object FileOperations([FromBody] FileManagerDirectoryContent args)
     {
