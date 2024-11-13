@@ -168,8 +168,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.HasChild = prefixes?.Count != 0;
                 readResponse.CWD = cwd;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                ErrorDetails errorDetails = new ErrorDetails();
+                errorDetails.Message = e.Message.ToString();
+                errorDetails.Code = "417";
+                readResponse.Error = errorDetails;
                 return readResponse;
             }
 
