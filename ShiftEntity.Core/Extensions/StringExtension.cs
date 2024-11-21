@@ -1,18 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core.Extensions;
 
 public static class StringExtension
 {
-    public static string AddUrlPath(this string text, params string?[] paths)
+    public static string AddUrlPath(this string? text, params string?[] paths)
     {
         char[] separators = ['/', '\\'];
 
-        if (string.IsNullOrWhiteSpace(text)) return text;
+        text ??= string.Empty;
 
         var _paths = paths.Where(x => !string.IsNullOrWhiteSpace(x));
 
@@ -21,10 +18,10 @@ public static class StringExtension
             return text;
         }
 
-        var baseAddress = text.TrimEnd(separators);
+        var baseAddress = string.IsNullOrWhiteSpace(text) ? "" : text.TrimEnd(separators) + "/";
 
-        _paths = _paths.Select(x => x!.TrimStart(separators).TrimEnd(separators));
+        _paths = _paths.Select(x => x!.Trim(separators));
 
-        return baseAddress + "/" + string.Join("/", _paths);
+        return baseAddress + string.Join("/", _paths);
     }
 }
