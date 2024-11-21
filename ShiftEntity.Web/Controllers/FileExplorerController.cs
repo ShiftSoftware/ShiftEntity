@@ -64,7 +64,7 @@ public class FileExplorerController : ControllerBase
                 return operation.ToCamelCase(operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
-                return operation.ToCamelCase(operation.Delete(args.Path, args.Names, args.Data));
+                return operation.ToCamelCase(operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
             case "details":
                 // Gets the details of the selected file(s) or folder(s).
                 return operation.ToCamelCase(operation.Details(args.Path, args.Names, args.Data));

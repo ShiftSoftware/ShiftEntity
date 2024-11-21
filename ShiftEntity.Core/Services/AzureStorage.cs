@@ -1,5 +1,6 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
 using System.Collections.Generic;
@@ -114,7 +115,7 @@ public class AzureStorageService
         if (containerName == null)
             containerName = account.DefaultContainerName;
 
-        return $"{account.EndPoint}/{containerName}/{blobName}?{GetServiceSasUriForBlob(blobName, blobSasPermissions, containerName!, account.AccountName!, account.AccountKey!, expireAfter_Seconds)}";
+        return $"{account.EndPoint.AddUrlPath(containerName, blobName)}?{GetServiceSasUriForBlob(blobName, blobSasPermissions, containerName!, account.AccountName!, account.AccountKey!, expireAfter_Seconds)}";
     }
 
     public string GetDefaultAccountName()

@@ -114,15 +114,24 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
 
+                var deletedFilesBlob = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
+                var deletedList = new List<string>();
+
+                if (await deletedFilesBlob.ExistsAsync())
+                {
+                    BlobDownloadInfo download = await deletedFilesBlob.DownloadAsync();
+                    using var reader = new StreamReader(download.Content, Encoding.UTF8);
+                    deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+                }
+
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
-                    
-                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
+                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob && !deletedList.Contains(x.Blob.Name)).Select(x => x.Blob))
                     {
-                        //var isHidden = item.Metadata.TryGetValue(Constants.FileManagerHiddenMetadataKey, out _);
+                        var isHidden = item.Metadata.TryGetValue(Constants.FileExplorerHiddenMetadataKey, out _);
                         var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileExplorerHiddenFilename);
                         var fileTypeIsFiltered = Array.IndexOf(extensions, "*." + item.Name.ToString().Trim().Split('.')[item.Name.ToString().Trim().Split('.').Length - 1]) < 0;
-                        var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile;// || isHidden;
+                        var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile || isHidden;
                         if (skip) continue;
 
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
@@ -141,8 +150,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         details.Add(entry);
                     }
 
-
-                    foreach (string item in page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix))
+                    foreach (string item in page.Values.Where(x => x.IsPrefix && !deletedList.Contains(x.Prefix)).Select(x => x.Prefix))
                     {
                         FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
                         string dir = item;
@@ -446,7 +454,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Deletes file(s) or folder(s)
-        public FileManagerResponse Delete(string path, string[] names, params FileManagerDirectoryContent[] data)
+        public FileManagerResponse Delete(string path, string[] names, bool softDelete, params FileManagerDirectoryContent[] data)
         {
             var newData = new List<FileManagerDirectoryContent>();
 
@@ -459,33 +467,54 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 newData = data.ToList();
             }
 
-            return RemoveAsync(names, path, newData).GetAwaiter().GetResult();
+            return RemoveAsync(names, path, softDelete, newData).GetAwaiter().GetResult();
         }
 
         // Deletes file(s) or folder(s)
-        protected async Task<FileManagerResponse> RemoveAsync(string[] names, string path, List<FileManagerDirectoryContent> selectedItems)
+        protected async Task<FileManagerResponse> RemoveAsync(string[] names, string path, bool softDelete, List<FileManagerDirectoryContent> selectedItems)
         {
             FileManagerResponse removeResponse = new FileManagerResponse();
             List<FileManagerDirectoryContent> details = new List<FileManagerDirectoryContent>();
             FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
             try
             {
+                var blobClient = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
+                var deletedList = string.Empty;
+
+                if (await blobClient.ExistsAsync())
+                {
+                    BlobDownloadInfo download = await blobClient.DownloadAsync();
+                    using (var reader = new StreamReader(download.Content, Encoding.UTF8))
+                    {
+                        deletedList = await reader.ReadToEndAsync();
+                    }
+                }
+
                 foreach (FileManagerDirectoryContent fileItem in selectedItems)
                 {
+                    path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
+
+                    if (softDelete)
+                    {
+                        var textToAppend = path + fileItem.Name;
+                        if (!fileItem.IsFile) textToAppend += "/";
+                        var newContent = deletedList + textToAppend + "\n";
+
+                        using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
+                        {
+                            byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
+                            await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
+                        }
+                    }
+
                     if (fileItem.IsFile)
                     {
-                        path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
-                        BlobClient currentFile = container.GetBlobClient(path + fileItem.Name);
-                        currentFile.DeleteIfExists();
-                        string absoluteFilePath = Path.Combine(Path.GetTempPath(), fileItem.Name);
-                        DirectoryInfo tempDirectory = new DirectoryInfo(Path.GetTempPath());
-                        foreach (string file in Directory.GetFiles(tempDirectory.ToString()))
+                        if (!softDelete)
                         {
-                            if (file.ToString() == absoluteFilePath)
-                            {
-                                File.Delete(file);
-                            }
+                            BlobClient currentFile = container.GetBlobClient(path + fileItem.Name);
+                            currentFile.DeleteIfExists();
                         }
+
                         entry.Name = fileItem.Name;
                         entry.Type = fileItem.Type;
                         entry.IsFile = fileItem.IsFile;
@@ -496,14 +525,18 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     }
                     else
                     {
-                        path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
+
                         foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
                         {
-                            foreach (BlobItem item in items.Values)
+                            if (!softDelete)
                             {
-                                BlobClient currentFile = container.GetBlobClient(item.Name);
-                                await currentFile.DeleteAsync();
+                                foreach (BlobItem item in items.Values)
+                                {
+                                    BlobClient currentFile = container.GetBlobClient(item.Name);
+                                    await currentFile.DeleteAsync();
+                                }
                             }
+
                             entry.Name = fileItem.Name;
                             entry.Type = fileItem.Type;
                             entry.IsFile = fileItem.IsFile;
@@ -931,5 +964,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             throw new NotImplementedException();
         }
 
+        public FileManagerResponse Delete(string path, string[] names, params FileManagerDirectoryContent[] data)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
