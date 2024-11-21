@@ -135,7 +135,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.HasChild = false;
                         entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
 
-                        entry.TargetPath = azureStorageService?.GetSignedURL(rootDir + entry.FilterPath + entry.Name, BlobSasPermissions.Read, container.Name);
+                        var blobName = (rootDir + entry.FilterPath + entry.Name).Trim('/');
+                        entry.TargetPath = azureStorageService?.GetSignedURL(blobName, BlobSasPermissions.Read, container.Name);
 
                         details.Add(entry);
                     }
