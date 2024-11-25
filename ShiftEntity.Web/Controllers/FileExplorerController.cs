@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using Syncfusion.EJ2.FileManager.Base;
 using ShiftSoftware.ShiftEntity.Web.Services;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
@@ -19,12 +18,14 @@ public class FileExplorerController : ControllerBase
     private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private HttpClient httpClient;
     private string AzureFunctionsEndpoint;
+    private AzureFileProvider operation;
 
     [Obsolete]
     public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration, IFileExplorerAccessControl? fileExplorerAccessControl = null)
     {
         this.httpClient = httpClient;
         this.azureStorageService = azureStorageService;
+        this.operation = new AzureFileProvider(azureStorageService, fileExplorerAccessControl);
 
         // temp
         var endpoint = configuration.GetValue<string>("AzureFunctions:Endpoint");
@@ -39,14 +40,16 @@ public class FileExplorerController : ControllerBase
 
     [HttpPost]
     [Route("FileOperations")]
-    public object FileOperations([FromBody] FileManagerDirectoryContent args)
+    public object FileOperations([FromBody] FileExplorerDirectoryContent args)
     {
-        var operation = new AzureFileProvider(azureStorageService, Request.Headers["Root-Dir"].ToString(), this.fileExplorerAccessControl);
+        object? RootDir = null;
+        args.CustomData?.TryGetValue("RootDir", out RootDir);
+        this.operation.SetRootDirectory(RootDir?.ToString() ?? string.Empty);
 
         if (args.Path != "")
         {
-            string startPath = operation.blobPath;
-            string originalPath = (operation.filesPath).Replace(startPath, "");
+            string startPath = this.operation.blobPath;
+            string originalPath = (this.operation.filesPath).Replace(startPath, "");
             //-----------------
             //For example
             //string startPath = "https://azure_service_account.blob.core.windows.net/files/";
@@ -61,28 +64,28 @@ public class FileExplorerController : ControllerBase
 
             case "read":
                 // Reads the file(s) or folder(s) from the given path.
-                return operation.ToCamelCase(operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
+                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
-                return operation.ToCamelCase(operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
+                return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
             case "details":
                 // Gets the details of the selected file(s) or folder(s).
-                return operation.ToCamelCase(operation.Details(args.Path, args.Names, args.Data));
+                return this.operation.ToCamelCase(this.operation.Details(args.Path, args.Names, args.Data));
             case "create":
                 // Creates a new folder in a given path.
-                return operation.ToCamelCase(operation.Create(args.Path, args.Name, args.Data));
+                return this.operation.ToCamelCase(this.operation.Create(args.Path, args.Name, args.Data));
             case "search":
                 // Gets the list of file(s) or folder(s) from a given path based on the searched key string.
-                return operation.ToCamelCase(operation.Search(args.Path, args.SearchString, args.ShowHiddenItems, args.CaseSensitive, args.Data));
+                return this.operation.ToCamelCase(this.operation.Search(args.Path, args.SearchString, args.ShowHiddenItems, args.CaseSensitive, args.Data));
             case "rename":
                 // Renames a file or folder.
-                return operation.ToCamelCase(operation.Rename(args.Path, args.Name, args.NewName, false, args.ShowFileExtension, args.Data));
+                return this.operation.ToCamelCase(this.operation.Rename(args.Path, args.Name, args.NewName, false, args.ShowFileExtension, args.Data));
             case "copy":
                 // Copies the selected file(s) or folder(s) from a path and then pastes them into a given target path.
-                return operation.ToCamelCase(operation.Copy(args.Path, args.TargetPath, args.Names, args.RenameFiles, args.TargetData, args.Data));
+                return this.operation.ToCamelCase(this.operation.Copy(args.Path, args.TargetPath, args.Names, args.RenameFiles, args.TargetData, args.Data));
             case "move":
                 // Cuts the selected file(s) or folder(s) from a path and then pastes them into a given target path.
-                return operation.ToCamelCase(operation.Move(args.Path, args.TargetPath, args.Names, args.RenameFiles, args.TargetData, args.Data));
+                return this.operation.ToCamelCase(this.operation.Move(args.Path, args.TargetPath, args.Names, args.RenameFiles, args.TargetData, args.Data));
         }
 
         return null;

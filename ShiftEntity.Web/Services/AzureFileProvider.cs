@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Syncfusion.EJ2.FileManager.Base;
 using System.Text;
 using Azure.Storage.Blobs.Specialized;
 using System.Text.Json;
@@ -19,12 +18,13 @@ using Azure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using Azure.Storage.Sas;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
-    public class AzureFileProvider : IAzureFileProviderBase
+    public class AzureFileProvider
     {
-        List<FileManagerDirectoryContent> directoryContentItems = new List<FileManagerDirectoryContent>();
+        List<FileExplorerDirectoryContent> directoryContentItems = new List<FileExplorerDirectoryContent>();
         BlobContainerClient container;
         public string blobPath;
         public string filesPath;
@@ -33,20 +33,18 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         List<string> existFiles = new List<string>();
         List<string> missingFiles = new List<string>();
         bool isFolderAvailable = false;
-        List<FileManagerDirectoryContent> copiedFiles = new List<FileManagerDirectoryContent>();
+        List<FileExplorerDirectoryContent> copiedFiles = new List<FileExplorerDirectoryContent>();
         DateTime lastUpdated = DateTime.MinValue;
         DateTime prevUpdated = DateTime.MinValue;
 
         private AzureStorageService? azureStorageService;
-        private readonly string rootDir;
+        private string rootDir = string.Empty;
 
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
-        public AzureFileProvider(AzureStorageService azureStorageService, string rootDir, IFileExplorerAccessControl? fileExplorerAccessControl)
+        public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl)
         {
             this.azureStorageService = azureStorageService;
-            this.rootDir = rootDir;
-
             var accountName = azureStorageService.GetDefaultAccountName();
             var containerName = azureStorageService.GetDefaultContainerName(accountName);
             var client = azureStorageService.blobServiceClients[accountName];
@@ -54,7 +52,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             container = client.GetBlobContainerClient(containerName);
 
             blobPath = azureAccount.EndPoint.Trim(['/', '\\']) + "/" + containerName.Trim(['/', '\\']) + "/";
-            filesPath = blobPath + rootDir.Trim(['/', '\\']);
+            filesPath = blobPath;
             blobPath = blobPath.Replace("../", "");
             filesPath = filesPath.Replace("../", "");
 
@@ -78,19 +76,29 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             rootPath = filesPath.Replace(blobPath, "");
         }
 
+        public void SetRootDirectory(string root)
+        {
+            this.rootDir = root;
+
+            filesPath = blobPath + root.Trim(['/', '\\']);
+            filesPath = filesPath.Replace("../", "");
+
+            SetBlobContainer(blobPath, filesPath);
+        }
+
         // Reads the storage 
-        public FileManagerResponse GetFiles(string path, bool showHiddenItems, FileManagerDirectoryContent[] selectedItems)
+        public FileExplorerResponse GetFiles(string path, bool showHiddenItems, FileExplorerDirectoryContent[] selectedItems)
         {
             return GetFilesAsync(path, "*.*", selectedItems).GetAwaiter().GetResult();
         }
 
         // Reads the storage files
-        protected async Task<FileManagerResponse> GetFilesAsync(string path, string filter, FileManagerDirectoryContent[] selectedItems)
+        protected async Task<FileExplorerResponse> GetFilesAsync(string path, string filter, FileExplorerDirectoryContent[] selectedItems)
         {
-            FileManagerResponse readResponse = new FileManagerResponse();
+            FileExplorerResponse readResponse = new FileExplorerResponse();
             List<string> prefixes = new List<string>();
-            List<FileManagerDirectoryContent> details = new List<FileManagerDirectoryContent>();
-            FileManagerDirectoryContent cwd = new FileManagerDirectoryContent();
+            List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
+            FileExplorerDirectoryContent cwd = new FileExplorerDirectoryContent();
             try
             {
                 // Check if there are any items in this dir or any sub dirs
@@ -134,7 +142,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile || isHidden;
                         if (skip) continue;
 
-                        FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
+                        FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
                         entry.Name = item.Name.Replace(path, "");
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(item.Name.Replace(path, ""));
@@ -152,7 +160,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     foreach (string item in page.Values.Where(x => x.IsPrefix && !deletedList.Contains(x.Prefix)).Select(x => x.Prefix))
                     {
-                        FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
+                        FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
                         string dir = item;
                         entry.Name = dir.Replace(path, "").Replace("/", "");
                         entry.Type = "Directory";
@@ -237,18 +245,18 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Gets details of the files
-        public FileManagerResponse Details(string path, string[] names, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Details(string path, string[] names, params FileExplorerDirectoryContent[] data)
         {
             return GetDetailsAsync(path, names, data).GetAwaiter().GetResult();
         }
 
         // Gets the details
-        protected async Task<FileManagerResponse> GetDetailsAsync(string path, string[] names, IEnumerable<object> selectedItems = null)
+        protected async Task<FileExplorerResponse> GetDetailsAsync(string path, string[] names, IEnumerable<object> selectedItems = null)
         {
             bool isVariousFolders = false;
             string previousPath = "";
             string previousName = "";
-            FileManagerResponse detailsResponse = new FileManagerResponse();
+            FileExplorerResponse detailsResponse = new FileExplorerResponse();
             try
             {
                 bool isFile = false;
@@ -256,7 +264,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 if (names.Length == 0 && selectedItems != null)
                 {
                     List<string> values = new List<string>();
-                    foreach (FileManagerDirectoryContent item in selectedItems)
+                    foreach (FileExplorerDirectoryContent item in selectedItems)
                     {
                         values.Add(item.Name);
                     }
@@ -266,7 +274,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 long multipleSize = 0;
                 if (selectedItems != null)
                 {
-                    foreach (FileManagerDirectoryContent fileItem in selectedItems)
+                    foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                     {
                         if (names.Length == 1)
                         {
@@ -322,19 +330,19 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Creates a new folder
-        public FileManagerResponse Create(string path, string name, params FileManagerDirectoryContent[] selectedItems)
+        public FileExplorerResponse Create(string path, string name, params FileExplorerDirectoryContent[] selectedItems)
         {
             isFolderAvailable = false;
-            FileManagerResponse createResponse = new FileManagerResponse();
+            FileExplorerResponse createResponse = new FileExplorerResponse();
             try
             {
                 CreateFolderAsync(path, name, selectedItems).GetAwaiter().GetResult();
                 if (!isFolderAvailable)
                 {
-                    FileManagerDirectoryContent content = new FileManagerDirectoryContent();
+                    FileExplorerDirectoryContent content = new FileExplorerDirectoryContent();
                     content.Name = name;
-                    FileManagerDirectoryContent[] directories = new[] { content };
-                    createResponse.Files = (IEnumerable<FileManagerDirectoryContent>)directories;
+                    FileExplorerDirectoryContent[] directories = new[] { content };
+                    createResponse.Files = (IEnumerable<FileExplorerDirectoryContent>)directories;
                 }
                 else
                 {
@@ -376,25 +384,25 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Renames file(s) or folder(s)
-        public FileManagerResponse Rename(string path, string oldName, string newName, bool replace = false, bool showFileExtension = true, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Rename(string path, string oldName, string newName, bool replace = false, bool showFileExtension = true, params FileExplorerDirectoryContent[] data)
         {
             throw new NotImplementedException();
             //return RenameAsync(path, oldName, newName, showFileExtension, data).GetAwaiter().GetResult();
         }
 
         // Renames file(s) or folder(s)
-        protected async Task<FileManagerResponse> RenameAsync(string path, string oldName, string newName, bool showFileExtension, params FileManagerDirectoryContent[] selectedItems)
+        protected async Task<FileExplorerResponse> RenameAsync(string path, string oldName, string newName, bool showFileExtension, params FileExplorerDirectoryContent[] selectedItems)
         {
-            FileManagerResponse renameResponse = new FileManagerResponse();
-            List<FileManagerDirectoryContent> details = new List<FileManagerDirectoryContent>();
-            FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
+            FileExplorerResponse renameResponse = new FileExplorerResponse();
+            List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
+            FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
             try
             {
                 bool isAlreadyAvailable = false;
                 bool isFile = false;
-                foreach (FileManagerDirectoryContent fileItem in selectedItems)
+                foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                 {
-                    FileManagerDirectoryContent directoryContent = fileItem;
+                    FileExplorerDirectoryContent directoryContent = fileItem;
                     isFile = directoryContent.IsFile;
                     isAlreadyAvailable = await IsFileExists(path + newName);
                     entry.Name = newName;
@@ -454,9 +462,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Deletes file(s) or folder(s)
-        public FileManagerResponse Delete(string path, string[] names, bool softDelete, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Delete(string path, string[] names, bool softDelete, params FileExplorerDirectoryContent[] data)
         {
-            var newData = new List<FileManagerDirectoryContent>();
+            var newData = new List<FileExplorerDirectoryContent>();
 
             if (this.fileExplorerAccessControl is not null)
             {
@@ -471,11 +479,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Deletes file(s) or folder(s)
-        protected async Task<FileManagerResponse> RemoveAsync(string[] names, string path, bool softDelete, List<FileManagerDirectoryContent> selectedItems)
+        protected async Task<FileExplorerResponse> RemoveAsync(string[] names, string path, bool softDelete, List<FileExplorerDirectoryContent> selectedItems)
         {
-            FileManagerResponse removeResponse = new FileManagerResponse();
-            List<FileManagerDirectoryContent> details = new List<FileManagerDirectoryContent>();
-            FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
+            FileExplorerResponse removeResponse = new FileExplorerResponse();
+            List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
+            FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
             try
             {
                 var blobClient = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
@@ -490,7 +498,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     }
                 }
 
-                foreach (FileManagerDirectoryContent fileItem in selectedItems)
+                foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                 {
                     path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
 
@@ -572,9 +580,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // To get the file details
-        private static FileManagerDirectoryContent GetFileDetails(string targetPath, FileManagerDirectoryContent fileDetails)
+        private static FileExplorerDirectoryContent GetFileDetails(string targetPath, FileExplorerDirectoryContent fileDetails)
         {
-            FileManagerDirectoryContent entry = new FileManagerDirectoryContent();
+            FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
             entry.Name = fileDetails.Name;
             entry.Type = fileDetails.Type;
             entry.IsFile = fileDetails.IsFile;
@@ -603,20 +611,20 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Copies file(s) or folders
-        public FileManagerResponse Copy(string path, string targetPath, string[] names, string[] renameFiles, FileManagerDirectoryContent targetData, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Copy(string path, string targetPath, string[] names, string[] renameFiles, FileExplorerDirectoryContent targetData, params FileExplorerDirectoryContent[] data)
         {
             throw new NotImplementedException();
             //return CopyToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
         }
 
-        //private async Task<FileManagerResponse> CopyToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
+        //private async Task<FileManagerResponse> CopyToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileExplorerDirectoryContent[] data)
         //{
         //    FileManagerResponse copyResponse = new FileManagerResponse();
         //    HashSet<string> processedItems = new HashSet<string>();
         //    try
         //    {
         //        renamedFiles = renamedFiles ?? Array.Empty<string>();
-        //        foreach (FileManagerDirectoryContent item in data)
+        //        foreach (FileExplorerDirectoryContent item in data)
         //        {
         //            if (processedItems.Contains(item.Name))
         //            {
@@ -716,7 +724,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //}
 
         // To iterate and copy subfolder
-        //private void CopySubFolder(FileManagerDirectoryContent subFolder, string targetPath)
+        //private void CopySubFolder(FileExplorerDirectoryContent subFolder, string targetPath)
         //{
         //    targetPath = targetPath + subFolder.Name + "/";
         //    foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
@@ -729,7 +737,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //        }
         //        foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
         //        {
-        //            FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
+        //            FileExplorerDirectoryContent itemDetail = new FileExplorerDirectoryContent();
         //            itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
         //            itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
         //            CopySubFolder(itemDetail, targetPath);
@@ -774,7 +782,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //    await existBlob.DeleteAsync();
         //}
 
-        //private async void MoveSubFolder(FileManagerDirectoryContent subFolder, string targetPath)
+        //private async void MoveSubFolder(FileExplorerDirectoryContent subFolder, string targetPath)
         //{
         //    targetPath = targetPath + subFolder.Name + "/";
         //    foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(prefix: subFolder.Path + "/", delimiter: "/").AsPages())
@@ -787,7 +795,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //        }
         //        foreach (string item in page.Values.Where(item => item.IsPrefix).Select(item => item.Prefix))
         //        {
-        //            FileManagerDirectoryContent itemDetail = new FileManagerDirectoryContent();
+        //            FileExplorerDirectoryContent itemDetail = new FileExplorerDirectoryContent();
         //            itemDetail.Name = item.Replace(subFolder.Path, "").Replace("/", "");
         //            itemDetail.Path = subFolder.Path + "/" + itemDetail.Name;
         //            MoveSubFolder(itemDetail, targetPath);
@@ -796,19 +804,19 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //}
 
         // Moves file(s) or folders
-        public FileManagerResponse Move(string path, string targetPath, string[] names, string[] renameFiles, FileManagerDirectoryContent targetData, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Move(string path, string targetPath, string[] names, string[] renameFiles, FileExplorerDirectoryContent targetData, params FileExplorerDirectoryContent[] data)
         {
             throw new NotImplementedException();
             //return MoveToAsync(path, targetPath, names, renameFiles, data).GetAwaiter().GetResult();
         }
 
-        //private async Task<FileManagerResponse> MoveToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileManagerDirectoryContent[] data)
+        //private async Task<FileManagerResponse> MoveToAsync(string path, string targetPath, string[] names, string[] renamedFiles = null, params FileExplorerDirectoryContent[] data)
         //{
         //    FileManagerResponse moveResponse = new FileManagerResponse();
         //    try
         //    {
         //        renamedFiles = renamedFiles ?? Array.Empty<string>();
-        //        foreach (FileManagerDirectoryContent item in data)
+        //        foreach (FileExplorerDirectoryContent item in data)
         //        {
         //            if (item.IsFile)
         //            {
@@ -901,7 +909,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         //}
 
         // Search for file(s) or folders
-        public FileManagerResponse Search(string path, string searchString, bool showHiddenItems, bool caseSensitive, params FileManagerDirectoryContent[] data)
+        public FileExplorerResponse Search(string path, string searchString, bool showHiddenItems, bool caseSensitive, params FileExplorerDirectoryContent[] data)
         {
             throw new NotImplementedException();
             //directoryContentItems.Clear();
@@ -913,14 +921,14 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Gets all files
-        protected virtual void GetAllFiles(string path, FileManagerResponse data)
+        protected virtual void GetAllFiles(string path, FileExplorerResponse data)
         {
-            FileManagerResponse directoryList = new FileManagerResponse();
+            FileExplorerResponse directoryList = new FileExplorerResponse();
             directoryList.Files = data.Files.Where(item => item.IsFile == false);
             for (int i = 0; i < directoryList.Files.Count(); i++)
             {
-                FileManagerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", true, new[] { directoryList.Files.ElementAt(i) });
-                innerData.Files = innerData.Files.Select(file => new FileManagerDirectoryContent
+                FileExplorerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", true, new[] { directoryList.Files.ElementAt(i) });
+                innerData.Files = innerData.Files.Select(file => new FileExplorerDirectoryContent
                 {
                     Name = file.Name,
                     Type = file.Type,
@@ -947,26 +955,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             };
 
             return JsonSerializer.Serialize(userData, options);
-        }
-
-        public FileManagerResponse Upload(string path, IList<IFormFile> files, string action, params FileManagerDirectoryContent[] data)
-        {
-            throw new NotImplementedException();
-        }
-
-        public virtual FileStreamResult Download(string path, string[] names = null, params FileManagerDirectoryContent[] selectedItems)
-        {
-            throw new NotImplementedException();
-        }
-
-        public FileStreamResult GetImage(string path, string id, bool allowCompress, ImageSize size, params FileManagerDirectoryContent[] data)
-        {
-            throw new NotImplementedException();
-        }
-
-        public FileManagerResponse Delete(string path, string[] names, params FileManagerDirectoryContent[] data)
-        {
-            throw new NotImplementedException();
         }
     }
 }
