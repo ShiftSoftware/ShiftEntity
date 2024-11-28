@@ -29,6 +29,7 @@ public class FileExplorerDirectoryContent
     public string? SearchString { get; set; }
     public bool ShowHiddenItems { get; set; }
     public bool ShowFileExtension { get; set; }
+    public bool IsDeleted { get; set; }
     public Dictionary<string, object>? CustomData { get; set; }
     public FileExplorerDirectoryContent[]? Data { get; set; }
     public FileExplorerDirectoryContent? TargetData { get; set; }

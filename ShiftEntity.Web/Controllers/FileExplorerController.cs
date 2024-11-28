@@ -58,7 +58,7 @@ public class FileExplorerController : ControllerBase
 
             case "read":
                 // Reads the file(s) or folder(s) from the given path.
-                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.Data));
+                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
                 return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));

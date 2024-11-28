@@ -64,13 +64,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Reads the storage 
-        public FileExplorerResponse GetFiles(string path, FileExplorerDirectoryContent[] selectedItems)
+        public FileExplorerResponse GetFiles(string path, bool showHiddenItems, FileExplorerDirectoryContent[] selectedItems)
         {
-            return GetFilesAsync(path, "*.*", selectedItems).GetAwaiter().GetResult();
+            return GetFilesAsync(path, "*.*", showHiddenItems, selectedItems).GetAwaiter().GetResult();
         }
 
         // Reads the storage files
-        protected async Task<FileExplorerResponse> GetFilesAsync(string path, string filter, FileExplorerDirectoryContent[] selectedItems)
+        protected async Task<FileExplorerResponse> GetFilesAsync(string path, string filter, bool ViewDeleted, FileExplorerDirectoryContent[] selectedItems)
         {
             // make sure the path doesn't start with and is not '/'
             path = path.TrimStart('/');
@@ -114,12 +114,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
                 }
 
-
                 var filterPath = selectedItems.Length != 0 ? string.IsNullOrWhiteSpace(rootPath) ? "/" + path : ("/" + path).Replace(rootPath, "") : "/";
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
-                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob && !deletedList.Contains("/" + x.Blob.Name)).Select(x => x.Blob))
+                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
                     {
                         var isHidden = item.Metadata.TryGetValue(Constants.FileExplorerHiddenMetadataKey, out _);
                         var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileExplorerHiddenFilename);
@@ -128,6 +127,19 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         if (skip) continue;
 
                         var entry = new FileExplorerDirectoryContent();
+
+                        if (deletedList.Contains("/" + item.Name))
+                        {
+                            if (ViewDeleted)
+                            {
+                                entry.IsDeleted = true;
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+
                         entry.Name = string.IsNullOrWhiteSpace(path) ? item.Name : item.Name.Replace(path, "");
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(entry.Name);
@@ -143,10 +155,23 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         details.Add(entry);
                     }
 
-                    foreach (string item in page.Values.Where(x => x.IsPrefix && !deletedList.Contains("/" + x.Prefix)).Select(x => x.Prefix))
+                    foreach (string item in page.Values.Where(x => x.IsPrefix).Select(x => x.Prefix))
                     {
                         var entry = new FileExplorerDirectoryContent();
                         string dir = item;
+
+                        if (deletedList.Contains("/" + dir))
+                        {
+                            if (ViewDeleted)
+                            {
+                                entry.IsDeleted = true;
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+
                         entry.Name = string.IsNullOrWhiteSpace(path) ? dir.Replace("/", "") : dir.Replace(path, "").Replace("/", "");
                         entry.Type = "Directory";
                         entry.IsFile = false;
@@ -911,13 +936,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Gets all files
-        protected virtual void GetAllFiles(string path, FileExplorerResponse data)
+        protected virtual void GetAllFiles(string path, bool ViewDeleted, FileExplorerResponse data)
         {
             FileExplorerResponse directoryList = new FileExplorerResponse();
             directoryList.Files = data.Files.Where(item => item.IsFile == false);
             for (int i = 0; i < directoryList.Files.Count(); i++)
             {
-                FileExplorerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", new[] { directoryList.Files.ElementAt(i) });
+                FileExplorerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", ViewDeleted, new[] { directoryList.Files.ElementAt(i) });
                 innerData.Files = innerData.Files.Select(file => new FileExplorerDirectoryContent
                 {
                     Name = file.Name,
@@ -928,7 +953,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     FilterPath = file.FilterPath
                 });
                 directoryContentItems.AddRange(innerData.Files);
-                GetAllFiles(path + directoryList.Files.ElementAt(i).Name + "/", innerData);
+                GetAllFiles(path + directoryList.Files.ElementAt(i).Name + "/", ViewDeleted, innerData);
             }
         }
 
