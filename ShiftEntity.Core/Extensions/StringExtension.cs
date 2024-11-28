@@ -5,23 +5,19 @@ namespace ShiftSoftware.ShiftEntity.Core.Extensions;
 
 public static class StringExtension
 {
+    static readonly char[] separators = ['/', '\\'];
     public static string AddUrlPath(this string? text, params string?[] paths)
     {
-        char[] separators = ['/', '\\'];
-
         text ??= string.Empty;
 
-        var _paths = paths.Where(x => !string.IsNullOrWhiteSpace(x));
+        var _paths = paths
+            .Select(x => x?.Trim(separators))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .SelectMany(x => x!.Split(separators, StringSplitOptions.RemoveEmptyEntries));
 
-        if (_paths.Count() == 0)
-        {
-            return text;
-        }
+        var baseAddress = text.TrimEnd(separators) + "/";
 
-        var baseAddress = string.IsNullOrWhiteSpace(text) ? "" : text.TrimEnd(separators) + "/";
-
-        _paths = _paths.Select(x => x!.Trim(separators));
-
-        return baseAddress + string.Join("/", _paths);
+        var url = baseAddress + string.Join("/", _paths);
+        return url.Trim(separators);
     }
 }

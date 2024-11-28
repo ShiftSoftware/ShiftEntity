@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -48,15 +49,8 @@ public class FileExplorerController : ControllerBase
 
         if (args.Path != "")
         {
-            string startPath = this.operation.blobPath;
-            string originalPath = (this.operation.filesPath).Replace(startPath, "");
-            //-----------------
-            //For example
-            //string startPath = "https://azure_service_account.blob.core.windows.net/files/";
-            //string originalPath = ("https://azure_service_account.blob.core.windows.net/files/Files").Replace(startPath, "");
-            //-------------------
-            args.Path = !args.Path.Contains(originalPath) ? (originalPath + args.Path).Replace("//", "/") : (args.Path).Replace("//", "/");
-            args.TargetPath = (originalPath + args.TargetPath).Replace("//", "/");
+            args.Path = this.operation.rootPath.AddUrlPath(args.Path) + "/";
+            args.TargetPath = this.operation.rootPath.AddUrlPath(args.TargetPath) + "/";
         }
 
         switch (args.Action)
@@ -64,7 +58,7 @@ public class FileExplorerController : ControllerBase
 
             case "read":
                 // Reads the file(s) or folder(s) from the given path.
-                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
+                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
                 return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));

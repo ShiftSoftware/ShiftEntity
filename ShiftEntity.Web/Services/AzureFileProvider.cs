@@ -19,6 +19,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using Azure.Storage.Sas;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
@@ -28,8 +29,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         BlobContainerClient container;
         public string blobPath;
         public string filesPath;
+        public string rootPath = string.Empty;
         long size;
-        static string rootPath;
         List<string> existFiles = new List<string>();
         List<string> missingFiles = new List<string>();
         bool isFolderAvailable = false;
@@ -38,7 +39,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         DateTime prevUpdated = DateTime.MinValue;
 
         private AzureStorageService? azureStorageService;
-        private string rootDir = string.Empty;
 
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
@@ -51,43 +51,20 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             var azureAccount = azureStorageService.azureStorageAccounts[accountName];
             container = client.GetBlobContainerClient(containerName);
 
-            blobPath = azureAccount.EndPoint.Trim(['/', '\\']) + "/" + containerName.Trim(['/', '\\']) + "/";
+            blobPath = container.Uri.ToString();
             filesPath = blobPath;
-            blobPath = blobPath.Replace("../", "");
-            filesPath = filesPath.Replace("../", "");
 
-            SetBlobContainer(blobPath, filesPath);
             this.fileExplorerAccessControl = fileExplorerAccessControl;
-        }
-
-
-        // Registering the azure storage 
-        public void RegisterAzure(string accountName, string accountKey, string blobName)
-        {
-            container = new BlobServiceClient(new Uri(blobPath.Substring(0, blobPath.Length - blobName.Length - 1)), new StorageSharedKeyCredential(accountName, accountKey), null).GetBlobContainerClient(blobName);
-
-        }
-
-        // Sets blob and file path
-        public void SetBlobContainer(string blob_Path, string file_Path)
-        {
-            blobPath = blob_Path;
-            filesPath = file_Path;
-            rootPath = filesPath.Replace(blobPath, "");
         }
 
         public void SetRootDirectory(string root)
         {
-            this.rootDir = root;
-
-            filesPath = blobPath + root.Trim(['/', '\\']);
-            filesPath = filesPath.Replace("../", "");
-
-            SetBlobContainer(blobPath, filesPath);
+            filesPath = blobPath.AddUrlPath(root).Replace("../", "");
+            rootPath = filesPath.Replace(blobPath, "");
         }
 
         // Reads the storage 
-        public FileExplorerResponse GetFiles(string path, bool showHiddenItems, FileExplorerDirectoryContent[] selectedItems)
+        public FileExplorerResponse GetFiles(string path, FileExplorerDirectoryContent[] selectedItems)
         {
             return GetFilesAsync(path, "*.*", selectedItems).GetAwaiter().GetResult();
         }
@@ -95,6 +72,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         // Reads the storage files
         protected async Task<FileExplorerResponse> GetFilesAsync(string path, string filter, FileExplorerDirectoryContent[] selectedItems)
         {
+            // make sure the path doesn't start with and is not '/'
+            path = path.TrimStart('/');
+
             FileExplorerResponse readResponse = new FileExplorerResponse();
             List<string> prefixes = new List<string>();
             List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
@@ -102,7 +82,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             try
             {
                 // Check if there are any items in this dir or any sub dirs
-                var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 100).GetAsyncEnumerator();
+                // We only need to find one item
+                var blobPages = container.GetBlobsAsync(prefix: path).AsPages(pageSizeHint: 1).GetAsyncEnumerator();
                 await blobPages.MoveNextAsync();
 
                 if (!blobPages.Current.Values.Any())
@@ -116,12 +97,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 string[] extensions = (filter.Replace(" ", "") ?? "*").Split(",|;".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
                 var noFilter = extensions[0].Equals("*.*") || extensions[0].Equals("*");
-                cwd.Name = selectedItems.Length != 0 ? selectedItems[0].Name : path.TrimEnd('/');
-                container.GetBlobClient(path);
+                cwd.Name = selectedItems.Length != 0 ? selectedItems[0].Name : string.IsNullOrWhiteSpace(path) ? "/" : path.Split('/', StringSplitOptions.RemoveEmptyEntries).Last();
+                //container.GetBlobClient("/" + path);
                 cwd.Type = "File Folder";
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
 
+                // get the list of deleted items in the current dir
                 var deletedFilesBlob = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
                 var deletedList = new List<string>();
 
@@ -132,9 +114,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
                 }
 
+
+                var filterPath = selectedItems.Length != 0 ? string.IsNullOrWhiteSpace(rootPath) ? "/" + path : ("/" + path).Replace(rootPath, "") : "/";
+
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
-                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob && !deletedList.Contains(x.Blob.Name)).Select(x => x.Blob))
+                    foreach (BlobItem item in page.Values.Where(x => x.IsBlob && !deletedList.Contains("/" + x.Blob.Name)).Select(x => x.Blob))
                     {
                         var isHidden = item.Metadata.TryGetValue(Constants.FileExplorerHiddenMetadataKey, out _);
                         var isHiddenEmptyFile = item.Name.EndsWith(Constants.FileExplorerHiddenFilename);
@@ -142,33 +127,33 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         var skip = (!noFilter && fileTypeIsFiltered) || isHiddenEmptyFile || isHidden;
                         if (skip) continue;
 
-                        FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
-                        entry.Name = item.Name.Replace(path, "");
+                        var entry = new FileExplorerDirectoryContent();
+                        entry.Name = string.IsNullOrWhiteSpace(path) ? item.Name : item.Name.Replace(path, "");
                         entry.Path = item.Name;
-                        entry.Type = Path.GetExtension(item.Name.Replace(path, ""));
+                        entry.Type = Path.GetExtension(entry.Name);
                         entry.IsFile = true;
-                        entry.Size = item.Properties.ContentLength.Value;
-                        entry.DateModified = item.Properties.LastModified.Value.LocalDateTime;
+                        entry.Size = item.Properties.ContentLength ?? 0;
+                        entry.DateModified = item.Properties.LastModified?.LocalDateTime ?? default;
                         entry.HasChild = false;
-                        entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
+                        entry.FilterPath = filterPath;
 
-                        var blobName = (rootDir + entry.FilterPath + entry.Name).Trim('/');
+                        var blobName = (rootPath + entry.FilterPath + entry.Name).Trim('/');
                         entry.TargetPath = azureStorageService?.GetSignedURL(blobName, BlobSasPermissions.Read, container.Name);
 
                         details.Add(entry);
                     }
 
-                    foreach (string item in page.Values.Where(x => x.IsPrefix && !deletedList.Contains(x.Prefix)).Select(x => x.Prefix))
+                    foreach (string item in page.Values.Where(x => x.IsPrefix && !deletedList.Contains("/" + x.Prefix)).Select(x => x.Prefix))
                     {
-                        FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
+                        var entry = new FileExplorerDirectoryContent();
                         string dir = item;
-                        entry.Name = dir.Replace(path, "").Replace("/", "");
+                        entry.Name = string.IsNullOrWhiteSpace(path) ? dir.Replace("/", "") : dir.Replace(path, "").Replace("/", "");
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
                         entry.Path = item;
                         entry.HasChild = false;
-                        entry.FilterPath = selectedItems.Length != 0 ? path.Replace(rootPath, "") : "/";
+                        entry.FilterPath = filterPath;
                         //entry.DateModified = await DirectoryLastModified(dir);
                         lastUpdated = prevUpdated = DateTime.MinValue;
                         details.Add(entry);
@@ -294,7 +279,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                                 isFile = false;
                                 fileDetails.Name = fileItem.Name;
                                 fileDetails.Location = (namesAvailable ? rootPath + fileItem.FilterPath + fileItem.Name : path.Substring(0, path.Length - 1)).Replace("/", @"\");
-                                fileDetails.Size = ByteConversion(sizeValue); fileDetails.Modified = await DirectoryLastModified(path); detailsResponse.Details = fileDetails;
+                                fileDetails.Size = ByteConversion(sizeValue); fileDetails.Modified = await DirectoryLastModified(path.TrimStart('/')); detailsResponse.Details = fileDetails;
                             }
                         }
                         else
@@ -486,10 +471,15 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
             try
             {
-                var blobClient = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
+                BlobClient? blobClient = null;
                 var deletedList = string.Empty;
+                
+                if (softDelete)
+                {
+                    blobClient = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
+                }
 
-                if (await blobClient.ExistsAsync())
+                if (blobClient != null && await blobClient.ExistsAsync())
                 {
                     BlobDownloadInfo download = await blobClient.DownloadAsync();
                     using (var reader = new StreamReader(download.Content, Encoding.UTF8))
@@ -588,7 +578,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             entry.IsFile = fileDetails.IsFile;
             entry.Size = fileDetails.Size;
             entry.HasChild = fileDetails.HasChild;
-            entry.FilterPath = targetPath.Replace(rootPath, "");
+            //entry.FilterPath = targetPath.Replace(rootPath, "");
             return entry;
         }
 
@@ -927,7 +917,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             directoryList.Files = data.Files.Where(item => item.IsFile == false);
             for (int i = 0; i < directoryList.Files.Count(); i++)
             {
-                FileExplorerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", true, new[] { directoryList.Files.ElementAt(i) });
+                FileExplorerResponse innerData = GetFiles(path + directoryList.Files.ElementAt(i).Name + "/", new[] { directoryList.Files.ElementAt(i) });
                 innerData.Files = innerData.Files.Select(file => new FileExplorerDirectoryContent
                 {
                     Name = file.Name,
