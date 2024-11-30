@@ -10,6 +10,7 @@ using ShiftSoftware.TypeAuth.Core;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -39,10 +40,23 @@ public class AzureStorageController : ControllerBase
         foreach (var file in files)
         {
             var AccountName = file.AccountName ?? azureStorageService.GetDefaultAccountName();
-
             var ContainerName = file.ContainerName ?? azureStorageService.GetDefaultContainerName(AccountName);
+            var blobName = file.Blob;
 
-            file.Url = azureStorageService.GetSignedURL(file.Blob!, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
+            try
+            {
+                var client = azureStorageService.blobServiceClients[AccountName];
+                var container = client.GetBlobContainerClient(ContainerName);
+                var blob = container.GetBlobClient(file.Blob);
+
+                if (blob.Exists())
+                {
+                    blobName = $"{file.Blob} ({Guid.NewGuid().ToString().Substring(0, 4)})";
+                }
+            }
+            catch (Exception) { }
+
+            file.Url = azureStorageService.GetSignedURL(blobName!, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
         }
 
         if (this.fileExplorerAccessControl is not null)

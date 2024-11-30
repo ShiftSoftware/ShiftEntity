@@ -347,21 +347,18 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             try
             {
                 CreateFolderAsync(path, name, selectedItems).GetAwaiter().GetResult();
-                if (!isFolderAvailable)
+                if (isFolderAvailable)
+                {
+                    return Create(path, $"{name} ({Guid.NewGuid().ToString().Substring(0, 4)})", selectedItems);
+                }
+                else
                 {
                     FileExplorerDirectoryContent content = new FileExplorerDirectoryContent();
                     content.Name = name;
                     FileExplorerDirectoryContent[] directories = new[] { content };
                     createResponse.Files = (IEnumerable<FileExplorerDirectoryContent>)directories;
                 }
-                else
-                {
-                    ErrorDetails error = new ErrorDetails();
-                    error.FileExists = existFiles;
-                    error.Code = "400";
-                    error.Message = "Folder Already Exists";
-                    createResponse.Error = error;
-                }
+
                 return createResponse;
             }
             catch (Exception e)
