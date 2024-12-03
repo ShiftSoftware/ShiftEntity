@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Core.Extensions;
+using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -52,6 +53,8 @@ public class FileExplorerController : ControllerBase
             args.Path = this.operation.rootPath.AddUrlPath(args.Path) + "/";
             args.TargetPath = this.operation.rootPath.AddUrlPath(args.TargetPath) + "/";
         }
+
+        args.Data = args.Data?.Where(x => x != null).ToArray();
 
         switch (args.Action)
         {
