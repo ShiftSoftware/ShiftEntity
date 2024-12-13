@@ -35,7 +35,6 @@
 		<PackageReference Include="Google.Apis.Auth.AspNetCore3" Version="1.68.0" />
 		<PackageReference Include="Google.Apis.Firebaseappcheck.v1beta" Version="1.68.0.3435" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" Version="5.5.0" />
-		<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.0" />
 		<PackageReference Include="MimeTypes" Version="2.5.2">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
