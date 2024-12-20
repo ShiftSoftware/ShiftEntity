@@ -21,6 +21,7 @@ public class AzureStorageOption
     public string EndPoint { get; set; } = default!;
     public string DefaultContainerName { get; set; } = default!;
     public bool IsDefaultAccount { get; set; }
+    public bool SupportsFileExplorer { get; set; }
 }
 
 public class AzureStorageService
