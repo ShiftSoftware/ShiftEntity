@@ -3,7 +3,7 @@ using ShiftSoftware.ShiftEntity.Core;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Triggers;
 
-internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>
+internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity : ShiftEntity<Entity>, new()
 {
     public Task BeforeSave(ITriggerContext<Entity> context, CancellationToken cancellationToken)
     {
@@ -30,6 +30,26 @@ internal class GeneralTrigger<Entity> : IBeforeSaveTrigger<Entity> where Entity 
 
             context.Entity.LastSaveDate = now;
         }
+        
+        //if (context.ChangeType == ChangeType.Added || context.ChangeType == ChangeType.Modified)
+        //{
+        //    if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<Entity>))))
+        //    {
+        //        var entryWithUniqueHash = (context.Entity as IEntityHasUniqueHash<Entity>)!;
+
+        //        var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
+
+        //        if (uniqueHash != null)
+        //        {
+        //            using var sha256 = System.Security.Cryptography.SHA512.Create();
+
+        //            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
+
+        //            context.Entity.Property("UniqueHash").CurrentValue = hashBytes;
+        //        }
+        //    }
+        //}
+        
 
         return Task.CompletedTask;
     }
