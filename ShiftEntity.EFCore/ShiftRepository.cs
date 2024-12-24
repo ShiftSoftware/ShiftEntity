@@ -239,7 +239,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
                     if (uniqueHash != null)
                     {
-                        using var sha256 = System.Security.Cryptography.SHA512.Create();
+                        using var sha256 = System.Security.Cryptography.SHA256.Create();
                         
                         var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
 
