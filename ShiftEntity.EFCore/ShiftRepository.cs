@@ -233,7 +233,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
                 {
-                    var entryWithUniqueHash = (entry.Entity as IEntityHasUniqueHash<EntityType>)!;
+                    var entryWithUniqueHash = entry.Entity as IEntityHasUniqueHash<EntityType>;
+
+                    if (entryWithUniqueHash is null)
+                        continue;
 
                     var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
 
