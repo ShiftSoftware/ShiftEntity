@@ -42,17 +42,6 @@ public static class IMvcBuilderExtensions
         builder.Services.RegisterShiftEntityEfCoreTriggers();
         builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
 
-        //Add rou number capability to sqlserver
-        builder.Services.Decorate<DbContextOptions>((inner, provider) =>
-        {
-            var dbContextBuilder = new DbContextOptionsBuilder(inner);
-            var slqServerOptionBuilder= new SqlServerDbContextOptionsBuilder(dbContextBuilder);
-
-            //slqServerOptionBuilder.AddRowNumberSupport();
-
-            return dbContextBuilder.Options;
-        });
-
         //Register timezone service to json options
         builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
         {
