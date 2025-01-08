@@ -42,7 +42,7 @@ public static class ModelBuilderExtensions
                     .Entity(clrType)
                     .HasIndex(uniqueHashColumnName)
                     .IsUnique()
-                    .HasFilter($"{uniqueHashColumnName} IS NOT NULL");
+                    .HasFilter($"{uniqueHashColumnName} IS NOT NULL and IsDeleted = 0");
             }
         }
 
