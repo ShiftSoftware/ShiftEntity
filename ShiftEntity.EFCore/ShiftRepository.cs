@@ -1,11 +1,13 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
@@ -225,6 +227,31 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual async Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false)
     {
+        foreach (var entry in db.ChangeTracker.Entries())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
+                {
+                    var entryWithUniqueHash = entry.Entity as IEntityHasUniqueHash<EntityType>;
+
+                    if (entryWithUniqueHash is null)
+                        continue;
+
+                    var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
+
+                    if (uniqueHash != null)
+                    {
+                        using var sha256 = System.Security.Cryptography.SHA256.Create();
+                        
+                        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
+
+                        entry.Property("UniqueHash").CurrentValue = hashBytes;
+                    }
+                }
+            }
+        }
+
         if (raiseBeforeCommitTriggers)
         {
             using var tx = db.Database.BeginTransaction();

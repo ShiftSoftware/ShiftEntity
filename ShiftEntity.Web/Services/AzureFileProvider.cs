@@ -45,15 +45,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl)
         {
             this.azureStorageService = azureStorageService;
-            var accountName = azureStorageService.GetDefaultAccountName();
-            var containerName = azureStorageService.GetDefaultContainerName(accountName);
-            var client = azureStorageService.blobServiceClients[accountName];
-            var azureAccount = azureStorageService.azureStorageAccounts[accountName];
-            container = client.GetBlobContainerClient(containerName);
-
-            blobPath = container.Uri.ToString();
-            filesPath = blobPath;
-
+            this.SetContainer();
             this.fileExplorerAccessControl = fileExplorerAccessControl;
         }
 
@@ -61,6 +53,33 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             filesPath = blobPath.AddUrlPath(root).Replace("../", "");
             rootPath = filesPath.Replace(blobPath, "");
+        }
+
+        public void SetContainer(string? accountName = null, string? containerName = null)
+        {
+            if (azureStorageService == null) return;
+        
+            var _accountName = accountName ?? azureStorageService.GetDefaultAccountName();
+            var _containerName = containerName ?? azureStorageService.GetDefaultContainerName(_accountName);
+            azureStorageService.azureStorageAccounts.TryGetValue(_accountName, out var accountOptions);
+
+            if (accountOptions?.SupportsFileExplorer == false)
+            {
+                throw new Exception($"FileExplorer not supported for storage account ({_accountName})");
+            }
+
+            BlobServiceClient? client = null;
+            azureStorageService?.blobServiceClients.TryGetValue(_accountName, out client);
+
+            if (client == null)
+            {
+                throw new Exception($"Blob container not found ({_containerName})");
+            }
+
+            container = client.GetBlobContainerClient(_containerName);
+
+            blobPath = container.Uri.ToString();
+            filesPath = blobPath;
         }
 
         // Reads the storage 

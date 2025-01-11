@@ -28,6 +28,22 @@ public static class ModelBuilderExtensions
 
                 modelBuilder.Entity(clrType).HasIndex(idempotencyKeyName).IsUnique().HasFilter($"{idempotencyKeyName} IS NOT NULL");
             }
+
+            if (clrType.GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<>))))
+            {
+                var uniqueHashColumnName = "UniqueHash";
+
+                modelBuilder
+                    .Entity(clrType)
+                    .Property<byte[]>(uniqueHashColumnName)
+                    .HasColumnType("BINARY(32)");
+
+                modelBuilder
+                    .Entity(clrType)
+                    .HasIndex(uniqueHashColumnName)
+                    .IsUnique()
+                    .HasFilter($"{uniqueHashColumnName} IS NOT NULL and IsDeleted = 0");
+            }
         }
 
         ///// Disable Cascade Delete

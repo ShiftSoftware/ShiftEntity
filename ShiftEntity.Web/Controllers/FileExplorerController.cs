@@ -45,8 +45,27 @@ public class FileExplorerController : ControllerBase
     public object FileOperations([FromBody] FileExplorerDirectoryContent args)
     {
         object? RootDir = null;
+        object? AccountName = null;
+        object? ContainerName = null;
         args.CustomData?.TryGetValue("RootDir", out RootDir);
+        args.CustomData?.TryGetValue("AccountName", out AccountName);
+        args.CustomData?.TryGetValue("ContainerName", out ContainerName);
+        
         this.operation.SetRootDirectory(RootDir?.ToString() ?? string.Empty);
+
+        try
+        {
+            this.operation.SetContainer(AccountName?.ToString(), ContainerName?.ToString());
+        }
+        catch (Exception e)
+        {
+            FileExplorerResponse response = new FileExplorerResponse();
+            ErrorDetails errorDetails = new ErrorDetails();
+            errorDetails.Message = e.Message;
+            errorDetails.Code = "417";
+            response.Error = errorDetails;
+            return response;
+        }
 
         if (args.Path != "")
         {
