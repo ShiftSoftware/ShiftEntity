@@ -538,8 +538,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     if (softDelete)
                     {
-                        var textToAppend = path + fileItem.Name;
-                        if (!fileItem.IsFile) textToAppend += "/";
+                        var textToAppend = "/" + fileItem.Path;
                         addToDeleted += textToAppend + "\n";
                     }
 
