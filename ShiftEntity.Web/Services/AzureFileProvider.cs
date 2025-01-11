@@ -88,6 +88,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 if (!blobPages.Current.Values.Any())
                 {
+                    readResponse.CWD = cwd;
                     ErrorDetails errorDetails = new ErrorDetails();
                     errorDetails.Message = "Could not find a part of the path '" + path + "'.";
                     errorDetails.Code = "417";
@@ -197,6 +198,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             }
             catch (Exception e)
             {
+                readResponse.CWD = cwd;
                 ErrorDetails errorDetails = new ErrorDetails();
                 errorDetails.Message = e.Message.ToString();
                 errorDetails.Code = "417";
@@ -495,6 +497,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 BlobClient? blobClient = null;
                 var deletedList = string.Empty;
+                var addToDeleted = string.Empty;
                 
                 if (softDelete)
                 {
@@ -518,13 +521,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     {
                         var textToAppend = path + fileItem.Name;
                         if (!fileItem.IsFile) textToAppend += "/";
-                        var newContent = deletedList + textToAppend + "\n";
-
-                        using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
-                        {
-                            byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
-                            await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
-                        }
+                        addToDeleted += textToAppend + "\n";
                     }
 
                     if (fileItem.IsFile)
@@ -566,6 +563,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             details.Add(entry);
                         }
                     }
+                }
+
+                using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
+                {
+                    var newContent = deletedList + addToDeleted;
+                    byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
+                    await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
                 }
             }
             catch (Exception e)
