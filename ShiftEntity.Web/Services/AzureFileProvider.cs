@@ -115,6 +115,43 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     return readResponse;
                 }
 
+
+                // Check if current path is in a deleted directory
+                var paths = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var currentPath = "";
+                var dl = new List<string>();
+
+                if (paths.Count() > 0)
+                {
+                    // get all deleted files in parent directories
+                    foreach (var pathPart in paths)
+                    {
+                        var blobPath = currentPath + Constants.FileExplorerHiddenFilename;
+                        var d = container.GetBlobClient(blobPath);
+
+                        if (await d.ExistsAsync())
+                        {
+                            BlobDownloadInfo download = await d.DownloadAsync();
+                            using var reader = new StreamReader(download.Content, Encoding.UTF8);
+                            dl.AddRange((await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries));
+                        }
+
+                        currentPath = pathPart + "/";
+                    }
+
+                    if (dl.Count > 0 && dl.Any(x => $"/{path}".StartsWith(x)))
+                    {
+                        cwd.Path = path;
+                        cwd.Name = path;
+                        readResponse.CWD = cwd;
+                        ErrorDetails errorDetails = new ErrorDetails();
+                        errorDetails.Message = "Could not find a part of the path '" + path + "'.";
+                        errorDetails.Code = "417";
+                        readResponse.Error = errorDetails;
+                        return readResponse;
+                    }
+                }
+
                 string[] extensions = (filter.Replace(" ", "") ?? "*").Split(",|;".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
                 var noFilter = extensions[0].Equals("*.*") || extensions[0].Equals("*");
                 cwd.Name = selectedItems.Length != 0 ? selectedItems[0].Name : string.IsNullOrWhiteSpace(path) ? "/" : path.Split('/', StringSplitOptions.RemoveEmptyEntries).Last();
@@ -122,6 +159,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.Type = "File Folder";
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
+                cwd.Path = path;
 
                 // get the list of deleted items in the current dir
                 var deletedFilesBlob = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
