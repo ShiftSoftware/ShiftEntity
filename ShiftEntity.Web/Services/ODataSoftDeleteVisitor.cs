@@ -25,7 +25,7 @@ internal class SoftDeleteCollectionConstantVisitor : QueryNodeVisitor<Collection
     }
 }
 
-internal class SoftDeleteQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
+public class SoftDeleteQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
 {
     public bool IsFilteringByIsDeleted { get; private set; }
 
