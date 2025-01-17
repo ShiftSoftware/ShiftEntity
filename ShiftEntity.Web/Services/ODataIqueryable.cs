@@ -12,7 +12,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 
 public class ODataIqueryable
 {
-    public static async Task<ODataDTO<T>> GetOdataDTOFromIQueryable<T>(IQueryable<T> data, ODataQueryOptions<T> oDataQueryOptions, HttpRequest httpRequest)
+    public static async ValueTask<ODataDTO<T>> GetOdataDTOFromIQueryableAsync<T>(IQueryable<T> data, ODataQueryOptions<T> oDataQueryOptions, HttpRequest httpRequest, bool runAsync = true)
     {
         if (oDataQueryOptions.Filter != null)
         {
@@ -42,7 +42,7 @@ public class ODataIqueryable
         if (oDataQueryOptions.OrderBy != null)
             data = oDataQueryOptions.OrderBy.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<T>;
 
-        var count = await data.CountAsync();
+        var count = runAsync ? await data.CountAsync() : data.Count();
 
         if (oDataQueryOptions.Skip != null)
             data = data.Skip(oDataQueryOptions.Skip.Value);
@@ -53,7 +53,7 @@ public class ODataIqueryable
         return new ODataDTO<T>
         {
             Count = count,
-            Value = await data.ToListAsync(),
+            Value = runAsync ? await data.ToListAsync() : data.ToList(),
         };
     }
 }
