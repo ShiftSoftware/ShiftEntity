@@ -51,7 +51,9 @@ public class AzureStorageController : ControllerBase
 
                 if (blob.Exists())
                 {
-                    blobName = $"{file.Blob} ({Guid.NewGuid().ToString().Substring(0, 4)})";
+                    var ext = System.IO.Path.GetExtension(file.Blob);
+                    var blobNameWithoutExtension = string.IsNullOrWhiteSpace(ext) ? file.Blob : file.Blob?.Replace(ext, "");
+                    blobName = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString().Substring(0, 4)}){ext}";
                 }
             }
             catch (Exception) { }
