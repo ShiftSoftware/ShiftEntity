@@ -114,9 +114,12 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
             {
                 var constantNode = (y as ConstantNode)!;
 
-                var visitedConstant = this.HashIdQueryNodeVisitor.Visit(constantNode) as ConstantNode;
+                var value = constantNode!.Value!;
 
-                return $"{visitedConstant!.Value}";
+                if (!value!.ToString()!.StartsWith("'"))
+                    value = $"'{value}'";
+
+                return value;
             })) + ")",
             nodeIn.CollectionType
         );
