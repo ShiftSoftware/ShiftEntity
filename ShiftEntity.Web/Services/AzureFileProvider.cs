@@ -23,7 +23,7 @@ using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
-    public class AzureFileProvider
+    public partial class AzureFileProvider
     {
         List<FileExplorerDirectoryContent> directoryContentItems = new List<FileExplorerDirectoryContent>();
         BlobContainerClient container;
@@ -172,7 +172,24 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
                 }
 
-                var filterPath = selectedItems.Length != 0 ? string.IsNullOrWhiteSpace(rootPath) ? "/" + path : ("/" + path).Replace(rootPath, "") : "/";
+
+                var filterPath = "/";
+
+                if (selectedItems.Length > 0)
+                {
+                    filterPath += path;
+
+                    // Remove rootPath from filterPath
+                    if (!string.IsNullOrWhiteSpace(rootPath))
+                    {
+                        var index = filterPath.IndexOf(rootPath, StringComparison.Ordinal);
+
+                        if (index >= 0)
+                        {
+                            filterPath = filterPath.Remove(index, rootPath.Length);
+                        }
+                    }
+                }
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
@@ -198,7 +215,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        entry.Name = string.IsNullOrWhiteSpace(path) ? item.Name : item.Name.Replace(path, "");
+                        entry.Name = GetName(item.Name, path);
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(entry.Name);
                         entry.IsFile = true;
@@ -230,7 +247,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        entry.Name = string.IsNullOrWhiteSpace(path) ? dir.Replace("/", "") : dir.Replace(path, "").Replace("/", "");
+                        entry.Name = GetName(dir, path);
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
@@ -265,6 +282,22 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             readResponse.Files = details;
             return readResponse;
+        }
+
+        private string GetName(string name, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return name.TrimEnd('/');
+            }
+            else
+            {
+                var nameRegex = ExtractNameRegex();
+                var result = nameRegex.Match(name);
+                var fileName = result.Groups.Values.LastOrDefault()?.Value;
+                fileName ??= name.Replace(path, "").Replace("/", "");
+                return fileName;
+            }
         }
 
         // Returns the last modified date for directories
@@ -1028,5 +1061,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             return JsonSerializer.Serialize(userData, options);
         }
+
+        [GeneratedRegex("/?([^/]+)/?$")]
+        private static partial Regex ExtractNameRegex();
     }
 }
