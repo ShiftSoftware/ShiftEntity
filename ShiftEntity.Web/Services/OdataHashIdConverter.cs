@@ -110,7 +110,14 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
 
         return new CollectionConstantNode(
             newCollection,
-            "(" + string.Join(",", newCollection.Select(y => $"'{(y as ConstantNode)!.Value}'")) + ")",
+            "(" + string.Join(",", newCollection.Select(y =>
+            {
+                var constantNode = (y as ConstantNode)!;
+
+                var visitedConstant = this.HashIdQueryNodeVisitor.Visit(constantNode) as ConstantNode;
+
+                return $"{visitedConstant!.Value}";
+            })) + ")",
             nodeIn.CollectionType
         );
     }
@@ -125,8 +132,8 @@ public class HashIdQueryNodeVisitor :
     {
         if (JsonConverterAttribute is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             return new ConstantNode(
-                $"{converterAttribute!.Hashids!.Decode(nodeIn.Value.ToString()!)}",
-                $"{converterAttribute.Hashids.Decode(nodeIn.Value.ToString()!)}"
+                $"'{converterAttribute!.Hashids!.Decode(nodeIn.Value.ToString()!)}'",
+                $"'{converterAttribute.Hashids.Decode(nodeIn.Value.ToString()!)}'"
             );
 
         return nodeIn;
