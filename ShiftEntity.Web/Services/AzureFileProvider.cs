@@ -121,7 +121,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 var currentPath = "";
                 var dl = new List<string>();
 
-                if (paths.Count() > 0)
+                if (!ViewDeleted && paths.Count() > 0)
                 {
                     // get all deleted files in parent directories
                     foreach (var pathPart in paths)
@@ -136,7 +136,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             dl.AddRange((await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries));
                         }
 
-                        currentPath = pathPart + "/";
+                        currentPath += pathPart + "/";
                     }
 
                     if (dl.Count > 0 && dl.Any(x => $"/{path}".StartsWith(x)))
