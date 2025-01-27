@@ -8,14 +8,14 @@ namespace ShiftSoftware.ShiftEntity.Functions.Services
     public class OpenApiHttpTriggerAuthorization : IOpenApiHttpTriggerAuthorization
     {
         private readonly string apiKey;
-        public OpenApiHttpTriggerAuthorization(IConfiguration configuration)
+        public OpenApiHttpTriggerAuthorization(string apiKey)
         {
-            apiKey = configuration["Values:OpenApi__ApiKey"];
-
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                throw new NullReferenceException("Values:OpenApi__ApiKey configuration is null or empty");
+                throw new ArgumentNullException(nameof(apiKey), $"The parameter '{nameof(apiKey)}' cannot be null.");
             }
+
+            this.apiKey = apiKey;
         }
         public Task<OpenApiAuthorizationResult> AuthorizeAsync(IHttpRequestDataObject req)
         {
