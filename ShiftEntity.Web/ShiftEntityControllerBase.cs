@@ -98,7 +98,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         if (!isFilteringByIsDeleted)
             data = data.Where(x => x.IsDeleted == false);
 
-        return await ODataIqueryable.GetOdataDTOFromIQueryable(data, oDataQueryOptions, Request);
+        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
     }
 
 
@@ -117,7 +117,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
 
-        return await ODataIqueryable.GetOdataDTOFromIQueryable(data, oDataQueryOptions, Request);
+        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
     }
 
     [NonAction]

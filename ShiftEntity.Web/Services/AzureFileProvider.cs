@@ -23,7 +23,7 @@ using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
-    public class AzureFileProvider
+    public partial class AzureFileProvider
     {
         List<FileExplorerDirectoryContent> directoryContentItems = new List<FileExplorerDirectoryContent>();
         BlobContainerClient container;
@@ -107,11 +107,49 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 if (!blobPages.Current.Values.Any())
                 {
+                    readResponse.CWD = cwd;
                     ErrorDetails errorDetails = new ErrorDetails();
                     errorDetails.Message = "Could not find a part of the path '" + path + "'.";
                     errorDetails.Code = "417";
                     readResponse.Error = errorDetails;
                     return readResponse;
+                }
+
+
+                // Check if current path is in a deleted directory
+                var paths = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var currentPath = "";
+                var dl = new List<string>();
+
+                if (!ViewDeleted && paths.Count() > 0)
+                {
+                    // get all deleted files in parent directories
+                    foreach (var pathPart in paths)
+                    {
+                        var blobPath = currentPath + Constants.FileExplorerHiddenFilename;
+                        var d = container.GetBlobClient(blobPath);
+
+                        if (await d.ExistsAsync())
+                        {
+                            BlobDownloadInfo download = await d.DownloadAsync();
+                            using var reader = new StreamReader(download.Content, Encoding.UTF8);
+                            dl.AddRange((await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries));
+                        }
+
+                        currentPath += pathPart + "/";
+                    }
+
+                    if (dl.Count > 0 && dl.Any(x => $"/{path}".StartsWith(x)))
+                    {
+                        cwd.Path = path;
+                        cwd.Name = path;
+                        readResponse.CWD = cwd;
+                        ErrorDetails errorDetails = new ErrorDetails();
+                        errorDetails.Message = "Could not find a part of the path '" + path + "'.";
+                        errorDetails.Code = "417";
+                        readResponse.Error = errorDetails;
+                        return readResponse;
+                    }
                 }
 
                 string[] extensions = (filter.Replace(" ", "") ?? "*").Split(",|;".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
@@ -121,6 +159,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 cwd.Type = "File Folder";
                 cwd.FilterPath = selectedItems.Length != 0 ? selectedItems[0].FilterPath : "";
                 cwd.Size = 0;
+                cwd.Path = path;
 
                 // get the list of deleted items in the current dir
                 var deletedFilesBlob = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
@@ -133,7 +172,24 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
                 }
 
-                var filterPath = selectedItems.Length != 0 ? string.IsNullOrWhiteSpace(rootPath) ? "/" + path : ("/" + path).Replace(rootPath, "") : "/";
+
+                var filterPath = "/";
+
+                if (selectedItems.Length > 0)
+                {
+                    filterPath += path;
+
+                    // Remove rootPath from filterPath
+                    if (!string.IsNullOrWhiteSpace(rootPath))
+                    {
+                        var index = filterPath.IndexOf(rootPath, StringComparison.Ordinal);
+
+                        if (index >= 0)
+                        {
+                            filterPath = filterPath.Remove(index, rootPath.Length);
+                        }
+                    }
+                }
 
                 foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
                 {
@@ -159,7 +215,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        entry.Name = string.IsNullOrWhiteSpace(path) ? item.Name : item.Name.Replace(path, "");
+                        entry.Name = GetName(item.Name, path);
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(entry.Name);
                         entry.IsFile = true;
@@ -191,7 +247,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        entry.Name = string.IsNullOrWhiteSpace(path) ? dir.Replace("/", "") : dir.Replace(path, "").Replace("/", "");
+                        entry.Name = GetName(dir, path);
                         entry.Type = "Directory";
                         entry.IsFile = false;
                         entry.Size = 0;
@@ -216,6 +272,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             }
             catch (Exception e)
             {
+                readResponse.CWD = cwd;
                 ErrorDetails errorDetails = new ErrorDetails();
                 errorDetails.Message = e.Message.ToString();
                 errorDetails.Code = "417";
@@ -225,6 +282,22 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             readResponse.Files = details;
             return readResponse;
+        }
+
+        private string GetName(string name, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return name.TrimEnd('/');
+            }
+            else
+            {
+                var nameRegex = ExtractNameRegex();
+                var result = nameRegex.Match(name);
+                var fileName = result.Groups.Values.LastOrDefault()?.Value;
+                fileName ??= name.Replace(path, "").Replace("/", "");
+                return fileName;
+            }
         }
 
         // Returns the last modified date for directories
@@ -514,6 +587,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             {
                 BlobClient? blobClient = null;
                 var deletedList = string.Empty;
+                var addToDeleted = string.Empty;
                 
                 if (softDelete)
                 {
@@ -535,15 +609,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     if (softDelete)
                     {
-                        var textToAppend = path + fileItem.Name;
-                        if (!fileItem.IsFile) textToAppend += "/";
-                        var newContent = deletedList + textToAppend + "\n";
-
-                        using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
-                        {
-                            byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
-                            await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
-                        }
+                        var textToAppend = "/" + fileItem.Path;
+                        addToDeleted += textToAppend + "\n";
                     }
 
                     if (fileItem.IsFile)
@@ -585,6 +652,13 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             details.Add(entry);
                         }
                     }
+                }
+
+                using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
+                {
+                    var newContent = deletedList + addToDeleted;
+                    byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
+                    await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
                 }
             }
             catch (Exception e)
@@ -987,5 +1061,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
             return JsonSerializer.Serialize(userData, options);
         }
+
+        [GeneratedRegex("/?([^/]+)/?$")]
+        private static partial Regex ExtractNameRegex();
     }
 }

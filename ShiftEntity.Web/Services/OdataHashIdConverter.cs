@@ -110,7 +110,17 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
 
         return new CollectionConstantNode(
             newCollection,
-            "(" + string.Join(",", newCollection.Select(y => (y as ConstantNode)!.Value)) + ")",
+            "(" + string.Join(",", newCollection.Select(y =>
+            {
+                var constantNode = (y as ConstantNode)!;
+
+                var value = constantNode!.Value!;
+
+                if (!value!.ToString()!.StartsWith("'"))
+                    value = $"'{value}'";
+
+                return value;
+            })) + ")",
             nodeIn.CollectionType
         );
     }
