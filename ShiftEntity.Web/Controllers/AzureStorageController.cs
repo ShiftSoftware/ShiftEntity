@@ -53,7 +53,12 @@ public class AzureStorageController : ControllerBase
                 {
                     var ext = System.IO.Path.GetExtension(file.Blob);
                     var blobNameWithoutExtension = string.IsNullOrWhiteSpace(ext) ? file.Blob : file.Blob?.Replace(ext, "");
-                    blobName = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString().Substring(0, 4)}){ext}";
+                    //blobName = file.Blob = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString().Substring(0, 4)}){ext}";
+
+                    //4 characters is not enough to guarantee uniqueness, there are cases where users upload files with the same name over and over again
+                    //Previoully, all Blob names where unique GUIDs, but this was changed to keep the original name for the File Explorer.
+                    //It's better that this is changed to an option where each uploader component can be configured for the desired behavior.
+                    blobName = file.Blob = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString()}){ext}";
                 }
             }
             catch (Exception) { }
