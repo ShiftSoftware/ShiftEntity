@@ -20,6 +20,7 @@ public class AzureStorageOption
     public string AccountKey { get; set; } = default!;
     public string EndPoint { get; set; } = default!;
     public string DefaultContainerName { get; set; } = default!;
+    public string? ThumbnailContainerName { get; set; }
     public bool IsDefaultAccount { get; set; }
     public bool SupportsFileExplorer { get; set; }
 }

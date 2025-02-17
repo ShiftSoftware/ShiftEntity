@@ -33,4 +33,6 @@ public class FileExplorerDirectoryContent
     public Dictionary<string, object>? CustomData { get; set; }
     public FileExplorerDirectoryContent[]? Data { get; set; }
     public FileExplorerDirectoryContent? TargetData { get; set; }
+    public double UploadProgress { get; set; }
+    public string? ThumbnailUrl { get; set; }
 }

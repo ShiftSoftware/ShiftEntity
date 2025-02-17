@@ -39,7 +39,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         DateTime prevUpdated = DateTime.MinValue;
 
         private AzureStorageService? azureStorageService;
-
+        private AzureStorageOption? AzureStorageOption;
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
         public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl)
@@ -61,9 +61,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         
             var _accountName = accountName ?? azureStorageService.GetDefaultAccountName();
             var _containerName = containerName ?? azureStorageService.GetDefaultContainerName(_accountName);
-            azureStorageService.azureStorageAccounts.TryGetValue(_accountName, out var accountOptions);
+            azureStorageService.azureStorageAccounts.TryGetValue(_accountName, out AzureStorageOption);
 
-            if (accountOptions?.SupportsFileExplorer == false)
+            if (AzureStorageOption?.SupportsFileExplorer == false)
             {
                 throw new Exception($"FileExplorer not supported for storage account ({_accountName})");
             }
@@ -114,7 +114,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     readResponse.Error = errorDetails;
                     return readResponse;
                 }
-
 
                 // Check if current path is in a deleted directory
                 var paths = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -223,6 +222,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.DateModified = item.Properties.LastModified?.LocalDateTime ?? default;
                         entry.HasChild = false;
                         entry.FilterPath = filterPath;
+
+                        var thumbnailUrlBase = AzureStorageOption?.EndPoint.AddUrlPath(AzureStorageOption.ThumbnailContainerName);
+                        if (!string.IsNullOrWhiteSpace(thumbnailUrlBase))
+                        {
+                            entry.ThumbnailUrl = thumbnailUrlBase + entry.FilterPath + Path.GetFileNameWithoutExtension(entry.Name) + ".png";
+                        }
 
                         var blobName = (rootPath + entry.FilterPath + entry.Name).Trim('/');
                         entry.TargetPath = azureStorageService?.GetSignedURL(blobName, BlobSasPermissions.Read, container.Name);
