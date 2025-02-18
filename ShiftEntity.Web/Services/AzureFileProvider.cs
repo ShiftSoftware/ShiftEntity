@@ -42,6 +42,15 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         private AzureStorageOption? AzureStorageOption;
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
+        private IEnumerable<string> ImageExtensions = new List<string>
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".png",
+            ".webp",
+        };
+
         public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl)
         {
             this.azureStorageService = azureStorageService;
@@ -222,11 +231,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.DateModified = item.Properties.LastModified?.LocalDateTime ?? default;
                         entry.HasChild = false;
                         entry.FilterPath = filterPath;
-
-                        var thumbnailUrlBase = AzureStorageOption?.EndPoint.AddUrlPath(AzureStorageOption.ThumbnailContainerName);
-                        if (!string.IsNullOrWhiteSpace(thumbnailUrlBase))
+                        
+                        if (AzureStorageOption != null && ImageExtensions.Contains(Path.GetExtension(entry.Name).ToLower()))
                         {
-                            entry.ThumbnailUrl = thumbnailUrlBase + entry.FilterPath + Path.GetFileNameWithoutExtension(entry.Name) + ".png";
+                            var thumbnailBlob = entry.FilterPath.AddUrlPath(Path.GetFileNameWithoutExtension(entry.Name) + ".png");
+                            entry.ThumbnailUrl = azureStorageService?.GetSignedURL(thumbnailBlob, BlobSasPermissions.Read, AzureStorageOption.ThumbnailContainerName, AzureStorageOption.AccountName);
+
                         }
 
                         var blobName = (rootPath + entry.FilterPath + entry.Name).Trim('/');
