@@ -234,9 +234,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         
                         if (AzureStorageOption != null && ImageExtensions.Contains(Path.GetExtension(entry.Name).ToLower()))
                         {
-                            var thumbnailBlob = entry.FilterPath.AddUrlPath(Path.GetFileNameWithoutExtension(entry.Name) + ".png");
+                            var prefix = container.AccountName + "_" + container.Name;
+                            var size = "250x250";
+                            var fileName = $"{Path.GetFileNameWithoutExtension(entry.Name)}_{size}.png";
+                            var thumbnailBlob = prefix.AddUrlPath(entry.FilterPath, fileName);
                             entry.ThumbnailUrl = azureStorageService?.GetSignedURL(thumbnailBlob, BlobSasPermissions.Read, AzureStorageOption.ThumbnailContainerName, AzureStorageOption.AccountName);
-
                         }
 
                         var blobName = (rootPath + entry.FilterPath + entry.Name).Trim('/');
