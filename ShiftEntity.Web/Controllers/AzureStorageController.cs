@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text.Json;
 using System;
 using System.IO;
+using ShiftSoftware.ShiftEntity.Core.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -44,7 +45,7 @@ public class AzureStorageController : ControllerBase
             var ContainerName = file.ContainerName ?? azureStorageService.GetDefaultContainerName(AccountName);
             var ext = Path.GetExtension(file.Blob);
             var dir = Path.GetDirectoryName(file.Blob);
-            file.Blob = dir + "/" + Guid.NewGuid().ToString() + ext;
+            file.Blob = dir.AddUrlPath(Guid.NewGuid().ToString() + ext);
 
             file.Url = azureStorageService.GetSignedURL(file.Blob, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
         }
