@@ -223,7 +223,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        entry.Name = GetName(item.Name, path);
+                        item.Metadata.TryGetValue("name", out string? originalName);
+
+                        entry.Name = originalName ?? GetName(item.Name, path);
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(entry.Name);
                         entry.IsFile = true;
@@ -231,18 +233,22 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.DateModified = item.Properties.LastModified?.LocalDateTime ?? default;
                         entry.HasChild = false;
                         entry.FilterPath = filterPath;
-                        
+
+                        // Get the signed URL for the thumbnail file
                         if (AzureStorageOption != null && ImageExtensions.Contains(Path.GetExtension(entry.Name).ToLower()))
                         {
                             var prefix = container.AccountName + "_" + container.Name;
                             var size = "250x250";
-                            var fileName = $"{Path.GetFileNameWithoutExtension(entry.Name)}_{size}.png";
-                            var thumbnailBlob = prefix.AddUrlPath(entry.FilterPath, fileName);
+                            // GetFileNameWithoutExtension also removes the dir
+                            var dir =  Path.GetDirectoryName(item.Name)?.TrimEnd('/');
+                            var name = Path.GetFileNameWithoutExtension(item.Name);
+                            var blobName = $"{dir}/{name}_{size}.png";
+                            var thumbnailBlob = prefix.AddUrlPath(blobName);
                             entry.ThumbnailUrl = azureStorageService?.GetSignedURL(thumbnailBlob, BlobSasPermissions.Read, AzureStorageOption.ThumbnailContainerName, AzureStorageOption.AccountName);
                         }
 
-                        var blobName = (rootPath + entry.FilterPath + entry.Name).Trim('/');
-                        entry.TargetPath = azureStorageService?.GetSignedURL(blobName, BlobSasPermissions.Read, container.Name);
+                        // Get the signed URL for the file
+                        entry.TargetPath = azureStorageService?.GetSignedURL(item.Name, BlobSasPermissions.Read, container.Name);
 
                         details.Add(entry);
                     }

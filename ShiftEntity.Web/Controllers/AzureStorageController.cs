@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System;
+using System.IO;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -41,29 +42,11 @@ public class AzureStorageController : ControllerBase
         {
             var AccountName = file.AccountName ?? azureStorageService.GetDefaultAccountName();
             var ContainerName = file.ContainerName ?? azureStorageService.GetDefaultContainerName(AccountName);
-            var blobName = file.Blob;
+            var ext = Path.GetExtension(file.Blob);
+            var dir = Path.GetDirectoryName(file.Blob);
+            file.Blob = dir + "/" + Guid.NewGuid().ToString() + ext;
 
-            try
-            {
-                var client = azureStorageService.blobServiceClients[AccountName];
-                var container = client.GetBlobContainerClient(ContainerName);
-                var blob = container.GetBlobClient(file.Blob);
-
-                if (blob.Exists())
-                {
-                    var ext = System.IO.Path.GetExtension(file.Blob);
-                    var blobNameWithoutExtension = string.IsNullOrWhiteSpace(ext) ? file.Blob : file.Blob?.Replace(ext, "");
-                    //blobName = file.Blob = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString().Substring(0, 4)}){ext}";
-
-                    //4 characters is not enough to guarantee uniqueness, there are cases where users upload files with the same name over and over again
-                    //Previoully, all Blob names where unique GUIDs, but this was changed to keep the original name for the File Explorer.
-                    //It's better that this is changed to an option where each uploader component can be configured for the desired behavior.
-                    blobName = file.Blob = $"{blobNameWithoutExtension} ({Guid.NewGuid().ToString()}){ext}";
-                }
-            }
-            catch (Exception) { }
-
-            file.Url = azureStorageService.GetSignedURL(blobName!, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
+            file.Url = azureStorageService.GetSignedURL(file.Blob, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
         }
 
         if (this.fileExplorerAccessControl is not null)
