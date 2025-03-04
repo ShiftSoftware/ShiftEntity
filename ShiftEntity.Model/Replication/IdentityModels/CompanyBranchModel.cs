@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Collections.Generic;
 
@@ -9,8 +10,10 @@ public class CompanyBranchModel : ReplicationModel
 {
     public string Name { get; set; } = default!;
     public string? Phone { get; set; }
+    public List<TaggedTextDTO> Phones { get; set; } = new();
     public string? ShortPhone { get; set; }
     public string? Email { get; set; }
+    public List<TaggedTextDTO> Emails { get; set; } = new();
     public string? Address { get; set; }
     public string? IntegrationId { get; set; } = default!;
     public string? ShortCode { get; set; }
