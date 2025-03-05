@@ -18,7 +18,18 @@ public class ImageOperations
         string name)
     {
         var stream = blob.OpenRead();
-        
+
+        try
+        {
+            //var imageInfo = Image.Identify(stream);
+            Image.DetectFormat(stream);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+
         var sizesString = blob.GetProperties().Value.Metadata["sizes"].Split("|");
         var sizes = sizesString.Select(s => s.Split("x")).Select(s => new Size(int.Parse(s[0]), int.Parse(s[1])));
 
