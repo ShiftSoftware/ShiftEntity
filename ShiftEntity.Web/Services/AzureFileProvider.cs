@@ -199,7 +199,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     }
                 }
 
-                foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(delimiter: "/", prefix: path).AsPages())
+                foreach (Page<BlobHierarchyItem> page in container.GetBlobsByHierarchy(BlobTraits.Metadata ,delimiter: "/", prefix: path).AsPages())
                 {
                     foreach (BlobItem item in page.Values.Where(x => x.IsBlob).Select(x => x.Blob))
                     {
