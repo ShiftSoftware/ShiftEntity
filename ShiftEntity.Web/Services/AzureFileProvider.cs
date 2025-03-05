@@ -224,6 +224,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         }
 
                         item.Metadata.TryGetValue("name", out string? originalName);
+                        item.Metadata.TryGetValue("sizes", out string? thumbnailSizes);
 
                         entry.Name = originalName ?? GetName(item.Name, path);
                         entry.Path = item.Name;
@@ -238,7 +239,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         if (AzureStorageOption != null && ImageExtensions.Contains(Path.GetExtension(entry.Name).ToLower()))
                         {
                             var prefix = container.AccountName + "_" + container.Name;
-                            var size = "250x250";
+                            var size = thumbnailSizes?.Split("|").First() ?? "250x250";
                             // GetFileNameWithoutExtension also removes the dir
                             var dir =  Path.GetDirectoryName(item.Name)?.TrimEnd('/');
                             var name = Path.GetFileNameWithoutExtension(item.Name);
