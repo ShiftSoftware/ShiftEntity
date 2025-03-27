@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Core.Extensions;
 using System.Linq;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -79,8 +80,19 @@ public class FileExplorerController : ControllerBase
         {
 
             case "read":
+                var response = this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data);
+
+                if (!string.IsNullOrWhiteSpace(args.SortType) && args.SortType != ShiftSortDirection.None.ToString() &&  response?.Files != null)
+                {
+                    response.Files = args.SortType.ToLower() switch
+                    {
+                        "asc" => response.Files.OrderBy(f => f.Name).ToList(),
+                        "desc" => response.Files.OrderByDescending(f => f.Name).ToList(),
+                        _ => response.Files
+                    };
+                }
                 // Reads the file(s) or folder(s) from the given path.
-                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
+                return this.operation.ToCamelCase(response);
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
                 return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
