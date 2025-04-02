@@ -6,7 +6,8 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
 public class FileExplorerDirectoryContent
 {
-    public string? Path { get; set; }
+    public string? SortType { get; set; }
+    public string? Path { get; set; } 
     public string? RootDir { get; set; }
     public string? Action { get; set; }
     public string? Name { get; set; }
