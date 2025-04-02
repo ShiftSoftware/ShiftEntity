@@ -462,6 +462,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             FileExplorerResponse createResponse = new FileExplorerResponse();
             try
             {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    throw new Exception("Folder name is empty");
+                }
+
                 CreateFolderAsync(path, name, selectedItems).GetAwaiter().GetResult();
                 if (isFolderAvailable)
                 {
