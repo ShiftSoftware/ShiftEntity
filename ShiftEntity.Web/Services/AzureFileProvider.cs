@@ -589,6 +589,96 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             }
         }
 
+        // Restores file(s) or folder(s)
+        public FileExplorerResponse Restore(string path, string[] names, params FileExplorerDirectoryContent[] data)
+        {
+            var newData = new List<FileExplorerDirectoryContent>();
+
+            if (this.fileExplorerAccessControl is not null)
+            {
+                newData = this.fileExplorerAccessControl.FilterWithDeleteAccess(data);
+            }
+            else
+            {
+                newData = data.ToList();
+            }
+
+            return RestoreAsync(names, path, newData).GetAwaiter().GetResult();
+        }
+
+        protected async Task<FileExplorerResponse> RestoreAsync(string[] names, string path, List<FileExplorerDirectoryContent> selectedItems)
+        {
+            FileExplorerResponse removeResponse = new FileExplorerResponse();
+            List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
+
+            try
+            {
+                BlobClient blobClient = container.GetBlobClient(path + Constants.FileExplorerHiddenFilename);
+                var deletedList = new List<string>();
+                var addToDeleted = string.Empty;
+
+                if (await blobClient.ExistsAsync())
+                {
+                    BlobDownloadInfo download = await blobClient.DownloadAsync();
+                    using (var reader = new StreamReader(download.Content, Encoding.UTF8))
+                    {
+                        deletedList = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+                    }
+                }
+
+                foreach (FileExplorerDirectoryContent fileItem in selectedItems)
+                {
+                    FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
+
+                    path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
+
+                    var pathToFind = "/" + fileItem.Path;
+                    deletedList.Remove(pathToFind);
+
+                    if (fileItem.IsFile)
+                    {
+                        entry.Name = fileItem.Name;
+                        entry.Type = fileItem.Type;
+                        entry.IsFile = fileItem.IsFile;
+                        entry.Size = fileItem.Size;
+                        entry.HasChild = fileItem.HasChild;
+                        entry.FilterPath = path;
+                        details.Add(entry);
+                    }
+                    else
+                    {
+                        foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
+                        {
+                            entry.Name = fileItem.Name;
+                            entry.Type = fileItem.Type;
+                            entry.IsFile = fileItem.IsFile;
+                            entry.Size = fileItem.Size;
+                            entry.HasChild = fileItem.HasChild;
+                            entry.FilterPath = path;
+                            details.Add(entry);
+                        }
+                    }
+                }
+
+                using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
+                {
+                    var newContent = string.Join("\n", deletedList);
+                    byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
+                    await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
+                }
+            }
+            catch (Exception e)
+            {
+                ErrorDetails er = new ErrorDetails();
+                er.Message = e.Message.ToString();
+                er.Code = "417";
+                removeResponse.Error = er;
+                return removeResponse;
+            }
+            removeResponse.Files = details;
+            return removeResponse;
+        }
+
         // Deletes file(s) or folder(s)
         public FileExplorerResponse Delete(string path, string[] names, bool softDelete, params FileExplorerDirectoryContent[] data)
         {
@@ -611,7 +701,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         {
             FileExplorerResponse removeResponse = new FileExplorerResponse();
             List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
-            FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
             try
             {
                 BlobClient? blobClient = null;
@@ -634,6 +723,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                 {
+                    FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
+
                     path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
 
                     if (softDelete)

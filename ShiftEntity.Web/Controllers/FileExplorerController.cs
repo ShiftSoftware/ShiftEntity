@@ -96,6 +96,8 @@ public class FileExplorerController : ControllerBase
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
                 return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
+            case "restore":
+                return this.operation.ToCamelCase(this.operation.Restore(args.Path, args.Names, args.Data));
             case "details":
                 // Gets the details of the selected file(s) or folder(s).
                 return this.operation.ToCamelCase(this.operation.Details(args.Path, args.Names, args.Data));
