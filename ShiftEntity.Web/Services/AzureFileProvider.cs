@@ -20,6 +20,7 @@ using ShiftSoftware.ShiftEntity.Core.Services;
 using Azure.Storage.Sas;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Core.Extensions;
+using System.Web;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
 {
@@ -226,7 +227,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         item.Metadata.TryGetValue("name", out string? originalName);
                         item.Metadata.TryGetValue("sizes", out string? thumbnailSizes);
 
-                        entry.Name = originalName ?? GetName(item.Name, path);
+                        //Metadata name/value pairs are valid HTTP headers and should adhere to all restrictions governing HTTP headers
+                        entry.Name = HttpUtility.UrlDecode(originalName) ?? GetName(item.Name, path);
+
                         entry.Path = item.Name;
                         entry.Type = Path.GetExtension(entry.Name);
                         entry.IsFile = true;

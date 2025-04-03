@@ -45,7 +45,10 @@ public class AzureStorageController : ControllerBase
             var ContainerName = file.ContainerName ?? azureStorageService.GetDefaultContainerName(AccountName);
             var ext = Path.GetExtension(file.Blob);
             var dir = Path.GetDirectoryName(file.Blob);
-            file.Blob = dir.AddUrlPath(Guid.NewGuid().ToString() + ext);
+
+            // Store original file name in the blob. In case it's needed outside of the uploader/explorer component.
+            // Add a unique identifier to the blob name to avoid conflicts.
+            file.Blob = dir.AddUrlPath($"{Path.GetFileNameWithoutExtension(file.Blob)} ({Guid.NewGuid().ToString()}){ext}");
 
             file.Url = azureStorageService.GetSignedURL(file.Blob, BlobSasPermissions.Write | BlobSasPermissions.Read, ContainerName, AccountName, 60);
         }
