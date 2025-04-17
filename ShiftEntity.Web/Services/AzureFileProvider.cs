@@ -628,41 +628,26 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                 {
-                    FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
 
                     path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
+                    var entry = new FileExplorerDirectoryContent
+                    {
+                        Name = fileItem.Name,
+                        Type = fileItem.Type,
+                        IsFile = fileItem.IsFile,
+                        Size = fileItem.Size,
+                        HasChild = fileItem.HasChild,
+                        FilterPath = path
+                    };
+                    details.Add(entry);
 
                     var pathToFind = "/" + fileItem.Path;
                     deletedList.Remove(pathToFind);
-
-                    if (fileItem.IsFile)
-                    {
-                        entry.Name = fileItem.Name;
-                        entry.Type = fileItem.Type;
-                        entry.IsFile = fileItem.IsFile;
-                        entry.Size = fileItem.Size;
-                        entry.HasChild = fileItem.HasChild;
-                        entry.FilterPath = path;
-                        details.Add(entry);
                     }
-                    else
-                    {
-                        foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
-                        {
-                            entry.Name = fileItem.Name;
-                            entry.Type = fileItem.Type;
-                            entry.IsFile = fileItem.IsFile;
-                            entry.Size = fileItem.Size;
-                            entry.HasChild = fileItem.HasChild;
-                            entry.FilterPath = path;
-                            details.Add(entry);
-                        }
-                    }
-                }
 
                 using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
                 {
-                    var newContent = string.Join("\n", deletedList);
+                    var newContent = string.Join("\n", deletedList) + "\n";
                     byte[] newContentBytes = Encoding.UTF8.GetBytes(newContent);
                     await stream.WriteAsync(newContentBytes, 0, newContentBytes.Length);
                 }
@@ -723,53 +708,41 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                 foreach (FileExplorerDirectoryContent fileItem in selectedItems)
                 {
-                    FileExplorerDirectoryContent entry = new FileExplorerDirectoryContent();
-
                     path = filesPath.Replace(blobPath, "") + fileItem.FilterPath;
+
+                    var entry = new FileExplorerDirectoryContent
+                    {
+                        Name = fileItem.Name,
+                        Type = fileItem.Type,
+                        IsFile = fileItem.IsFile,
+                        Size = fileItem.Size,
+                        HasChild = fileItem.HasChild,
+                        FilterPath = path
+                    };
+                    details.Add(entry);
 
                     if (softDelete)
                     {
                         var textToAppend = "/" + fileItem.Path;
                         addToDeleted += textToAppend + "\n";
                     }
-
+                    else
+                    {
                     if (fileItem.IsFile)
                     {
-                        if (!softDelete)
-                        {
                             BlobClient currentFile = container.GetBlobClient(path + fileItem.Name);
                             currentFile.DeleteIfExists();
                         }
-
-                        entry.Name = fileItem.Name;
-                        entry.Type = fileItem.Type;
-                        entry.IsFile = fileItem.IsFile;
-                        entry.Size = fileItem.Size;
-                        entry.HasChild = fileItem.HasChild;
-                        entry.FilterPath = path;
-                        details.Add(entry);
-                    }
                     else
                     {
-
                         foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
                         {
-                            if (!softDelete)
-                            {
                                 foreach (BlobItem item in items.Values)
                                 {
                                     BlobClient currentFile = container.GetBlobClient(item.Name);
                                     await currentFile.DeleteAsync();
                                 }
                             }
-
-                            entry.Name = fileItem.Name;
-                            entry.Type = fileItem.Type;
-                            entry.IsFile = fileItem.IsFile;
-                            entry.Size = fileItem.Size;
-                            entry.HasChild = fileItem.HasChild;
-                            entry.FilterPath = path;
-                            details.Add(entry);
                         }
                     }
                 }
