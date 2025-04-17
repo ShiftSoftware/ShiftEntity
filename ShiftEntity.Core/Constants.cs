@@ -12,4 +12,7 @@ public class Constants
     public const string HttpHeaderVersioning = "Versioning";
     public const string FileExplorerHiddenFilename = "f7751140-2a59-4edf-955c-406eef7fa0d4";
     public const string FileExplorerHiddenMetadataKey = "hidden";
+    public const string FileExplorerNameMetadataKey = "name";
+    public const string FileExplorerSizesMetadataKey = "sizes";
+    public const string FileExplorerCreatedByMetadataKey = "createdById";
 }

@@ -51,7 +51,7 @@ public class FileExplorerController : ControllerBase
         args.CustomData?.TryGetValue("RootDir", out RootDir);
         args.CustomData?.TryGetValue("AccountName", out AccountName);
         args.CustomData?.TryGetValue("ContainerName", out ContainerName);
-        
+
         this.operation.SetRootDirectory(RootDir?.ToString() ?? string.Empty);
 
         try
@@ -78,21 +78,9 @@ public class FileExplorerController : ControllerBase
 
         switch (args.Action)
         {
-
             case "read":
-                var response = this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data);
-
-                if (!string.IsNullOrWhiteSpace(args.SortType) && args.SortType != ShiftSortDirection.None.ToString() &&  response?.Files != null)
-                {
-                    response.Files = args.SortType.ToLower() switch
-                    {
-                        "asc" => response.Files.OrderBy(f => f.Name).ToList(),
-                        "desc" => response.Files.OrderByDescending(f => f.Name).ToList(),
-                        _ => response.Files
-                    };
-                }
                 // Reads the file(s) or folder(s) from the given path.
-                return this.operation.ToCamelCase(response);
+                return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
                 return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));

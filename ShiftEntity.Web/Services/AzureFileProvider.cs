@@ -223,8 +223,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                             }
                         }
 
-                        item.Metadata.TryGetValue("name", out string? originalName);
-                        item.Metadata.TryGetValue("sizes", out string? thumbnailSizes);
+                        item.Metadata.TryGetValue(Constants.FileExplorerNameMetadataKey, out string? originalName);
+                        item.Metadata.TryGetValue(Constants.FileExplorerSizesMetadataKey, out string? thumbnailSizes);
+                        item.Metadata.TryGetValue(Constants.FileExplorerCreatedByMetadataKey, out string? userId);
 
                         entry.Name = originalName ?? GetName(item.Name, path);
                         entry.Path = item.Name;
@@ -234,6 +235,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                         entry.DateModified = item.Properties.LastModified?.LocalDateTime ?? default;
                         entry.HasChild = false;
                         entry.FilterPath = filterPath;
+                        entry.CreatedBy = userId;
 
                         // Get the signed URL for the thumbnail file
                         if (AzureStorageOption != null && ImageExtensions.Contains(Path.GetExtension(entry.Name).ToLower()))
@@ -643,7 +645,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
 
                     var pathToFind = "/" + fileItem.Path;
                     deletedList.Remove(pathToFind);
-                    }
+                }
 
                 using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
                 {
@@ -728,15 +730,15 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     }
                     else
                     {
-                    if (fileItem.IsFile)
-                    {
+                        if (fileItem.IsFile)
+                        {
                             BlobClient currentFile = container.GetBlobClient(path + fileItem.Name);
                             currentFile.DeleteIfExists();
                         }
-                    else
-                    {
-                        foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
+                        else
                         {
+                            foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
+                            {
                                 foreach (BlobItem item in items.Values)
                                 {
                                     BlobClient currentFile = container.GetBlobClient(item.Name);

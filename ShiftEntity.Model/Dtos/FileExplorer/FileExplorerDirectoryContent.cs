@@ -36,4 +36,5 @@ public class FileExplorerDirectoryContent
     public FileExplorerDirectoryContent? TargetData { get; set; }
     public double UploadProgress { get; set; }
     public string? ThumbnailUrl { get; set; }
+    public string? CreatedBy { get; set; }
 }
