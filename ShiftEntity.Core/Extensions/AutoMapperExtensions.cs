@@ -1,5 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
-using ShiftSoftware.ShiftEntity.Core;
+﻿using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
 using System.Linq;
