@@ -16,6 +16,7 @@ public class CompanyModel : ReplicationModel
     public string? HQPhone { get; set; }
     public string? HQEmail { get; set; }
     public string? HQAddress { get; set; }
+    public string? Website { get; set; }
     public bool BuiltIn { get; set; }
     public Dictionary<string, CustomField>? CustomFields { get; set; }
 }
