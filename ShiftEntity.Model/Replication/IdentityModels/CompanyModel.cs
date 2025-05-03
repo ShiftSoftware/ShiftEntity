@@ -1,7 +1,4 @@
-﻿using ShiftSoftware.ShiftEntity.Model;
-using ShiftSoftware.ShiftEntity.Model.Enums;
-using ShiftSoftware.ShiftEntity.Model.Replication;
-using System.Collections.Generic;
+﻿using ShiftSoftware.ShiftEntity.Model.Enums;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
@@ -19,4 +16,5 @@ public class CompanyModel : ReplicationModel
     public string? Website { get; set; }
     public bool BuiltIn { get; set; }
     public Dictionary<string, CustomField>? CustomFields { get; set; }
+    public long? ParentCompanyID { get; set; }
 }
