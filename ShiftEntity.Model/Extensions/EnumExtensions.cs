@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 
 namespace System;
 
@@ -11,6 +12,23 @@ public static class EnumExtensions
 
     private static string GetDescriptionString<T>(T val)
     {
+        var displayAttributes = (DisplayAttribute[])val!
+           .GetType()
+           .GetField(val.ToString()!)!
+           .GetCustomAttributes(typeof(DisplayAttribute), false);
+
+        if (displayAttributes.Length > 0)
+        {
+            try
+            {
+                return displayAttributes[0].GetName();
+            }
+            catch
+            {
+                return displayAttributes[0].Name;
+            }
+        }
+
         var attributes = (DescriptionAttribute[])val!
            .GetType()
            .GetField(val.ToString()!)!
