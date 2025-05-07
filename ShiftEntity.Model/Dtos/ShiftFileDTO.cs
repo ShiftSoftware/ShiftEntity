@@ -18,4 +18,11 @@ public class ShiftFileDTO
     public long Size { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
+
+
+    /// <summary>
+    /// Used internally by other components to pass custom data around
+    /// </summary>
+    [JsonIgnore]
+    public object? Data { get; set; }
 }
