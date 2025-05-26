@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ShiftSoftware.ShiftEntity.Functions.AppCheck;
+using ShiftSoftware.ShiftEntity.Functions.Localization;
 using ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 using ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
 
@@ -66,6 +67,16 @@ public static class IFunctionsWorkerApplicationBuilderExtension
         });
 
         builder.UseWhen<ModelValidationMiddleware>(context =>
+            context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger")
+        );
+
+        return builder;
+    }
+
+    public static IFunctionsWorkerApplicationBuilder UseRequestLocalization(this IFunctionsWorkerApplicationBuilder builder)
+    {
+
+        builder.UseWhen<RequestLocalizationMiddleware>(context =>
             context.FunctionDefinition.InputBindings.Any(binding => binding.Value.Type == "httpTrigger")
         );
 
