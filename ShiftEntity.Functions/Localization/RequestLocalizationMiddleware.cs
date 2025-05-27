@@ -13,7 +13,15 @@ namespace ShiftSoftware.ShiftEntity.Functions.Localization
 
             if (req != null)
             {
-                string cultureCode = req.Headers.GetValues("Accept-Language")?.FirstOrDefault()?.Split(',')?.FirstOrDefault() ?? "en";
+                IEnumerable<string>? langHeader;
+                req.Headers.TryGetValues("Accept-Language", out langHeader);
+
+                string cultureCode = "en";
+                if (langHeader is not null && langHeader.Any())
+                {
+                    // Default to English if no Accept-Language header is present
+                    cultureCode = langHeader?.FirstOrDefault()?.Split(',')?.FirstOrDefault() ?? "en";
+                }
 
                 var culture = new CultureInfo(cultureCode);
                 CultureInfo.CurrentCulture = culture;
