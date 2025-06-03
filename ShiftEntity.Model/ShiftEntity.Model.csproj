@@ -51,6 +51,6 @@
 		<PackageReference Include="Hashids.net" Version="1.7.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-		<PackageReference Include="System.Text.Json" Version="8.0.5" />
+		<PackageReference Include="System.Text.Json" Version="9.0.5" />
 	</ItemGroup>
 </Project>
