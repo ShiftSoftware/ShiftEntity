@@ -1,17 +1,14 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered.Extensions;
-using FluentValidation.TestHelper;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json.Linq;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using System.Collections.Concurrent;
-using System.ComponentModel.Design;
 using System.Linq.Expressions;
 using System.Net;
 
