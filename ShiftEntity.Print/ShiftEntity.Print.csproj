@@ -32,7 +32,7 @@
 	<ItemGroup>
 		<PackageReference Include="FastReport.OpenSource" Version="2025.2.0" />
 		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2025.2.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.14.0" />
+		<!--<PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.14.0" />-->
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.6" />
 	</ItemGroup>
 
