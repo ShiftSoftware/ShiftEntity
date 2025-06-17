@@ -2,12 +2,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
 using ShiftSoftware.ShiftEntity.Model;
-using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Text.Json;
 
@@ -15,19 +14,14 @@ namespace ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 
 internal class ModelValidationMiddleware : IFunctionsWorkerMiddleware
 {
-    private readonly ModelValidatorOptions options;
-    private readonly IServiceProvider services;
-
-    public ModelValidationMiddleware(ModelValidatorOptions options, IServiceProvider services)
-    {
-        this.options = options;
-        this.services = services;
-    }
-
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var methodInfo = context.GetTargetFunctionMethod();
         var httpContext = context.GetHttpContext();
+
+        IServiceProvider services = context.InstanceServices;
+        ModelValidatorOptions options = services.GetRequiredService<ModelValidatorOptions>();
+
         var request = httpContext.Request;
         request.EnableBuffering();
         using StreamReader reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);

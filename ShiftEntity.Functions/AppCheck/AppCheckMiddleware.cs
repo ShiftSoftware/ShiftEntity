@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
 using ShiftSoftware.ShiftEntity.Functions.Utilities;
 
@@ -9,12 +10,6 @@ namespace ShiftSoftware.ShiftEntity.Functions.AppCheck
 {
     internal class AppCheckMiddleware : IFunctionsWorkerMiddleware
     {
-        private readonly AntiBotService antiBotService;
-        private readonly AntiBotOptions options;
-        public AppCheckMiddleware(AntiBotService antiBotService, AntiBotOptions options) { 
-            this.antiBotService = antiBotService;
-            this.options = options;
-        }
         async Task IFunctionsWorkerMiddleware.Invoke(FunctionContext context, FunctionExecutionDelegate next)
         {
             var methodInfo = context.GetTargetFunctionMethod();
@@ -27,6 +22,11 @@ namespace ShiftSoftware.ShiftEntity.Functions.AppCheck
             else
             {
                 var httpContext = context.GetHttpContext()!;
+
+                var serviceProvider = context.InstanceServices;
+
+                var antiBotService = serviceProvider.GetRequiredService<AntiBotService>();
+                var options = serviceProvider.GetRequiredService<AntiBotOptions>();
 
                 var verificationToken = httpContext.Request.Headers
                     .LastOrDefault(x => x.Key.ToLower().Equals(options.HeaderKey, StringComparison.InvariantCultureIgnoreCase))
