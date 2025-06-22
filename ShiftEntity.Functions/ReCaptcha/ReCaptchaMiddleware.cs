@@ -1,25 +1,15 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
 using ShiftSoftware.ShiftEntity.Functions.Utilities;
-using System.Net;
 
 namespace ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
 
 internal class ReCaptchaMiddleware : IFunctionsWorkerMiddleware
 {
-    private readonly GoogleReCaptchaService googleReCaptchaService;
-    private readonly ReCaptchaOptions options;
-
-    public ReCaptchaMiddleware(GoogleReCaptchaService googleReCaptchaService, ReCaptchaOptions options)
-    {
-        this.googleReCaptchaService = googleReCaptchaService;
-        this.options = options;
-    }
-
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var methodInfo = context.GetTargetFunctionMethod();
@@ -33,6 +23,11 @@ internal class ReCaptchaMiddleware : IFunctionsWorkerMiddleware
         else
         {
             var httpContext = context.GetHttpContext()!;
+
+            var serviceProvider = context.InstanceServices;
+
+            var googleReCaptchaService = serviceProvider.GetRequiredService<GoogleReCaptchaService>();
+            var options = serviceProvider.GetRequiredService<ReCaptchaOptions>();
 
             var reCaptchaToken = httpContext.Request.Headers
                 .LastOrDefault(x => x.Key.ToLower().Equals(options.HeaderKey, StringComparison.InvariantCultureIgnoreCase))
