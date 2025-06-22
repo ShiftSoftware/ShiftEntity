@@ -13,26 +13,7 @@ public class LocalizedTextJsonConverter : JsonConverter<string>
         {
             var jsonString = reader.GetString() ?? string.Empty;
 
-            try
-            {
-                var json = JsonDocument.Parse(jsonString);
-
-                var localizedText = json.Deserialize<Dictionary<string, string>>()!;
-
-                if (localizedText.TryGetValue(UserLanguage, out var localizedValue))
-                {
-                    return localizedValue;
-                }
-
-                if (localizedText.TryGetValue("en", out var defaultValue))
-                {
-                    return defaultValue;
-                }
-            }
-            catch
-            {
-                return jsonString;
-            }
+            return ParseLocalizedText(jsonString);
         }
 
         return string.Empty;
@@ -41,5 +22,31 @@ public class LocalizedTextJsonConverter : JsonConverter<string>
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
     {
         writer.WriteStringValue(value);
+    }
+
+    public static string ParseLocalizedText(string jsonString)
+    {
+        try
+        {
+            var json = JsonDocument.Parse(jsonString);
+
+            var localizedText = json.Deserialize<Dictionary<string, string>>()!;
+
+            if (localizedText.TryGetValue(UserLanguage, out var localizedValue))
+            {
+                return localizedValue;
+            }
+
+            if (localizedText.TryGetValue("en", out var defaultValue))
+            {
+                return defaultValue;
+            }
+        }
+        catch
+        {
+            return jsonString;
+        }
+
+        return string.Empty;
     }
 }
