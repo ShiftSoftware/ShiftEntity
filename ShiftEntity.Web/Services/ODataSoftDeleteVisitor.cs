@@ -87,4 +87,9 @@ public class SoftDeleteQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
 
         return nodeIn;
     }
+
+    public override SingleValueNode Visit(UnaryOperatorNode nodeIn)
+    {
+        return new UnaryOperatorNode (nodeIn.OperatorKind, nodeIn.Operand.Accept(this));
+    }
 }

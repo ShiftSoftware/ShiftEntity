@@ -208,4 +208,9 @@ public class HashIdQueryNodeVisitor :
 
         return OdataHashIdConverter.GetJsonConverterAttribute(fullTypeName, propertyName);
     }
+
+    public override SingleValueNode Visit(UnaryOperatorNode nodeIn)
+    {
+        return new UnaryOperatorNode (nodeIn.OperatorKind, nodeIn.Operand.Accept(this));
+    }
 }
