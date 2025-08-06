@@ -281,86 +281,49 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         {
             foreach (var filter in dynamicActionFilterBuilder.DynamicActionFilters)
             {
-                (bool WildCard, List<string> AccessibleIds) accessibleIds = new();
+                (bool WildCard, List<string> AccessibleIds) values = new();
 
                 if (filter.DynamicAction is not null)
                 {
-                    accessibleIds = typeAuthService.GetAccessibleItems(filter.DynamicAction, x => x == access);
-                }
-                else if (filter.AccessibleKeys is not null)
-                {
-                    accessibleIds = new(false, filter.AccessibleKeys);
-                }
-                else if (filter.ClaimId is not null)
-                {
-                    accessibleIds = new(false, this.HttpContext!.User.FindAll(filter.ClaimId).Select(x => x.Value).ToList());
-                }
-                else
-                    continue;
-
-                if (filter.SelfClaimId is not null)
-                {
-                    var selfIds = HttpContext.GetClaimValues(filter.SelfClaimId);
-
-                    if (selfIds is not null)
-                        accessibleIds.AccessibleIds.AddRange(selfIds);
+                    values = typeAuthService.GetAccessibleItems(filter.DynamicAction, x => x == access);
                 }
 
-                Expression<Func<Entity, bool>>? filterWhereExpression;
+                //var valueProvider = filter.GetCustomValueProviderExpression();
 
-                if (accessibleIds.WildCard)
+                //if (valueProvider is not null)
+                //{
+
+                //}
+
+                Expression<Func<Entity, bool>>? filterWhereExpression = filter.GetFilterExpression<Entity>();
+                    
+                //if (accessibleIds.WildCard)
+                //{
+                //    filterWhereExpression = x => true;
+                //}
+                //else
                 {
-                    filterWhereExpression = x => true;
-                }
-                else
-                {
-                    Type genericListType = typeof(List<>).MakeGenericType(filter.TKey);
+                    //var invoked = filter.GetInvocationExpression();
 
-                    var ids = Activator.CreateInstance(genericListType)!;
+                    //!filter.ShowNulls ? containsCall : Expression.OrElse(containsCall, Expression.Equal(filter.InvocationExpression, Expression.Constant(null)));
 
-                    if (filter.TKey == typeof(long))
-                    {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOTypeForHashId is null ? long.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId)).ToList();
-                    }
-                    else if (filter.TKey == typeof(long?))
-                    {
-                        ids = accessibleIds.AccessibleIds.Select(x => (long?)(filter.DTOTypeForHashId is null ? long.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId))).ToList();
-                    }
-                    else if (filter.TKey == typeof(int))
-                    {
-                        ids = accessibleIds.AccessibleIds.Select(x => filter.DTOTypeForHashId is null ? int.Parse(x) : (int)ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId)).ToList();
-                    }
-                    else if (filter.TKey == typeof(int?))
-                    {
-                        ids = accessibleIds.AccessibleIds.Select(x => (int?)(filter.DTOTypeForHashId is null ? int.Parse(x) : ShiftEntityHashIdService.Decode(x, filter.DTOTypeForHashId))).ToList();
-                    }
+                    //if (filter.CreatedByUserIDKeySelector is not null)
+                    //{
+                    //    // Build expression for x.CreatedByUserID == loggedInUserId
+                    //    var createdByKeySelectorInvoke = Expression.Invoke(filter.CreatedByUserIDKeySelector, filter.ParameterExpression);
+                    //    //var createdByUserIdProperty = Expression.Property(parameter, nameof(ShiftEntity<Entity>.CreatedByUserID));
 
-                    var containsMethod = ids.GetType().GetMethod(nameof(List<object>.Contains))!;
+                    //    var loggedInUserIdExpression = Expression.Constant(loggedInUserId, typeof(long?));
 
-                    var idsExpression = Expression.Constant(ids, ids.GetType());
+                    //    var equalityComparison = Expression.Equal(createdByKeySelectorInvoke, loggedInUserIdExpression);
 
-                    // Build expression for ids.Contains(x.ID)
-                    var containsCall = Expression.Call(idsExpression, containsMethod, filter.InvocationExpression);
+                    //    // Combine the two expressions with an OR condition
+                    //    var orElse = Expression.OrElse(finalContains, equalityComparison);
 
-                    Expression finalContains = !filter.ShowNulls ? containsCall : Expression.OrElse(containsCall, Expression.Equal(filter.InvocationExpression, Expression.Constant(null)));
-
-                    if (filter.CreatedByUserIDKeySelector is not null)
-                    {
-                        // Build expression for x.CreatedByUserID == loggedInUserId
-                        var createdByKeySelectorInvoke = Expression.Invoke(filter.CreatedByUserIDKeySelector, filter.ParameterExpression);
-                        //var createdByUserIdProperty = Expression.Property(parameter, nameof(ShiftEntity<Entity>.CreatedByUserID));
-
-                        var loggedInUserIdExpression = Expression.Constant(loggedInUserId, typeof(long?));
-
-                        var equalityComparison = Expression.Equal(createdByKeySelectorInvoke, loggedInUserIdExpression);
-
-                        // Combine the two expressions with an OR condition
-                        var orElse = Expression.OrElse(finalContains, equalityComparison);
-
-                        filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(orElse, filter.ParameterExpression); // x => ids.Contains(x.ID) || x.CreatedByUserID == loggedInUserId;
-                    }
-                    else
-                        filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(finalContains, filter.ParameterExpression); // x => ids.Contains(x.ID);
+                    //    filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(orElse, filter.ParameterExpression); // x => ids.Contains(x.ID) || x.CreatedByUserID == loggedInUserId;
+                    //}
+                    //else
+                        //filterWhereExpression = Expression.Lambda<Func<Entity, bool>>(invoked.invocation, invoked.parameter);
                 }
 
                 dynamicActionWhere = dynamicActionWhere is null ? filterWhereExpression : dynamicActionWhere.AndAlso(filterWhereExpression);
