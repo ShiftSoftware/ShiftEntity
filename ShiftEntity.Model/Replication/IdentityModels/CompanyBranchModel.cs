@@ -18,6 +18,8 @@ public class CompanyBranchModel : ReplicationModel
     public string? IntegrationId { get; set; } = default!;
     public string? ShortCode { get; set; }
 
+    public DateTime? TerminationDate { get; set; }
+
     public Location? Location { get; set; }
 
     public string? Photos { get; set; }
