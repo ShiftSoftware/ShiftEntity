@@ -20,12 +20,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public readonly DB db;
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
+    //private readonly IDefaultDataLevelAccess defaultDataLevelAccess;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
         this.mapper = db.GetService<IMapper>();
+        //this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
 
         if (shiftRepositoryBuilder is not null)
         {
@@ -146,18 +148,103 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 query = query.Include(include);
         }
 
-        if (this.ShiftRepositoryOptions is not null)
-        {
-            //foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters)
-            //{
-            //    var expression = filter.GetFilterExpression<EntityType>();
+        query = this.ApplyDefaultDataLevelFilters(query);
 
-            //    if (expression != null)
-            //        query = query.Where(expression);
-            //}
+        query = this.ApplyGloballFilters(query);
+        
+        return query;
+    }
+
+    private IQueryable<EntityType> ApplyGloballFilters(IQueryable<EntityType> query)
+    {
+        return query;
+
+        if (this.ShiftRepositoryOptions is null || this.ShiftRepositoryOptions.GlobalFilters.Count == 0)
+            return query;
+
+        foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters)
+        {
+            var expression = filter.GetFilterExpression<EntityType>();
+
+            if (expression != null)
+                query = query.Where(expression);
         }
 
         return query;
+    }
+
+    private IQueryable<EntityType> ApplyDefaultDataLevelFilters(IQueryable<EntityType> query)
+    {
+        return query;
+
+        //var accessibleCountriesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Countries, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCountryID()!);
+        //var accessibleRegionsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Regions, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedRegionID()!);
+        //var accessibleCompaniesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Companies, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyID()!);
+        //var accessibleBranchesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Branches, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCompanyBranchID()!);
+        //var accessibleBrandsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Brands, x => x == TypeAuth.Core.Access.Read);
+        //var accessibleCitiesTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Cities, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedCityID()!);
+        //var accessibleTeamsTypeAuth = typeAuthService.GetAccessibleItems(ShiftIdentity.Core.ShiftIdentityActions.DataLevelAccess.Teams, x => x == TypeAuth.Core.Access.Read, this.HttpContext.GetHashedTeamIDs()?.ToArray());
+
+        //List<long?>? accessibleCountries = accessibleCountriesTypeAuth.WildCard ? null : accessibleCountriesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CountryDTO>(x)).ToList();
+        //List<long?>? accessibleRegions = accessibleRegionsTypeAuth.WildCard ? null : accessibleRegionsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<RegionDTO>(x)).ToList();
+        //List<long?>? accessibleCompanies = accessibleCompaniesTypeAuth.WildCard ? null : accessibleCompaniesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyDTO>(x)).ToList();
+        //List<long?>? accessibleBranches = accessibleBranchesTypeAuth.WildCard ? null : accessibleBranchesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CompanyBranchDTO>(x)).ToList();
+        //List<long?>? accessibleBrands = accessibleBrandsTypeAuth.WildCard ? null : accessibleBrandsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<BrandDTO>(x)).ToList();
+        //List<long?>? accessibleCities = accessibleCitiesTypeAuth.WildCard ? null : accessibleCitiesTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<CityDTO>(x)).ToList();
+        //List<long?>? accessibleTeams = accessibleTeamsTypeAuth.WildCard ? null : accessibleTeamsTypeAuth.AccessibleIds.Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TeamDTO>(x)).ToList();
+
+        //List<long?>? accessibleCountries = this.defaultDataLevelAccess.GetAccessibleCountries();
+        //List<long?>? accessibleRegions = this.defaultDataLevelAccess.GetAccessibleRegions();
+        //List<long?>? accessibleCompanies = this.defaultDataLevelAccess.GetAccessibleCompanies();
+        //List<long?>? accessibleBranches = this.defaultDataLevelAccess.GetAccessibleBranches();
+        //List<long?>? accessibleBrands = this.defaultDataLevelAccess.GetAccessibleBrands();
+        //List<long?>? accessibleCities = this.defaultDataLevelAccess.GetAccessibleCities();
+        //List<long?>? accessibleTeams = this.defaultDataLevelAccess.GetAccessibleTeams();
+
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultCountryFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCountry<EntityType>))))
+        //        query = query.Where(x => accessibleCountries == null ? true : accessibleCountries.Contains((x as IEntityHasCountry<EntityType>)!.CountryID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultRegionFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasRegion<EntityType>))))
+        //        query = query.Where(x => accessibleRegions == null ? true : accessibleRegions.Contains((x as IEntityHasRegion<EntityType>)!.RegionID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultCompanyFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompany<EntityType>))))
+        //        query = query.Where(x => accessibleCompanies == null ? true : accessibleCompanies.Contains((x as IEntityHasCompany<EntityType>)!.CompanyID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultCompanyBranchFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCompanyBranch<EntityType>))))
+        //        query = query.Where(x => accessibleBranches == null ? true : accessibleBranches.Contains((x as IEntityHasCompanyBranch<EntityType>)!.CompanyBranchID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultBrandFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasBrand<EntityType>))))
+        //        query = query.Where(x => accessibleBrands == null ? true : accessibleBrands.Contains((x as IEntityHasBrand<EntityType>)!.BrandID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultCityFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasCity<EntityType>))))
+        //        query = query.Where(x => accessibleCities == null ? true : accessibleCities.Contains((x as IEntityHasCity<EntityType>)!.CityID));
+        //}
+
+        //if (!(this.ShiftRepositoryOptions is not null && this.ShiftRepositoryOptions.DisableDefaultTeamFilter))
+        //{
+        //    if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<EntityType>))))
+        //        query = query.Where(x => accessibleTeams == null ? true : accessibleTeams.Contains((x as IEntityHasTeam<EntityType>)!.TeamID));
+        //}
+
+        //return query;
     }
 
     public virtual IQueryable<RevisionDTO> GetRevisionsAsync(long id)

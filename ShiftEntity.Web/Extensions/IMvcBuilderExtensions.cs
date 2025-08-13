@@ -73,6 +73,7 @@ public static class IMvcBuilderExtensions
                 };
             });
 
+        builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
 
         return builder;
     }
