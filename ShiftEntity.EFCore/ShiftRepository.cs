@@ -1,7 +1,6 @@
 ﻿using AutoMapper;
 using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
@@ -137,56 +136,24 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return await BaseFindAsync(0, null, idempotencyKey);
     }
 
-    private IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf, List<string>? includes)
+    public virtual IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null)
     {
-        IQueryable<EntityType> iQueryable;
+        var query = asOf is null ? dbSet.AsQueryable() : dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
 
-        if (asOf == null)
-            iQueryable = dbSet;
-        else
-            iQueryable = dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
-
-        if (includes != null)
+        if (includes is not null)
         {
             foreach (var include in includes)
-                iQueryable = iQueryable.Include(include);
+                query = query.Include(include);
         }
 
-        return iQueryable;
-    }
-
-    //private IQueryable<EntityType> GetIQueryable(DateTime? asOf, params Action<IncludeOperations<EntityType>>[] includeOperations)
-    //{
-    //    List<string> includes = new();
-
-    //    foreach (var i in includeOperations)
-    //    {
-    //        IncludeOperations<EntityType> operation = new();
-    //        i.Invoke(operation);
-    //        includes.Add(operation.Includes);
-    //    };
-
-    //    return GetIQueryable(asOf, includes);
-    //}
-
-    public virtual IQueryable<EntityType> GetIQueryable()
-    {
-        var query = dbSet.AsQueryable();
-
-        if (db?.ShiftDbContextOptions?.UseTemporal ?? false)
+        if (this.ShiftRepositoryOptions is not null)
         {
-            //if (showDeletedRows)
+            //foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters)
             //{
-                //query = dbSet.TemporalAll()
-                //.Where(x => !dbSet.Any(p => p.ID == x.ID))
-                //.Select(x => new
-                //{
-                //    Entity = x,
-                //    RowNumber = EF.Functions.RowNumber(x.ID, EF.Functions.OrderByDescending(EF.Property<DateTime>(x, "PeriodStart")))
-                //})
-                //.AsSubQuery()
-                //.Where(x => x.RowNumber <= 1)
-                //.Select(x => x.Entity);
+            //    var expression = filter.GetFilterExpression<EntityType>();
+
+            //    if (expression != null)
+            //        query = query.Where(expression);
             //}
         }
 

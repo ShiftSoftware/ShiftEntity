@@ -1,4 +1,6 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Core;
@@ -9,5 +11,5 @@ public interface IShiftOdataList<EntityType, ListDTO>
 {
     public IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null);
 
-    public IQueryable<EntityType> GetIQueryable();
+    public IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null);
 }

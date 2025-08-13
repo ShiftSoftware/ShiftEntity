@@ -31,6 +31,18 @@ public class RepositoryGlobalFilterContext<TEntity, TValue> where TEntity : Shif
     }
 }
 
+public class GlobalFilterDataProviderOptions<TEntity> where TEntity: ShiftEntity<TEntity>
+{
+    public IServiceProvider ServiceProvider { get; set; } = default!;
+    public TEntity Entity { get; set; } = default!;
+
+    public GlobalFilterDataProviderOptions(IServiceProvider serviceProvider, TEntity entity)
+    {
+        ServiceProvider = serviceProvider;
+        Entity = entity;
+    }
+}
+
 public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter where Entity : ShiftEntity<Entity>
 {
     public DynamicAction? DynamicAction { get; set; }
@@ -38,7 +50,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
     public string? ClaimId { get; set; }
     public Expression<Func<Entity, long?>>? CreatedByUserIDKeySelector { get; set; }
     public Expression<Func<RepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
-    internal Func<IServiceProvider, Entity, TValue>? ValuesProvider { get; set; }
+    internal Func<GlobalFilterDataProviderOptions<Entity>, TValue>? ValuesProvider { get; set; }
 
     public Type? DTOTypeForHashId { get; set; }
     public bool ShowNulls { get; set; }
@@ -74,7 +86,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
     //    return Expression.Constant(this.ValuesProvider.Invoke(null, null), typeof(TValue));
     //}
 
-    public RepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<IServiceProvider, Entity, TValue>? valuesProvider)
+    public RepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<GlobalFilterDataProviderOptions<Entity>, TValue>? valuesProvider)
     {
         this.ValuesProvider = valuesProvider;
 
@@ -95,7 +107,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
 
         // Assuming ValuesProvider now returns a tuple or a custom object.
         // For this example, let's just create a hardcoded boolean for simplicity.
-        var value = ValuesProvider.Invoke(null, null); // Your original list
+        var value = ValuesProvider.Invoke(new GlobalFilterDataProviderOptions<Entity>(null, null)); // Your original list
         var wildCardValue = false; // Hardcoded example for the boolean
 
         var entityParam = Expression.Parameter(typeof(T), "entity");
