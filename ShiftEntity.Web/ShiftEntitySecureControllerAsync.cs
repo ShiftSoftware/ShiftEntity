@@ -3,10 +3,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OData;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
@@ -30,7 +30,7 @@ namespace ShiftSoftware.ShiftEntity.Web;
 
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewAndUpsertDTO> :
     ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpsertDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>, IShiftRepositoryWithOptions<Entity>
     where Entity : ShiftEntity<Entity>, new()
     where ViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
     where ListDTO : ShiftEntityDTOBase
@@ -137,6 +137,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
+
+        if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            return Ok(await base.GetOdataListingNew(oDataQueryOptions));
 
         var finalWhere = GetDefaultFilterExpression(typeAuthService);
 
@@ -615,6 +618,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (action is not null && !typeAuthService.CanRead(action))
             return new List<Entity> { };
 
+        if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            return await base.GetSelectedEntitiesAsync(ids, null);
+        
         return await base.GetSelectedEntitiesAsync(ids, GetDefaultFilterExpression(typeAuthService));
     }
 }

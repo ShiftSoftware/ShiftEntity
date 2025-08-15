@@ -6,15 +6,13 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 
 public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<EntityType>
 {
+    /// <summary>
+    /// Applies the default data level access on repository level instead of ShiftEntitySecureController level
+    /// </summary>
+    public bool UseDefaultDataLevelAccess { get; set; }
     internal List<Action<IncludeOperations<EntityType>>> IncludeOperations { get; set; } = new();
     internal List<IRepositoryGlobalFilter> GlobalFilters { get; set; } = new();
-    public bool DisableDefaultCountryFilter { get; set; }
-    public bool DisableDefaultRegionFilter { get; set; }
-    public bool DisableDefaultCompanyFilter { get; set; }
-    public bool DisableDefaultCompanyBranchFilter { get; set; }
-    public bool DisableDefaultBrandFilter { get; set; }
-    public bool DisableDefaultCityFilter { get; set; }
-    public bool DisableDefaultTeamFilter { get; set; }
+    public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();
 
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
     {
