@@ -28,6 +28,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="DynamicActionFilterBy.cs" />
 	  <Compile Remove="ShiftEntityODataOptions.cs" />
 	  <Compile Remove="ShiftEntityODataSerializerProvider.cs" />
 	</ItemGroup>

@@ -8,7 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Web;
 
 public class DynamicActionFilterBuilder<Entity>
 {
-    internal List<DynamicActionFilterBy<Entity>> DynamicActionFilters { get; set; } = new List<DynamicActionFilterBy<Entity>>();
+    //internal List<DynamicActionFilterBy<Entity>> DynamicActionFilters { get; set; } = new List<DynamicActionFilterBy<Entity>>();
 
     //public Func<IDynamicActionExpressionBuilder, Expression<Func<Entity, bool>>>? DynamicActionExpressionBuilder { get; set; }
 
@@ -20,45 +20,45 @@ public class DynamicActionFilterBuilder<Entity>
     public bool DisableDefaultBrandFilter { get; set; }
     public bool DisableDefaultCityFilter { get; set; }
 
-    public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, DynamicAction dynamicAction)
-    {
-        var parameter = Expression.Parameter(typeof(Entity));
+    //public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, DynamicAction dynamicAction)
+    //{
+    //    var parameter = Expression.Parameter(typeof(Entity));
 
-        // Build expression for ids.Contains(x.ID)
-        var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
+    //    // Build expression for ids.Contains(x.ID)
+    //    var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
 
-        var createdFilter = new DynamicActionFilterBy<Entity>(dynamicAction, keySelectorInvoke, parameter, typeof(TKey));
+    //    var createdFilter = new DynamicActionFilterBy<Entity>(dynamicAction, keySelectorInvoke, parameter, typeof(TKey));
 
-        DynamicActionFilters.Add(createdFilter);
+    //    DynamicActionFilters.Add(createdFilter);
 
-        return createdFilter;
-    }
+    //    return createdFilter;
+    //}
 
-    public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, List<string> accessibleKeys)
-    {
-        var parameter = Expression.Parameter(typeof(Entity));
+    //public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, List<string> accessibleKeys)
+    //{
+    //    var parameter = Expression.Parameter(typeof(Entity));
 
-        // Build expression for ids.Contains(x.ID)
-        var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
+    //    // Build expression for ids.Contains(x.ID)
+    //    var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
 
-        var createdFilter = new DynamicActionFilterBy<Entity>(accessibleKeys, keySelectorInvoke, parameter, typeof(TKey));
+    //    var createdFilter = new DynamicActionFilterBy<Entity>(accessibleKeys, keySelectorInvoke, parameter, typeof(TKey));
 
-        DynamicActionFilters.Add(createdFilter);
+    //    DynamicActionFilters.Add(createdFilter);
 
-        return createdFilter;
-    }
+    //    return createdFilter;
+    //}
 
-    public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, string claimId)
-    {
-        var parameter = Expression.Parameter(typeof(Entity));
+    //public DynamicActionFilterBy<Entity> FilterBy<TKey>(Expression<Func<Entity, TKey>> keySelector, string claimId)
+    //{
+    //    var parameter = Expression.Parameter(typeof(Entity));
 
-        // Build expression for ids.Contains(x.ID)
-        var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
+    //    // Build expression for ids.Contains(x.ID)
+    //    var keySelectorInvoke = Expression.Invoke(keySelector, parameter);
 
-        var createdFilter = new DynamicActionFilterBy<Entity>(claimId, keySelectorInvoke, parameter, typeof(TKey));
+    //    var createdFilter = new DynamicActionFilterBy<Entity>(claimId, keySelectorInvoke, parameter, typeof(TKey));
 
-        DynamicActionFilters.Add(createdFilter);
+    //    DynamicActionFilters.Add(createdFilter);
 
-        return createdFilter;
-    }
+    //    return createdFilter;
+    //}
 }
