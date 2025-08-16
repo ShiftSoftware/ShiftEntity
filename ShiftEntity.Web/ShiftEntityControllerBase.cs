@@ -296,7 +296,16 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             return new(BadRequest(response), null);
         }
 
-        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        Entity? item = null;
+
+        try
+        {
+            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        }
+        catch (ShiftEntityException ex)
+        {
+            return new(HandleException(ex), null);
+        }
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>

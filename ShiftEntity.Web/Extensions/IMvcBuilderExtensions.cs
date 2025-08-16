@@ -1,9 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OData;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+﻿using EntityFrameworkCore.Triggered;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
@@ -11,9 +7,6 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
-using ShiftSoftware.ShiftEntity.Web.Triggers;
-using EntityFrameworkCore.Triggered;
-using ShiftSoftware.ShiftEntity.Web;
 
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -40,7 +33,7 @@ public static class IMvcBuilderExtensions
         //builder.Services.TryAddSingleton<TimeZoneService>();
 
         builder.Services.RegisterShiftEntityEfCoreTriggers();
-        builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
+        //builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
 
         //Register timezone service to json options
         builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
@@ -74,6 +67,7 @@ public static class IMvcBuilderExtensions
             });
 
         builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
+        builder.Services.AddScoped<IIdentityClaimProvider, IdentityClaimProvider>();
 
         return builder;
     }

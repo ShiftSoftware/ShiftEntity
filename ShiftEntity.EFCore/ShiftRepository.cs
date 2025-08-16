@@ -6,6 +6,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using System.Net;
 using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
@@ -22,12 +23,15 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
     private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
+    private readonly IIdentityClaimProvider identityClaimProvider;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
         this.mapper = db.GetService<IMapper>();
+        this.identityClaimProvider = db.GetService<IIdentityClaimProvider>();
+        this.ShiftRepositoryOptions = new();
 
         if (shiftRepositoryBuilder is not null)
         {
@@ -51,6 +55,76 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
     }
 
+    public async ValueTask<EntityType> UpdateAsync(EntityType entity, ViewAndUpsertDTO dto, long? userId)
+    {
+        var upserted = await UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
+
+        upserted.LastSaveDate = DateTime.Now;
+
+        upserted.LastSavedByUserID = userId;
+
+        if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        {
+            var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                entity,
+                TypeAuth.Core.Access.Write
+            );
+
+            if (!canWrite)
+                throw new ShiftEntityException(new Message("Forbidden", "Can Not Update Item"), (int)HttpStatusCode.Forbidden);
+        }
+
+        return upserted;
+    }
+
+    public async ValueTask<EntityType> CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey)
+    {
+        var entity = await UpsertAsync(new EntityType(), dto, ActionTypes.Insert, userId, idempotencyKey);
+
+        var now = DateTime.UtcNow;
+
+        //if (entity.LastSaveDate == default)
+            entity.LastSaveDate = now;
+
+        //if (entity.CreateDate == default)
+            entity.CreateDate = now;
+
+        entity.IsDeleted = false;
+
+        entity.CreatedByUserID = userId;
+        entity.LastSavedByUserID = userId;
+
+        if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
+            entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
+        
+        if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
+            entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
+
+        if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
+            entityWithCity.CityID = identityClaimProvider.GetCityID();
+
+        if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
+            entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
+
+        if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
+            entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+
+        if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        {
+            var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                entity,
+                TypeAuth.Core.Access.Write
+            );
+
+            if (!canWrite)
+                throw new ShiftEntityException(new Message("Forbidden", "Can Not Create Item"), (int)HttpStatusCode.Forbidden);
+        }
+
+        return entity;
+    }
+
     public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null, Guid? idempotencyKey = null)
     {
         entity = mapper.Map(dto, entity);
@@ -62,11 +136,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         return new ValueTask<EntityType>(entity);
     }
-    
+
     public Message? ResponseMessage { get; set; }
     public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; } = new();
+    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; }
 
     //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
     //{
@@ -125,6 +199,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (entity is not null && includes?.Count > 0)
             entity.ReloadAfterSave = true;
+
+        if (this.ShiftRepositoryOptions?.UseDefaultDataLevelAccess ?? false)
+        {
+            var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                entity,
+                TypeAuth.Core.Access.Read
+            );
+
+            if (!canRead)
+                throw new ShiftEntityException(new Message("Forbidden", "Can Not Read Item"), (int)HttpStatusCode.Forbidden);
+        }
 
         return entity;
     }
@@ -260,11 +346,23 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null)
     {
-        if (isHardDelete)
-            dbSet.Remove(entity);
-        else
-            entity.MarkAsDeleted();
+        if (this.ShiftRepositoryOptions?.UseDefaultDataLevelAccess ?? false)
+        {
+            var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                entity,
+                TypeAuth.Core.Access.Delete
+            );
 
+            if (!canRead)
+                throw new ShiftEntityException(new Message("Forbidden", "Can Not Delete Item"), (int)HttpStatusCode.Forbidden);
+        }
+
+        entity.IsDeleted = true;
+
+        entity.LastSaveDate = DateTime.UtcNow;
+
+        entity.LastSavedByUserID = userId;
 
         return new ValueTask<EntityType>(entity);
     }

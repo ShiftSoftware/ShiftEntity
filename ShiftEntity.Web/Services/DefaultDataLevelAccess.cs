@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using ShiftSoftware.ShiftEntity.Core;
+﻿using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftIdentity.Core;
@@ -21,12 +19,12 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     private readonly ITypeAuthService typeAuthService;
-    private readonly HttpContext httpContext;
-    
-    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IHttpContextAccessor httpContextAccessor)
+    private readonly IIdentityClaimProvider identityClaimProvider;
+
+    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IIdentityClaimProvider identityClaimProvider)
     {
         this.typeAuthService = typeAuthService;
-        this.httpContext = httpContextAccessor.HttpContext!;
+        this.identityClaimProvider = identityClaimProvider;
     }
 
     private List<long?>? GetAccessibleItems<TDto>(DynamicReadWriteDeleteAction claim, params string[]? selfId)
@@ -46,7 +44,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<CountryDTO>(
             ShiftIdentityActions.DataLevelAccess.Countries,
-            httpContext?.GetHashedCountryID()!
+            identityClaimProvider?.GetHashedCountryID()!
         );
     }
 
@@ -54,7 +52,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<RegionDTO>(
             ShiftIdentityActions.DataLevelAccess.Regions,
-            httpContext?.GetHashedRegionID()!
+            identityClaimProvider?.GetHashedRegionID()!
         );
     }
 
@@ -62,7 +60,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<CityDTO>(
             ShiftIdentityActions.DataLevelAccess.Cities,
-            httpContext?.GetHashedCityID()!
+            identityClaimProvider?.GetHashedCityID()!
         );
     }
 
@@ -70,7 +68,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<CompanyDTO>(
             ShiftIdentityActions.DataLevelAccess.Companies,
-            httpContext?.GetHashedCompanyID()!
+            identityClaimProvider?.GetHashedCompanyID()!
         );
     }
 
@@ -78,7 +76,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<CompanyBranchDTO>(
             ShiftIdentityActions.DataLevelAccess.Branches,
-            httpContext?.GetHashedCompanyBranchID()!
+            identityClaimProvider?.GetHashedCompanyBranchID()!
         );
     }
 
@@ -86,7 +84,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     {
         return GetAccessibleItems<TeamDTO>(
             ShiftIdentityActions.DataLevelAccess.Teams,
-            httpContext?.GetHashedTeamIDs()?.ToArray()!
+            identityClaimProvider?.GetHashedTeamIDs()?.ToArray()!
         );
     }
 
@@ -116,7 +114,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Countries,
                     access,
                     entityWithCountry?.CountryID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CountryDTO>(entityWithCountry.CountryID.Value),
-                    this.httpContext.GetHashedCountryID()!
+                    this.identityClaimProvider.GetHashedCountryID()!
                 ))
                 {
                     return false;
@@ -132,7 +130,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Regions,
                     access,
                     entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
-                    this.httpContext.GetHashedRegionID()!
+                    this.identityClaimProvider.GetHashedRegionID()!
                 ))
                 {
                     return false;
@@ -148,7 +146,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Companies,
                     access,
                     entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
-                    this.httpContext.GetHashedCompanyID()!
+                    this.identityClaimProvider.GetHashedCompanyID()!
                 ))
                 {
                     return false;
@@ -164,7 +162,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Branches,
                     access,
                     entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
-                    this.httpContext.GetHashedCompanyBranchID()!
+                    this.identityClaimProvider.GetHashedCompanyBranchID()!
                 ))
                 {
                     return false;
@@ -195,7 +193,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Cities,
                     access,
                     entityWithCity?.CityID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CityDTO>(entityWithCity.CityID.Value),
-                    this.httpContext.GetHashedCityID()!
+                    this.identityClaimProvider.GetHashedCityID()!
                 ))
                 {
                     return false;
@@ -211,7 +209,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                     ShiftIdentityActions.DataLevelAccess.Teams,
                     access,
                     entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
-                    this.httpContext.GetHashedTeamIDs()?.ToArray()
+                    this.identityClaimProvider.GetHashedTeamIDs()?.ToArray()
                 ))
                 {
                     return false;

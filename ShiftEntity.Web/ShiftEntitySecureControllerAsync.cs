@@ -480,8 +480,12 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                     throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
             }
 
-            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Read))
-                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+
+            if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            {
+                if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Read))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
         });
 
         return result.ActionResult;
@@ -551,8 +555,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                     throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
             }
 
-            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
-                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            {
+                if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
         });
 
         return result.ActionResult;
@@ -577,8 +584,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                     throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
             }
 
-            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
-                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            {
+                if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
         });
 
         return result.ActionResult;
@@ -603,8 +613,11 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                     throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
             }
 
-            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Delete))
-                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            {
+                if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Delete))
+                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            }
         });
 
         return result.ActionResult;

@@ -13,7 +13,7 @@ public class ShiftEntityBase
     [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [System.Text.Json.Serialization.JsonPropertyName(nameof(ID))]
     [Newtonsoft.Json.JsonProperty(nameof(ID))]
-    public long ID { get; internal set; }
+    public long ID { get; set; }
 }
 
 public class ShiftEntityBase<EntityType> : ShiftEntityBase where EntityType : class

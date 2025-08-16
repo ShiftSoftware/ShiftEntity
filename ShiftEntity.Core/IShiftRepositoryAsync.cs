@@ -24,15 +24,15 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
     Message? ResponseMessage { get; set; }
     Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-    ValueTask<Entity> IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>.CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey)
-    {
-        return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId, idempotencyKey);
-    }
+    //ValueTask<Entity> IShiftEntityCreateAsync<Entity, ViewAndUpsertDTO>.CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey)
+    //{
+    //    return UpsertAsync(new Entity(), dto, ActionTypes.Insert, userId, idempotencyKey);
+    //}
 
-    ValueTask<Entity> IShiftEntityUpdateAsync<Entity, ViewAndUpsertDTO>.UpdateAsync(Entity entity, ViewAndUpsertDTO dto, long? userId)
-    {
-        return UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
-    }
+    //ValueTask<Entity> IShiftEntityUpdateAsync<Entity, ViewAndUpsertDTO>.UpdateAsync(Entity entity, ViewAndUpsertDTO dto, long? userId)
+    //{
+    //    return UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
+    //}
 
     /// <summary>
     /// CreateAsync and UpdateAsync both of them higher priority
