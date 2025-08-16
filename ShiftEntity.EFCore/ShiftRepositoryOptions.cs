@@ -9,7 +9,7 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     /// <summary>
     /// Applies the default data level access on repository level instead of ShiftEntitySecureController level
     /// </summary>
-    public bool UseDefaultDataLevelAccess { get; set; }
+    public bool UseDefaultDataLevelAccess { get; set; } = true;
     internal List<Action<IncludeOperations<EntityType>>> IncludeOperations { get; set; } = new();
     internal List<IRepositoryGlobalFilter> GlobalFilters { get; set; } = new();
     public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();

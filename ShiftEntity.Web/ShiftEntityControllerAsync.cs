@@ -41,7 +41,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpGet("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> GetSingle(string key, [FromQuery] DateTimeOffset? asOf)
     {
-        return (await base.GetSingle(key, asOf, null)).ActionResult;
+        return (await base.GetSingle(key, asOf)).ActionResult;
     }
 
     //[HttpGet]
@@ -66,13 +66,13 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpPut("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Put(string key, [FromBody] ViewAndUpsertDTO dto)
     {
-        return (await base.PutItem(key, dto, null)).ActionResult;
+        return (await base.PutItem(key, dto)).ActionResult;
     }
 
     [HttpDelete("{key}")]
     public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
     {
-        return (await base.DeleteItem(key, isHardDelete, null)).ActionResult;
+        return (await base.DeleteItem(key, isHardDelete)).ActionResult;
     }
 
     [HttpGet("print/{key}")]

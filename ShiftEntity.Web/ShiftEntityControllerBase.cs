@@ -121,7 +121,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTimeOffset? asOf, Action<Entity>? beforeGetValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTimeOffset? asOf)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -152,18 +152,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                 },
                 Additional = repository.AdditionalResponseData
             }), null);
-        }
-
-        if (beforeGetValidation != null)
-        {
-            try
-            {
-                beforeGetValidation(item);
-            }
-            catch (ShiftEntityException ex)
-            {
-                return new(HandleException(ex), null);
-            }
         }
 
         var isTemporal = item.GetType().GetCustomAttributes(typeof(TemporalShiftEntity)).Any();
@@ -268,7 +256,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItem(string key, ViewAndUpsertDTO dto, Action<Entity>? beforeSaveValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItem(string key, ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -333,18 +321,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             return new(HandleException(ex), null);
         }
 
-        if (beforeSaveValidation != null)
-        {
-            try
-            {
-                beforeSaveValidation(item);
-            }
-            catch (ShiftEntityException ex)
-            {
-                return new(HandleException(ex), null);
-            }
-        }
-
         try
         {
             await repository.SaveChangesAsync();
@@ -362,7 +338,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
     
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete, Action<Entity>? beforeSaveValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -386,18 +362,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         catch (ShiftEntityException ex)
         {
             return new(HandleException(ex), null);
-        }
-
-        if (beforeSaveValidation != null)
-        {
-            try
-            {
-                beforeSaveValidation(item);
-            }
-            catch (ShiftEntityException ex)
-            {
-                return new(HandleException(ex), null);
-            }
         }
 
         try
