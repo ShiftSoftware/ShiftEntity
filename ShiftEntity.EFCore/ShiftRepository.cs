@@ -291,7 +291,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    public virtual async Task SaveChangesAsync(bool raiseBeforeCommitTriggers = false)
+    public virtual async Task SaveChangesAsync()
     {
         foreach (var entry in db.ChangeTracker.Entries())
         {
@@ -309,7 +309,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                     if (uniqueHash != null)
                     {
                         using var sha256 = System.Security.Cryptography.SHA256.Create();
-                        
+
                         var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
 
                         entry.Property("UniqueHash").CurrentValue = hashBytes;
@@ -318,30 +318,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        if (raiseBeforeCommitTriggers)
-        {
-            using var tx = db.Database.BeginTransaction();
-            var triggerService = db.GetService<ITriggerService>(); // ITriggerService is responsible for creating now trigger sessions (see below)
-            var triggerSession = triggerService.CreateSession(db); // A trigger session keeps track of all changes that are relevant within that session. e.g. RaiseAfterSaveTriggers will only raise triggers on changes it discovered within this session (through RaiseBeforeSaveTriggers)
-
-            try
-            {
-                await db.SaveChangesAsync();
-                await triggerSession.RaiseBeforeCommitTriggers();
-                await tx.CommitAsync();
-                await triggerSession.RaiseAfterCommitTriggers();
-            }
-            catch
-            {
-                await triggerSession.RaiseBeforeRollbackTriggers();
-                await tx.RollbackAsync();
-                await triggerSession.RaiseAfterRollbackTriggers();
-                throw;
-            }
-
-        }
-        else
-            await db.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null)

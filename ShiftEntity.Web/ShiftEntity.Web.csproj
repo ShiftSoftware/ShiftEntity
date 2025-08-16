@@ -28,6 +28,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="Triggers\**" />
+	  <EmbeddedResource Remove="Triggers\**" />
+	  <None Remove="Triggers\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <Compile Remove="DynamicActionFilterBy.cs" />
 	  <Compile Remove="ShiftEntityODataOptions.cs" />
 	  <Compile Remove="ShiftEntityODataSerializerProvider.cs" />
@@ -44,7 +50,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Folder Include="Triggers\" />
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 	</ItemGroup>

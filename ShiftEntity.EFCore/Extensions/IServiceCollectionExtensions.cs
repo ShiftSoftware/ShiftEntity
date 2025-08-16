@@ -15,7 +15,7 @@ public static class IServiceCollectionExtensions
         //services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(GeneralTrigger<>));
         //services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>)); ToDo: Create an Interface for getting user/company info
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReloadAfterSaveTrigger<>));
-        services.AddTransient(typeof(IBeforeCommitTrigger<>), typeof(BeforeCommitTrigger<>));
+        //services.AddTransient(typeof(IBeforeCommitTrigger<>), typeof(BeforeCommitTrigger<>));
 
         return services;
     }

@@ -181,7 +181,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItem(ViewAndUpsertDTO dto, Action<Entity>? beforeCommitValidation)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItem(ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -225,11 +225,9 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         repository.Add(newItem);
 
-        newItem.BeforeCommitValidation = beforeCommitValidation;
-
         try
         {
-            await repository.SaveChangesAsync(true);
+            await repository.SaveChangesAsync();
         }
         catch (DbUpdateException dbUpdateException)
         {

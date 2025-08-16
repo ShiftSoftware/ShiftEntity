@@ -545,22 +545,24 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (action is not null && !typeAuthService.CanWrite(action))
             return Forbid();
 
-        var result = await base.PostItem(dto, entity =>
-        {
-            var expression = GetDynamicActionExpression(typeAuthService, Access.Write, this.HttpContext.GetUserID());
+        var result = await base.PostItem(dto
+            //,entity =>
+            //    {
+            //        var expression = GetDynamicActionExpression(typeAuthService, Access.Write, this.HttpContext.GetUserID());
 
-            if (expression is not null)
-            {
-                if (!expression.Compile()(entity))
-                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
-            }
+            //        if (expression is not null)
+            //        {
+            //            if (!expression.Compile()(entity))
+            //                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            //        }
 
-            if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
-            {
-                if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
-                    throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
-            }
-        });
+            //        if (!this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+            //        {
+            //            if (!HasDefaultDataLevelAccess(typeAuthService, entity, TypeAuth.Core.Access.Write))
+            //                throw new ShiftEntityException(new Message("Error", "Unauthorized"), (int)System.Net.HttpStatusCode.Forbidden);
+            //        }
+            //    }
+        );
 
         return result.ActionResult;
     }
