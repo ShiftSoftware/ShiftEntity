@@ -8,7 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 public interface IShiftEntityFind<EntityType> where EntityType : ShiftEntity<EntityType>
 {
-    public Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null);
+    public Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, bool disableDefaultDataLevelAccess = false);
     public IQueryable<RevisionDTO> GetRevisionsAsync(long id);
     public Task<Stream> PrintAsync(string id);
     public Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey);

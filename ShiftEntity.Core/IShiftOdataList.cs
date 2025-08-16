@@ -11,5 +11,5 @@ public interface IShiftOdataList<EntityType, ListDTO>
 {
     public IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null);
 
-    public IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null);
+    public IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false);
 }
