@@ -29,6 +29,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="FileManager\**" />
+	  <EmbeddedResource Remove="FileManager\**" />
+	  <None Remove="FileManager\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="FluentValidation" Version="12.0.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.0.2" />
