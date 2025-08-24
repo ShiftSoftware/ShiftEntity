@@ -4,7 +4,7 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 namespace ShiftSoftware.ShiftEntity.Core.Flags;
 
 public interface IEntityHasBrand<Entity>
-    where Entity : ShiftEntityBase, new()
+    
 {
     long? BrandID { get; set; }
 }
