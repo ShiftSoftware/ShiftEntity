@@ -1,29 +1,17 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Print;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Country;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
-using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -37,18 +25,9 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 {
     private readonly ReadWriteDeleteAction? action;
 
-    private readonly DynamicActionFilterBuilder<Entity>? dynamicActionFilterBuilder;
-
-    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction? action, Action<DynamicActionFilterBuilder<Entity>>? dynamicActionFilterBuilder = null)
+    public ShiftEntitySecureControllerAsync(ReadWriteDeleteAction? action)
     {
         this.action = action;
-
-        if (dynamicActionFilterBuilder is not null)
-        {
-            this.dynamicActionFilterBuilder = new();
-
-            dynamicActionFilterBuilder.Invoke(this.dynamicActionFilterBuilder);
-        }
     }
 
     //[HttpGet]

@@ -34,6 +34,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Compile Remove="DynamicActionFilterBuilder.cs" />
 	  <Compile Remove="DynamicActionFilterBy.cs" />
 	  <Compile Remove="ShiftEntityODataOptions.cs" />
 	  <Compile Remove="ShiftEntityODataSerializerProvider.cs" />
