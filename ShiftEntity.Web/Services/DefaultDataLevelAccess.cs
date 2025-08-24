@@ -11,8 +11,10 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
@@ -220,7 +222,22 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         return true;
     }
 
-    public IQueryable<EntityType> ApplyDefaultDataLevelFilters<EntityType>(DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions, IQueryable<EntityType> query) where EntityType : ShiftEntity<EntityType>, new()
+    private IQueryable<T> ApplyFilter<T>(List<long?>? data, IQueryable<T> query, Expression<Func<T, long?>> valueSelector)
+    {
+        if (data is null)
+            return query;
+
+        return query.Where(Expression.Lambda<Func<T, bool>>(
+            Expression.Call(
+                Expression.Constant(data),
+                typeof(List<long?>).GetMethod("Contains", new[] { typeof(long?) })!,
+                valueSelector.Body
+            ),
+            valueSelector.Parameters
+        ));
+    }
+
+    public IQueryable<EntityType> ApplyDefaultDataLevelFilters<EntityType>(DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions, IQueryable<EntityType> query) where EntityType : notnull
     {
         var disableDefaultCountryFilter = DefaultDataLevelAccessOptions.DisableDefaultCountryFilter;
         var disableDefaultRegionFilter = DefaultDataLevelAccessOptions.DisableDefaultRegionFilter;
@@ -239,61 +256,61 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         var entityHasTeam = typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<EntityType>)));
 
         if (entityHasCountry && !disableDefaultCountryFilter)
-        {
-            List<long?>? accessibleCountries = this.GetAccessibleCountries();
-
-            if (accessibleCountries is not null)
-                query = query.Where(x => accessibleCountries.Contains((x as IEntityHasCountry<EntityType>)!.CountryID));
-        }
+            query = ApplyFilter(this.GetAccessibleCountries(), query, x => ((IEntityHasCountry<EntityType>)x).CountryID);
 
         if (entityHasRegion && !disableDefaultRegionFilter)
-        {
-            List<long?>? accessibleRegions = this.GetAccessibleRegions();
-
-            if (accessibleRegions is not null)
-                query = query.Where(x => accessibleRegions.Contains((x as IEntityHasRegion<EntityType>)!.RegionID));
-        }
+            query = ApplyFilter(this.GetAccessibleRegions(), query, x => ((IEntityHasRegion<EntityType>)x).RegionID);
 
         if (entityHasCompany && !disableDefaultCompanyFilter)
-        {
-            List<long?>? accessibleCompanies = this.GetAccessibleCompanies();
-
-            if (accessibleCompanies is not null)
-                query = query.Where(x => accessibleCompanies.Contains((x as IEntityHasCompany<EntityType>)!.CompanyID));
-        }
+            query = ApplyFilter(this.GetAccessibleCompanies(), query, x => ((IEntityHasCompany<EntityType>)x).CompanyID);
 
         if (entityHasCompanyBranch && !disableDefaultCompanyBranchFilter)
-        {
-            List<long?>? accessibleBranches = this.GetAccessibleBranches();
-
-            if (accessibleBranches is not null)
-                query = query.Where(x => accessibleBranches.Contains((x as IEntityHasCompanyBranch<EntityType>)!.CompanyBranchID));
-        }
+            query = ApplyFilter(this.GetAccessibleBranches(), query, x => ((IEntityHasCompanyBranch<EntityType>)x).CompanyBranchID);
 
         if (entityHasBrand && !disableDefaultBrandFilter)
-        {
-            List<long?>? accessibleBrands = this.GetAccessibleBrands();
-
-            if (accessibleBrands is not null)
-                query = query.Where(x => accessibleBrands.Contains((x as IEntityHasBrand<EntityType>)!.BrandID));
-        }
+            query = ApplyFilter(this.GetAccessibleBrands(), query, x => ((IEntityHasBrand<EntityType>)x).BrandID);
 
         if (entityHasCity && !disableDefaultCityFilter)
-        {
-            List<long?>? accessibleCities = this.GetAccessibleCities();
-
-            if (accessibleCities is not null)
-                query = query.Where(x => accessibleCities.Contains((x as IEntityHasCity<EntityType>)!.CityID));
-        }
+            query = ApplyFilter(this.GetAccessibleCities(), query, x => ((IEntityHasCity<EntityType>)x).CityID);
 
         if (entityHasTeam && !disableDefaultTeamFilter)
-        {
-            List<long?>? accessibleTeams = this.GetAccessibleTeams();
-
-            if (accessibleTeams is not null)
-                query = query.Where(x => accessibleTeams.Contains((x as IEntityHasTeam<EntityType>)!.TeamID));
-        }
+            query = ApplyFilter(this.GetAccessibleTeams(), query, x => ((IEntityHasTeam<EntityType>)x).TeamID);
 
         return query;
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnCountries<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCountry<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleCountries(), query, x => x.CountryID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnRegions<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasRegion<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleRegions(), query, x => x.RegionID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnCompanies<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompany<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleCompanies(), query, x => x.CompanyID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnBranches<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompanyBranch<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleBranches(), query, x => x.CompanyBranchID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnBrands<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasBrand<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleBrands(), query, x => x.BrandID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnCities<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCity<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleCities(), query, x => x.CityID);
+    }
+
+    public IQueryable<EntityType> ApplyDefaultFilterOnTeams<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasTeam<EntityType>
+    {
+        return ApplyFilter(this.GetAccessibleTeams(), query, x => x.TeamID);
     }
 }
