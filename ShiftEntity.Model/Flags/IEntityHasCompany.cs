@@ -1,4 +1,4 @@
-﻿namespace ShiftSoftware.ShiftEntity.Core.Flags;
+﻿namespace ShiftSoftware.ShiftEntity.Model.Flags;
 
 public interface IEntityHasCompany<Entity>
     

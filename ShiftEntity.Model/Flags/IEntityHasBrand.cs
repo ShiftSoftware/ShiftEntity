@@ -1,7 +1,7 @@
 ﻿
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
-namespace ShiftSoftware.ShiftEntity.Core.Flags;
+namespace ShiftSoftware.ShiftEntity.Model.Flags;
 
 public interface IEntityHasBrand<Entity>
     

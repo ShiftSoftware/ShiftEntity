@@ -1,4 +1,4 @@
-﻿using ShiftSoftware.ShiftEntity.Core.Flags;
+﻿using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.TypeAuth.Core;
 using System.Collections.Generic;
 using System.Linq;
