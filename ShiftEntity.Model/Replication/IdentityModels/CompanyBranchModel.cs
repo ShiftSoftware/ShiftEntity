@@ -1,12 +1,17 @@
 ﻿using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Collections.Generic;
 
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
-public class CompanyBranchModel : ReplicationModel
+public class CompanyBranchModel : ReplicationModel,
+    IEntityHasRegion<CompanyBranchModel>,
+    IEntityHasCompany<CompanyBranchModel>,
+    IEntityHasCountry<CompanyBranchModel>,
+    IEntityHasCompanyBranch<CompanyBranchModel>
 {
     public string Name { get; set; } = default!;
     public string? Phone { get; set; }
@@ -35,4 +40,8 @@ public class CompanyBranchModel : ReplicationModel
     public string BranchID { get; set; } = default!;
     public string ItemType { get; set; } = default!;
     public Dictionary<string, CustomField>? CustomFields { get; set; }
+    public long? RegionID { get; set; }
+    public long? CompanyID { get; set; }
+    public long? CountryID { get; set; }
+    public long? CompanyBranchID { get; set; }
 }

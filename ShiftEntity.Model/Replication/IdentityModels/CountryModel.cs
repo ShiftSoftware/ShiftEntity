@@ -1,9 +1,11 @@
-﻿namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
+﻿using ShiftSoftware.ShiftEntity.Model.Flags;
 
-public class CountryModel : ReplicationModel
+namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
+
+public class CountryModel : ReplicationModel, IEntityHasCountry<CountryModel>, IEntityHasRegion<CountryModel>
 {
-    public string CountryID { get; set; } = default!;
-    public string? RegionID { get; set; }
+    public long? CountryID { get; set; }
+    public long? RegionID { get; set; }
     public string ItemType { get; set; } = default!;
 
     public string Name { get; set; } = default!;

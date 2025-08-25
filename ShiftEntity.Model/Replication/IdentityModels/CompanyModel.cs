@@ -1,8 +1,9 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.Enums;
+using ShiftSoftware.ShiftEntity.Model.Flags;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
-public class CompanyModel : ReplicationModel
+public class CompanyModel : ReplicationModel, IEntityHasCompany<CompanyModel>
 {
     public string Name { get; set; } = default!;
     public string? LegalName { get; set; }
@@ -18,4 +19,5 @@ public class CompanyModel : ReplicationModel
     public DateTime? TerminationDate { get; set; }
     public Dictionary<string, CustomField>? CustomFields { get; set; }
     public long? ParentCompanyID { get; set; }
+    public long? CompanyID { get; set; }
 }
