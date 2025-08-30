@@ -56,4 +56,25 @@ public class ODataIqueryable
             Value = runAsync ? await data.ToListAsync() : data.ToList(),
         };
     }
+
+    public static IQueryable<T> ApplyDefaultSoftDeleteFilter<T>(IQueryable<T> data, ODataQueryOptions<T> oDataQueryOptions) where T : ShiftEntityDTOBase
+    {
+        bool isFilteringByIsDeleted = false;
+
+        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
+
+        if (filterClause is not null)
+        {
+            var visitor = new SoftDeleteQueryNodeVisitor();
+
+            var visited = filterClause.Expression.Accept(visitor);
+
+            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
+        }
+
+        if (!isFilteringByIsDeleted)
+            data = data.Where(x => x.IsDeleted == false);
+
+        return data;
+    }
 }

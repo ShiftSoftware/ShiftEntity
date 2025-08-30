@@ -44,19 +44,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        bool isFilteringByIsDeleted = false;
-
-        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
-
-        if (filterClause is not null)
-        {
-            var visitor = new SoftDeleteQueryNodeVisitor();
-
-            var visited = filterClause.Expression.Accept(visitor);
-
-            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
-        }
-
         var queryable = repository.GetIQueryable();
 
         if (where is not null)
@@ -64,8 +51,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = repository.OdataList(queryable);
 
-        if (!isFilteringByIsDeleted)
-            data = data.Where(x => x.IsDeleted == false);
+        data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
 
         return data;
     }
@@ -75,19 +61,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        bool isFilteringByIsDeleted = false;
-
-        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
-
-        if (filterClause is not null)
-        {
-            var visitor = new SoftDeleteQueryNodeVisitor();
-
-            var visited = filterClause.Expression.Accept(visitor);
-
-            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
-        }
-
         var queryable = repository.GetIQueryable();
 
         if (where is not null)
@@ -95,8 +68,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = repository.OdataList(queryable);
 
-        if (!isFilteringByIsDeleted)
-            data = data.Where(x => x.IsDeleted == false);
+        data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
 
         return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
     }
