@@ -21,9 +21,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     private readonly ITypeAuthService typeAuthService;
-    private readonly IIdentityClaimProvider identityClaimProvider;
+    private readonly IdentityClaimProvider identityClaimProvider;
 
-    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IIdentityClaimProvider identityClaimProvider)
+    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider)
     {
         this.typeAuthService = typeAuthService;
         this.identityClaimProvider = identityClaimProvider;

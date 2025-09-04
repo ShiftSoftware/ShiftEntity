@@ -6,6 +6,7 @@ using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Flags;
+using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Text;
 
@@ -23,18 +24,22 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
     private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
-    private readonly IIdentityClaimProvider identityClaimProvider;
+    private readonly IdentityClaimProvider identityClaimProvider;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
         this.mapper = db.GetService<IMapper>();
-        this.identityClaimProvider = db.GetService<IIdentityClaimProvider>();
+        this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
         this.ShiftRepositoryOptions = new();
 
         if (shiftRepositoryBuilder is not null)
         {
+            this.ShiftRepositoryOptions.CurrentUserProvider = db.GetService<ICurrentUserProvider>();
+
+            this.ShiftRepositoryOptions.TypeAuthService = db.GetService<ITypeAuthService>();
+
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
