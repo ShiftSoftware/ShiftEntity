@@ -19,13 +19,14 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     
     internal ICurrentUserProvider? CurrentUserProvider { get; set; }
     internal ITypeAuthService? TypeAuthService { get; set; }
-
+    
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
     {
         this.IncludeOperations = includeOperations.ToList();
     }
 
-    public RepositoryGlobalFilter<EntityType, TValue> FilterBy<TValue>(Expression<Func<RepositoryGlobalFilterContext<EntityType, TValue>, bool>> keySelector)
+    public RepositoryGlobalFilter<EntityType, TValue> FilterBy<TValue>(Expression<Func<RepositoryGlobalFilterContext<EntityType, TValue>, bool>> keySelector) 
+        where TValue : class
     {
         var createdFilter = new RepositoryGlobalFilter<EntityType, TValue>(
             keySelector, 

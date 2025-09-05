@@ -28,9 +28,18 @@ public class RepositoryGlobalFilterContext<TEntity, TValue> where TEntity : Shif
 {
     public TEntity Entity { get; }
     public TValue Value { get; }
-    public bool WildCard { get; set; }
     public List<string>? ClaimValues { get; set; }
-    public List<string>? TypeAuthValues { get; set; }
+    
+    public bool WildCardRead { get; set; }
+    public bool WildCardWrite { get; set; }
+    public bool WildCardDelete { get; set; }
+    public bool WildCardMaxAccess { get; set; }
+
+    public List<string>? ReadableTypeAuthValues { get; set; }
+    public List<string>? WritableTypeAuthValues { get; set; }
+    public List<string>? DeletableTypeAuthValues { get; set; }
+    public List<string>? MaxAccessTypeAuthValues { get; set; }
+    
     public RepositoryGlobalFilterContext(TEntity entity, TValue value)
     {
         Entity = entity;
@@ -38,29 +47,23 @@ public class RepositoryGlobalFilterContext<TEntity, TValue> where TEntity : Shif
     }
 }
 
-public class GlobalFilterDataProviderOptions<TEntity> where TEntity : ShiftEntity<TEntity>
-{
-    public IServiceProvider ServiceProvider { get; set; } = default!;
 
-    public GlobalFilterDataProviderOptions(IServiceProvider serviceProvider, TEntity entity)
-    {
-        ServiceProvider = serviceProvider;
-    }
-}
-
-public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter where Entity : ShiftEntity<Entity>
+public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter 
+    where Entity : ShiftEntity<Entity>
+    where TValue : class
 {
     public DynamicAction? DynamicAction { get; set; }
     public List<string>? AccessibleKeys { get; set; }
     public string? ClaimId { get; set; }
     public Expression<Func<Entity, long?>>? CreatedByUserIDKeySelector { get; set; }
     public Expression<Func<RepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
-    internal Func<GlobalFilterDataProviderOptions<Entity>, TValue>? ValuesProvider { get; set; }
+    internal Func<TValue>? ValuesProvider { get; set; }
 
     public Type? DTOTypeForHashId { get; set; }
     public Type? TypeAuthDTOTypeForHashId { get; set; }
     public bool ShowNulls { get; set; }
-    public string? SelfClaimId { get; set; }
+    public string? ClaimIdForClaimValuesProvider { get; set; }
+    public string? SelfClaimIdForTypeAuthValuesProvider { get; set; }
 
     private ICurrentUserProvider? CurrentUserProvider;
     private ITypeAuthService? TypeAuthService;
@@ -101,7 +104,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
     //    return Expression.Constant(this.ValuesProvider.Invoke(null, null), typeof(TValue));
     //}
 
-    public RepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<GlobalFilterDataProviderOptions<Entity>, TValue>? valuesProvider)
+    public RepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<TValue>? valuesProvider)
     {
         this.ValuesProvider = valuesProvider;
 
@@ -110,19 +113,20 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
 
     public RepositoryGlobalFilter<Entity, TValue> SelfClaimValueProvider(string claimId)
     {
-        this.SelfClaimId = claimId;
+        this.ClaimIdForClaimValuesProvider = claimId;
         return this;
     }
 
     public RepositoryGlobalFilter<Entity, TValue> ClaimValuesProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
     {
-        this.SelfClaimId = claimId;
+        this.ClaimIdForClaimValuesProvider = claimId;
         this.DTOTypeForHashId = new HashIdDTO().GetType();
         return this;
     }
 
-    public RepositoryGlobalFilter<Entity, TValue> TypeAuthValuesProvider<HashIdDTO>(DynamicAction dynamicAction) where HashIdDTO : ShiftEntityDTOBase, new()
+    public RepositoryGlobalFilter<Entity, TValue> TypeAuthValuesProvider<HashIdDTO>(DynamicAction dynamicAction, string? selfClaimId = null) where HashIdDTO : ShiftEntityDTOBase, new()
     {
+        this.SelfClaimIdForTypeAuthValuesProvider = selfClaimId;
         this.DynamicAction = dynamicAction;
         this.TypeAuthDTOTypeForHashId = new HashIdDTO().GetType();
         return this;
@@ -135,25 +139,59 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
     //    return this;
     //}
 
+    private (List<string>? AccessibleIds, bool WildCard) GetTypeAuthValues(DynamicAction? dynamicAction, Access access, Type? dtoTypeForHashId, string[]? selfIds)
+    {
+        if (dynamicAction is not null)
+        {
+            var accessibleItems = this.TypeAuthService!.GetAccessibleItems(
+                dynamicAction,
+                x => x == access,
+                selfIds
+            );
+
+            if (accessibleItems.AccessibleIds is not null && dtoTypeForHashId is not null)
+            {
+                accessibleItems.AccessibleIds = accessibleItems
+                    .AccessibleIds
+                    .Select(x => ShiftEntityHashIdService.Decode(x, dtoTypeForHashId).ToString())
+                    .ToList();
+            }
+
+            return (accessibleItems.AccessibleIds, accessibleItems.WildCard);
+        }
+
+        return (null, false);
+    }
+
     Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
     {
         if (this.KeySelector is not Expression<Func<RepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
             throw new InvalidOperationException("Invalid filter expression.");
 
-        // Assuming ValuesProvider now returns a tuple or a custom object.
-        // For this example, let's just create a hardcoded boolean for simplicity.
-        var value = ValuesProvider.Invoke(new GlobalFilterDataProviderOptions<Entity>(null, null)); // Your original list
-        var wildCardValue = false; // Hardcoded example for the boolean
-        List<string>? claimValues = null; // Hardcoded example for the string
-        List<string>? typeAuthValues = null; // Hardcoded example for the string
+        TValue? value = null;
 
-        if (this.SelfClaimId is not null)
+        if (ValuesProvider is not null)
+            value = ValuesProvider.Invoke();
+
+        List<string>? claimValues = null; // Hardcoded example for the string
+
+        var wildCardRead = false;
+        var wildCardWrite = false;
+        var wildCardDelete = false;
+        var wildCardMaxAccess = false;
+        
+        List<string>? readableTypeAuthValues = null;
+        List<string>? writableTypeAuthValues = null;
+        List<string>? deletableTypeAuthValues = null;
+        List<string>? maxAccessTypeAuthValues = null;
+
+        if (this.ClaimIdForClaimValuesProvider is not null)
         {
             var user = this.CurrentUserProvider?.GetUser();
 
             claimValues = user?
                 .Claims?
-                .Where(x => x.Type == this.SelfClaimId)?
+                .Where(x => x.Type == this.ClaimIdForClaimValuesProvider)?
                 .Select(x => x.Value)?
                 .ToList();
 
@@ -167,44 +205,55 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
 
         if (this.DynamicAction is not null)
         {
-            var user = this.CurrentUserProvider?.GetUser();
+            string[]? selfIds = null;
 
-            typeAuthValues = user?
-                .Claims?
-                .Where(x => x.Type == this.SelfClaimId)?
-                .Select(x => x.Value)?
-                .ToList();
-
-            var accessibleItems = this.TypeAuthService!.GetAccessibleItems(this.DynamicAction, x => x == Access.Read, typeAuthValues?.ToArray());
-
-            if (accessibleItems.AccessibleIds is not null && TypeAuthDTOTypeForHashId is not null)
+            if (this.SelfClaimIdForTypeAuthValuesProvider is not null)
             {
-                accessibleItems.AccessibleIds = accessibleItems
-                    .AccessibleIds
-                    .Select(x => ShiftEntityHashIdService.Decode(x, TypeAuthDTOTypeForHashId).ToString())
-                    .ToList();
+                var user = this.CurrentUserProvider?.GetUser();
+
+                selfIds = user?
+                   .Claims?
+                   .Where(x => x.Type == this.SelfClaimIdForTypeAuthValuesProvider)?
+                   .Select(x => x.Value)
+                   .ToArray();
             }
 
-            if (accessibleItems.WildCard)
-                wildCardValue = true;
-
-            typeAuthValues = accessibleItems.AccessibleIds;
+            (readableTypeAuthValues, wildCardRead) = GetTypeAuthValues(this.DynamicAction, Access.Read, this.TypeAuthDTOTypeForHashId, selfIds);
+            (writableTypeAuthValues, wildCardWrite) = GetTypeAuthValues(this.DynamicAction, Access.Write, this.TypeAuthDTOTypeForHashId, selfIds);
+            (deletableTypeAuthValues, wildCardDelete) = GetTypeAuthValues(this.DynamicAction, Access.Delete, this.TypeAuthDTOTypeForHashId, selfIds);
+            (maxAccessTypeAuthValues, wildCardMaxAccess) = GetTypeAuthValues(this.DynamicAction, Access.Maximum, this.TypeAuthDTOTypeForHashId, selfIds);
         }
 
         var entityParam = Expression.Parameter(typeof(T), "entity");
         var valueExpr = Expression.Constant(value, typeof(TValue));
-        var wildCardExpr = Expression.Constant(wildCardValue, typeof(bool));
         var claimValuesExpression = Expression.Constant(claimValues, typeof(List<string>));
-        var typeAuthValuesExpression = Expression.Constant(typeAuthValues, typeof(List<string>));
+
+        var wildCardReadExpr = Expression.Constant(wildCardRead, typeof(bool));
+        var wildCardWriteExpr = Expression.Constant(wildCardWrite, typeof(bool));
+        var wildCardDeleteExpr = Expression.Constant(wildCardDelete, typeof(bool));
+        var wildCardMaxAccessExpr = Expression.Constant(wildCardMaxAccess, typeof(bool));
+
+        var readableTypeAuthValuesExpression = Expression.Constant(readableTypeAuthValues, typeof(List<string>));
+        var writableTypeAuthValuesExpression = Expression.Constant(writableTypeAuthValues, typeof(List<string>));
+        var deletableTypeAuthValuesExpression = Expression.Constant(deletableTypeAuthValues, typeof(List<string>));
+        var maxAccessTypeAuthValuesExpression = Expression.Constant(maxAccessTypeAuthValues, typeof(List<string>));
 
         // Create the new visitor with all the necessary expressions.
         var visitor = new FilterExpressionVisitor<T, TValue>(
             typedFilter.Parameters[0],
             entityParam,
             valueExpr,
-            wildCardExpr,
             claimValuesExpression,
-            typeAuthValuesExpression
+
+            wildCardReadExpr,
+            wildCardWriteExpr,
+            wildCardDeleteExpr,
+            wildCardMaxAccessExpr,
+
+            readableTypeAuthValuesExpression,
+            writableTypeAuthValuesExpression,
+            deletableTypeAuthValuesExpression,
+            maxAccessTypeAuthValuesExpression
         );
 
         // Visit the body of the original expression to replace the members.
@@ -219,18 +268,49 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
         private readonly ParameterExpression _oldParameter;
         private readonly ParameterExpression _entityParameter;
         private readonly Expression _valueExpression;
-        private readonly Expression _wildcardExpression;
         private readonly Expression _claimValuesExpression;
-        private readonly Expression _typeAuthValuesExpression;
+        
+        private readonly Expression _wildcardReadExpression;
+        private readonly Expression _wildcardWriteExpression;
+        private readonly Expression _wildcardDeleteExpression;
+        private readonly Expression _wildcardMaxAccessExpression;
 
-        public FilterExpressionVisitor(ParameterExpression oldParameter, ParameterExpression entityParameter, Expression valueExpression, Expression wildcardExpression, Expression claimValuesExpression, Expression typeAuthValuesExpression)
+        private readonly Expression _readableTypeAuthValuesExpression;
+        private readonly Expression _writableTypeAuthValuesExpression;
+        private readonly Expression _deletableTypeAuthValuesExpression;
+        private readonly Expression _maxAccessTypeAuthValuesExpression;
+
+        public FilterExpressionVisitor(
+            ParameterExpression oldParameter, 
+            ParameterExpression entityParameter, 
+            Expression valueExpression, 
+            Expression claimValuesExpression,
+            
+            Expression wildcardReadExpression, 
+            Expression wildcardWriteExpression, 
+            Expression wildcardDeleteExpression, 
+            Expression wildcardMaxAccessExpression, 
+
+            Expression readableTypeAuthValuesExpression,
+            Expression writableTypeAuthValuesExpression,
+            Expression deletableTypeAuthValuesExpression,
+            Expression maxAccessTypeAuthValuesExpression
+        )
         {
             _oldParameter = oldParameter;
             _entityParameter = entityParameter;
             _valueExpression = valueExpression;
-            _wildcardExpression = wildcardExpression;
             _claimValuesExpression = claimValuesExpression;
-            _typeAuthValuesExpression = typeAuthValuesExpression;
+            
+            _wildcardReadExpression = wildcardReadExpression;
+            _wildcardWriteExpression = wildcardWriteExpression;
+            _wildcardDeleteExpression = wildcardDeleteExpression;
+            _wildcardMaxAccessExpression = wildcardMaxAccessExpression;
+
+            _readableTypeAuthValuesExpression = readableTypeAuthValuesExpression;
+            _writableTypeAuthValuesExpression = writableTypeAuthValuesExpression;
+            _deletableTypeAuthValuesExpression = deletableTypeAuthValuesExpression;
+            _maxAccessTypeAuthValuesExpression = maxAccessTypeAuthValuesExpression;
         }
 
         protected override Expression VisitMember(MemberExpression node)
@@ -239,28 +319,40 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter wh
             if (node.Expression == _oldParameter)
             {
                 if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.Entity))
-                {
-                    // If it's x.Entity, replace with the new entity parameter.
                     return _entityParameter;
-                }
+
                 if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.Value))
-                {
-                    // If it's x.Value, replace with our constant value expression.
                     return _valueExpression;
-                }
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCard))
-                {
-                    // If it's x.WildCard, replace with our constant wildcard expression.
-                    return _wildcardExpression;
-                }
+
                 if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.ClaimValues))
-                {
                     return _claimValuesExpression;
-                }
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.TypeAuthValues))
-                {
-                    return _typeAuthValuesExpression;
-                }
+
+
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardRead))
+                    return _wildcardReadExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardWrite))
+                    return _wildcardWriteExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardDelete))
+                    return _wildcardDeleteExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardMaxAccess))
+                    return _wildcardMaxAccessExpression;
+
+
+
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.ReadableTypeAuthValues))
+                    return _readableTypeAuthValuesExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WritableTypeAuthValues))
+                    return _writableTypeAuthValuesExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.DeletableTypeAuthValues))
+                    return _deletableTypeAuthValuesExpression;
+                
+                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.MaxAccessTypeAuthValues))
+                    return _maxAccessTypeAuthValuesExpression;
             }
 
             // For all other members, continue visiting as normal.
