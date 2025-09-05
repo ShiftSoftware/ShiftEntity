@@ -20,14 +20,14 @@ public static class ClaimsPrincipalExtensions
         return value;
     }
 
-    public static List<long>? GetDecodedClaimValues(this ClaimsPrincipal? claimsPrincipal, string claimId, Type hashIdType)
+    public static List<long>? GetDecodedClaimValues(this ClaimsPrincipal? claimsPrincipal, string claimId, JsonHashIdConverterAttribute jsonHashIdConverterAttribute)
     {
         var values = GetClaimValues(claimsPrincipal, claimId);
 
         if (values is null)
             return null;
 
-        return values.Select(x => ShiftEntityHashIdService.Decode(x, hashIdType)).ToList();
+        return values.Select(x => ShiftEntityHashIdService.Decode(x, jsonHashIdConverterAttribute)).ToList();
     }
 
     public static string? GetHashedRegionID(this ClaimsPrincipal? claimsPrincipal)
@@ -37,7 +37,7 @@ public static class ClaimsPrincipalExtensions
 
     public static long? GetRegionID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.RegionIdClaim, typeof(RegionHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.RegionIdClaim, (new RegionHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCountryID(this ClaimsPrincipal? claimsPrincipal)
@@ -47,7 +47,7 @@ public static class ClaimsPrincipalExtensions
 
     public static long? GetCountryID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CountryIdClaim, typeof(CountryHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CountryIdClaim, (new CountryHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCompanyID(this ClaimsPrincipal? claimsPrincipal)
@@ -57,7 +57,7 @@ public static class ClaimsPrincipalExtensions
 
     public static long? GetCompanyID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyIdClaim, typeof(CompanyHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyIdClaim, (new CompanyHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCityID(this ClaimsPrincipal? claimsPrincipal)
@@ -67,7 +67,7 @@ public static class ClaimsPrincipalExtensions
 
     public static long? GetCityID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CityIdClaim, typeof(CityHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CityIdClaim, (new CityHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCompanyBranchID(this ClaimsPrincipal? claimsPrincipal)
@@ -77,12 +77,12 @@ public static class ClaimsPrincipalExtensions
 
     public static long? GetCompanyBranchID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyBranchIdClaim, typeof(CompanyBranchHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyBranchIdClaim, (new CompanyBranchHashIdConverter()))?.FirstOrDefault();
     }
 
     public static long? GetUserID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, ClaimTypes.NameIdentifier, typeof(UserHashIdConverter))?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, ClaimTypes.NameIdentifier, (new UserHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetUserStringID(this ClaimsPrincipal? claimsPrincipal)
@@ -97,6 +97,6 @@ public static class ClaimsPrincipalExtensions
 
     public static List<long>? GetTeamIDs(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.TeamIdsClaim, typeof(TeamHashIdConverter));
+        return GetDecodedClaimValues(claimsPrincipal, Constants.TeamIdsClaim, (new TeamHashIdConverter()));
     }
 }
