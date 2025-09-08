@@ -1,4 +1,5 @@
-﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+﻿using Newtonsoft.Json.Linq;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
@@ -24,53 +25,252 @@ public interface IRepositoryGlobalFilter
     Expression<Func<T, bool>>? GetFilterExpression<T>() where T : ShiftEntity<T>;
 }
 
-public class RepositoryGlobalFilterContext<TEntity, TValue> where TEntity : ShiftEntity<TEntity>
+public class CustomValueRepositoryGlobalFilterContext<TEntity, TValue> where TEntity : ShiftEntity<TEntity>
 {
     public TEntity Entity { get; }
-    public TValue Value { get; }
+    public TValue CustomValue { get; }
+    public CustomValueRepositoryGlobalFilterContext(TEntity entity, TValue value)
+    {
+        Entity = entity;
+        CustomValue = value;
+    }
+}
+
+public class ClaimValuesRepositoryGlobalFilterContext<TEntity> where TEntity : ShiftEntity<TEntity>
+{
+    public TEntity Entity { get; }
     public List<string>? ClaimValues { get; set; }
-    
+
+    public ClaimValuesRepositoryGlobalFilterContext(TEntity entity, List<string>? value)
+    {
+        Entity = entity;
+        ClaimValues = value;
+    }
+}
+
+public class TypeAuthValuesRepositoryGlobalFilterContext<TEntity> where TEntity : ShiftEntity<TEntity>
+{
+    public TEntity Entity { get; }
     public bool WildCardRead { get; set; }
     public bool WildCardWrite { get; set; }
     public bool WildCardDelete { get; set; }
     public bool WildCardMaxAccess { get; set; }
-
     public List<string>? ReadableTypeAuthValues { get; set; }
     public List<string>? WritableTypeAuthValues { get; set; }
     public List<string>? DeletableTypeAuthValues { get; set; }
     public List<string>? MaxAccessTypeAuthValues { get; set; }
-    
-    public RepositoryGlobalFilterContext(TEntity entity, TValue value)
-    {
-        Entity = entity;
-        Value = value;
-    }
 }
 
-
-public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter 
+public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter 
     where Entity : ShiftEntity<Entity>
     where TValue : class
 {
-    public DynamicAction? DynamicAction { get; set; }
-    public List<string>? AccessibleKeys { get; set; }
-    public string? ClaimId { get; set; }
-    public Expression<Func<Entity, long?>>? CreatedByUserIDKeySelector { get; set; }
-    public Expression<Func<RepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
+    public Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
     internal Func<TValue>? ValuesProvider { get; set; }
+    public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector)
+    {
+        this.KeySelector = keySelector;
+    }
+    public CustomValueRepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<TValue>? valuesProvider)
+    {
+        this.ValuesProvider = valuesProvider;
 
+        return this;
+    }
+
+    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
+    {
+        if (this.KeySelector is not Expression<Func<CustomValueRepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
+            throw new InvalidOperationException("Invalid filter expression.");
+
+        TValue? value = null;
+
+        if (ValuesProvider is not null)
+            value = ValuesProvider.Invoke();
+
+        var entityParam = Expression.Parameter(typeof(T), "entity");
+        var valueExpr = Expression.Constant(value, typeof(TValue));
+        
+        // Create the new visitor with all the necessary expressions.
+        var visitor = new FilterExpressionVisitor<T>(
+            typedFilter.Parameters[0],
+            entityParam,
+            valueExpr
+        );
+
+        // Visit the body of the original expression to replace the members.
+        var newBody = visitor.Visit(typedFilter.Body);
+
+        // Create and return the new lambda expression with the modified body.
+        return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
+    }
+
+    public class FilterExpressionVisitor<T> : ExpressionVisitor
+    {
+        private readonly ParameterExpression _oldParameter;
+        private readonly ParameterExpression _entityParameter;
+        private readonly Expression _valueExpression;
+        public FilterExpressionVisitor(
+            ParameterExpression oldParameter, 
+            ParameterExpression entityParameter, 
+            Expression valueExpression
+        )
+        {
+            _oldParameter = oldParameter;
+            _entityParameter = entityParameter;
+            _valueExpression = valueExpression;
+        }
+
+        protected override Expression VisitMember(MemberExpression node)
+        {
+            // Check if the member access is on the old parameter
+            if (node.Expression == _oldParameter)
+            {
+                if (node.Member.Name == nameof(CustomValueRepositoryGlobalFilterContext<Entity, object>.Entity))
+                    return _entityParameter;
+
+                if (node.Member.Name == nameof(CustomValueRepositoryGlobalFilterContext<Entity, object>.CustomValue))
+                    return _valueExpression;
+            }
+
+            // For all other members, continue visiting as normal.
+            return base.VisitMember(node);
+        }
+    }
+}
+
+////////////////////
+
+public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
+    where Entity : ShiftEntity<Entity>
+{
+    public Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }   
     public Type? DTOTypeForHashId { get; set; }
-    public Type? TypeAuthDTOTypeForHashId { get; set; }
-    public bool ShowNulls { get; set; }
     public string? ClaimIdForClaimValuesProvider { get; set; }
+    
+    private ICurrentUserProvider? CurrentUserProvider;
+    
+    public ClaimValuesRepositoryGlobalFilter(
+        Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> keySelector, 
+        ICurrentUserProvider? currentUserProvider
+    )
+    {
+        this.KeySelector = keySelector;
+        this.CurrentUserProvider = currentUserProvider;
+    }
+
+    public ClaimValuesRepositoryGlobalFilter<Entity> ClaimValuesProvider(string claimId)
+    {
+        this.ClaimIdForClaimValuesProvider = claimId;
+        return this;
+    }
+
+    public ClaimValuesRepositoryGlobalFilter<Entity> ClaimValuesProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
+    {
+        this.ClaimIdForClaimValuesProvider = claimId;
+        this.DTOTypeForHashId = new HashIdDTO().GetType();
+        return this;
+    }
+
+    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
+    {
+        if (this.KeySelector is not Expression<Func<ClaimValuesRepositoryGlobalFilterContext<T>, bool>> typedFilter)
+            throw new InvalidOperationException("Invalid filter expression.");
+
+        List<string>? claimValues = null;
+
+        if (this.ClaimIdForClaimValuesProvider is not null)
+        {
+            var user = this.CurrentUserProvider?.GetUser();
+
+            claimValues = user?
+                .Claims?
+                .Where(x => x.Type == this.ClaimIdForClaimValuesProvider)?
+                .Select(x => x.Value)?
+                .ToList();
+
+            if (claimValues is not null && DTOTypeForHashId is not null)
+            {
+                claimValues = claimValues
+                    .Select(x => ShiftEntityHashIdService.Decode(x, DTOTypeForHashId).ToString())
+                    .ToList();
+            }
+        }
+
+        var entityParam = Expression.Parameter(typeof(T), "entity");
+        var claimValuesExpression = Expression.Constant(claimValues, typeof(List<string>));
+
+        
+        // Create the new visitor with all the necessary expressions.
+        var visitor = new FilterExpressionVisitor<T>(
+            typedFilter.Parameters[0],
+            entityParam,
+            claimValuesExpression
+        );
+
+        // Visit the body of the original expression to replace the members.
+        var newBody = visitor.Visit(typedFilter.Body);
+
+        // Create and return the new lambda expression with the modified body.
+        return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
+    }
+
+    public class FilterExpressionVisitor<T> : ExpressionVisitor
+    {
+        private readonly ParameterExpression _oldParameter;
+        private readonly ParameterExpression _entityParameter;
+        private readonly Expression _claimValuesExpression;
+
+        public FilterExpressionVisitor(
+            ParameterExpression oldParameter,
+            ParameterExpression entityParameter,
+            Expression claimValuesExpression
+        )
+        {
+            _oldParameter = oldParameter;
+            _entityParameter = entityParameter;
+            _claimValuesExpression = claimValuesExpression;
+        }
+
+        protected override Expression VisitMember(MemberExpression node)
+        {
+            // Check if the member access is on the old parameter
+            if (node.Expression == _oldParameter)
+            {
+                if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.Entity))
+                    return _entityParameter;
+
+
+                if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.ClaimValues))
+                    return _claimValuesExpression;
+
+                // For all other members, continue visiting as normal.
+                return base.VisitMember(node);
+            }
+
+            return base.VisitMember(node);
+        }
+    }
+}
+
+//////////////////////////////
+
+public class TypeAuthValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
+    where Entity : ShiftEntity<Entity>
+{
+    public DynamicAction? DynamicAction { get; set; }
+
+    public Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }
+    
+    public Type? TypeAuthDTOTypeForHashId { get; set; }
     public string? SelfClaimIdForTypeAuthValuesProvider { get; set; }
 
     private ICurrentUserProvider? CurrentUserProvider;
     private ITypeAuthService? TypeAuthService;
 
-    public RepositoryGlobalFilter(
-            Expression<Func<RepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector, 
-            ICurrentUserProvider? currentUserProvider, 
+    public TypeAuthValuesRepositoryGlobalFilter(
+            Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> keySelector,
+            ICurrentUserProvider? currentUserProvider,
             ITypeAuthService? TypeAuthService
     )
     {
@@ -79,65 +279,13 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         this.TypeAuthService = TypeAuthService;
     }
 
-    //public DynamicActionFilter(List<string> accessibleKeys, InvocationExpression invocationExpression, ParameterExpression parameterExpression, Type tKey)
-    //{
-    //    this.AccessibleKeys = accessibleKeys;
-    //    this.TKey = tKey;
-    //}
-
-    //public DynamicActionFilter(string claimId, InvocationExpression invocationExpression, ParameterExpression parameterExpression, Type tKey)
-    //{
-    //    this.ClaimId = claimId;
-    //    this.TKey = tKey;
-    //}
-
-    //public Expression GetKeySelectorExpression()
-    //{
-    //    return this.KeySelector;
-    //}
-
-    //public ConstantExpression? GetCustomValueProviderExpression()
-    //{
-    //    if(this.ValuesProvider == null)
-    //        return null;
-
-    //    return Expression.Constant(this.ValuesProvider.Invoke(null, null), typeof(TValue));
-    //}
-
-    public RepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<TValue>? valuesProvider)
-    {
-        this.ValuesProvider = valuesProvider;
-
-        return this;
-    }
-
-    public RepositoryGlobalFilter<Entity, TValue> SelfClaimValueProvider(string claimId)
-    {
-        this.ClaimIdForClaimValuesProvider = claimId;
-        return this;
-    }
-
-    public RepositoryGlobalFilter<Entity, TValue> ClaimValuesProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
-    {
-        this.ClaimIdForClaimValuesProvider = claimId;
-        this.DTOTypeForHashId = new HashIdDTO().GetType();
-        return this;
-    }
-
-    public RepositoryGlobalFilter<Entity, TValue> TypeAuthValuesProvider<HashIdDTO>(DynamicAction dynamicAction, string? selfClaimId = null) where HashIdDTO : ShiftEntityDTOBase, new()
+    public TypeAuthValuesRepositoryGlobalFilter<Entity> TypeAuthValuesProvider<HashIdDTO>(DynamicAction dynamicAction, string? selfClaimId = null) where HashIdDTO : ShiftEntityDTOBase, new()
     {
         this.SelfClaimIdForTypeAuthValuesProvider = selfClaimId;
         this.DynamicAction = dynamicAction;
         this.TypeAuthDTOTypeForHashId = new HashIdDTO().GetType();
         return this;
     }
-
-    //public RepositoryGlobalFilter<Entity, TValue> DynamicActionValueProvider(DynamicAction dynamicAction)
-    //{
-    //    this.DynamicAction = dynamicAction;
-
-    //    return this;
-    //}
 
     private (List<string>? AccessibleIds, bool WildCard) GetTypeAuthValues(DynamicAction? dynamicAction, Access access, Type? dtoTypeForHashId, string[]? selfIds)
     {
@@ -165,13 +313,8 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
 
     Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
     {
-        if (this.KeySelector is not Expression<Func<RepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
+        if (this.KeySelector is not Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<T>, bool>> typedFilter)
             throw new InvalidOperationException("Invalid filter expression.");
-
-        TValue? value = null;
-
-        if (ValuesProvider is not null)
-            value = ValuesProvider.Invoke();
 
         List<string>? claimValues = null; // Hardcoded example for the string
 
@@ -179,29 +322,11 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         var wildCardWrite = false;
         var wildCardDelete = false;
         var wildCardMaxAccess = false;
-        
+
         List<string>? readableTypeAuthValues = null;
         List<string>? writableTypeAuthValues = null;
         List<string>? deletableTypeAuthValues = null;
         List<string>? maxAccessTypeAuthValues = null;
-
-        if (this.ClaimIdForClaimValuesProvider is not null)
-        {
-            var user = this.CurrentUserProvider?.GetUser();
-
-            claimValues = user?
-                .Claims?
-                .Where(x => x.Type == this.ClaimIdForClaimValuesProvider)?
-                .Select(x => x.Value)?
-                .ToList();
-
-            if (claimValues is not null && DTOTypeForHashId is not null)
-            {
-                claimValues = claimValues
-                    .Select(x => ShiftEntityHashIdService.Decode(x, DTOTypeForHashId).ToString())
-                    .ToList();
-            }
-        }
 
         if (this.DynamicAction is not null)
         {
@@ -225,9 +350,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         }
 
         var entityParam = Expression.Parameter(typeof(T), "entity");
-        var valueExpr = Expression.Constant(value, typeof(TValue));
-        var claimValuesExpression = Expression.Constant(claimValues, typeof(List<string>));
-
+        
         var wildCardReadExpr = Expression.Constant(wildCardRead, typeof(bool));
         var wildCardWriteExpr = Expression.Constant(wildCardWrite, typeof(bool));
         var wildCardDeleteExpr = Expression.Constant(wildCardDelete, typeof(bool));
@@ -239,12 +362,10 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         var maxAccessTypeAuthValuesExpression = Expression.Constant(maxAccessTypeAuthValues, typeof(List<string>));
 
         // Create the new visitor with all the necessary expressions.
-        var visitor = new FilterExpressionVisitor<T, TValue>(
+        var visitor = new FilterExpressionVisitor<T>(
             typedFilter.Parameters[0],
             entityParam,
-            valueExpr,
-            claimValuesExpression,
-
+            
             wildCardReadExpr,
             wildCardWriteExpr,
             wildCardDeleteExpr,
@@ -263,12 +384,10 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
     }
 
-    public class FilterExpressionVisitor<T, TValue> : ExpressionVisitor
+    public class FilterExpressionVisitor<T> : ExpressionVisitor
     {
         private readonly ParameterExpression _oldParameter;
         private readonly ParameterExpression _entityParameter;
-        private readonly Expression _valueExpression;
-        private readonly Expression _claimValuesExpression;
         
         private readonly Expression _wildcardReadExpression;
         private readonly Expression _wildcardWriteExpression;
@@ -281,15 +400,13 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         private readonly Expression _maxAccessTypeAuthValuesExpression;
 
         public FilterExpressionVisitor(
-            ParameterExpression oldParameter, 
-            ParameterExpression entityParameter, 
-            Expression valueExpression, 
-            Expression claimValuesExpression,
-            
-            Expression wildcardReadExpression, 
-            Expression wildcardWriteExpression, 
-            Expression wildcardDeleteExpression, 
-            Expression wildcardMaxAccessExpression, 
+            ParameterExpression oldParameter,
+            ParameterExpression entityParameter,
+
+            Expression wildcardReadExpression,
+            Expression wildcardWriteExpression,
+            Expression wildcardDeleteExpression,
+            Expression wildcardMaxAccessExpression,
 
             Expression readableTypeAuthValuesExpression,
             Expression writableTypeAuthValuesExpression,
@@ -299,9 +416,7 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
         {
             _oldParameter = oldParameter;
             _entityParameter = entityParameter;
-            _valueExpression = valueExpression;
-            _claimValuesExpression = claimValuesExpression;
-            
+
             _wildcardReadExpression = wildcardReadExpression;
             _wildcardWriteExpression = wildcardWriteExpression;
             _wildcardDeleteExpression = wildcardDeleteExpression;
@@ -318,40 +433,33 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
             // Check if the member access is on the old parameter
             if (node.Expression == _oldParameter)
             {
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.Entity))
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.Entity))
                     return _entityParameter;
 
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.Value))
-                    return _valueExpression;
-
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.ClaimValues))
-                    return _claimValuesExpression;
-
-
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardRead))
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.WildCardRead))
                     return _wildcardReadExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardWrite))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.WildCardWrite))
                     return _wildcardWriteExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardDelete))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.WildCardDelete))
                     return _wildcardDeleteExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WildCardMaxAccess))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.WildCardMaxAccess))
                     return _wildcardMaxAccessExpression;
 
 
 
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.ReadableTypeAuthValues))
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.ReadableTypeAuthValues))
                     return _readableTypeAuthValuesExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.WritableTypeAuthValues))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.WritableTypeAuthValues))
                     return _writableTypeAuthValuesExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.DeletableTypeAuthValues))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.DeletableTypeAuthValues))
                     return _deletableTypeAuthValuesExpression;
-                
-                if (node.Member.Name == nameof(RepositoryGlobalFilterContext<Entity, object>.MaxAccessTypeAuthValues))
+
+                if (node.Member.Name == nameof(TypeAuthValuesRepositoryGlobalFilterContext<Entity>.MaxAccessTypeAuthValues))
                     return _maxAccessTypeAuthValuesExpression;
             }
 
@@ -359,230 +467,4 @@ public class RepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
             return base.VisitMember(node);
         }
     }
-
-    //public DynamicActionFilter<Entity> IncludeNulls()
-    //{
-    //    this.ShowNulls = true;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> IncludeCreatedByCurrentUser(Expression<Func<Entity, long?>>? keySelector)
-    //{
-    //    this.CreatedByUserIDKeySelector = keySelector;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> IncludeSelfItems(string selfClaimId)
-    //{
-    //    this.SelfClaimId = selfClaimId;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> DecodeHashId<DTO>()
-    //{
-    //    this.DTOTypeForHashId = typeof(DTO);
-
-    //    return this;
-    //}
 }
-
-public class TypeAuthGlobalFilter : IRepositoryGlobalFilter
-{
-    public DynamicAction DynamicAction { get; set; }
-    public Type? HashedIdDTOType {  get; set; }
-
-    public TypeAuthGlobalFilter(DynamicAction dynamicAction)
-    {
-        this.DynamicAction = dynamicAction;
-    }
-
-    public TypeAuthGlobalFilter(DynamicAction dynamicAction, string claimid)
-    {
-        this.DynamicAction = dynamicAction;
-    }
-
-    public TypeAuthGlobalFilter(DynamicAction dynamicAction, Type hashedIdDTOType)
-    {
-        this.DynamicAction = dynamicAction;
-        this.HashedIdDTOType = hashedIdDTOType;
-    }
-
-    public TypeAuthGlobalFilter(DynamicAction dynamicAction, Type hashedIdDTOType, string claimId)
-    {
-        this.DynamicAction = dynamicAction;
-        this.HashedIdDTOType = hashedIdDTOType;
-    }
-
-    public TypeAuthGlobalFilter SelfClaimValueProvider(string claimId)
-    {
-        return this;
-    }
-
-    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
-    {
-        return null;
-        //if (this.KeySelector is not Expression<Func<RepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
-        //    throw new InvalidOperationException("Invalid filter expression.");
-
-        //// Assuming ValuesProvider now returns a tuple or a custom object.
-        //// For this example, let's just create a hardcoded boolean for simplicity.
-        //var value = ValuesProvider.Invoke(new GlobalFilterDataProviderOptions<Entity>(null, null)); // Your original list
-        //var wildCardValue = false; // Hardcoded example for the boolean
-
-        //var entityParam = Expression.Parameter(typeof(T), "entity");
-        //var valueExpr = Expression.Constant(value, typeof(TValue));
-        //var wildCardExpr = Expression.Constant(wildCardValue, typeof(bool));
-
-        //// Create the new visitor with all the necessary expressions.
-        //var visitor = new FilterExpressionVisitor<T, TValue>(
-        //    typedFilter.Parameters[0],
-        //    entityParam,
-        //    valueExpr,
-        //    wildCardExpr);
-
-        //// Visit the body of the original expression to replace the members.
-        //var newBody = visitor.Visit(typedFilter.Body);
-
-        //// Create and return the new lambda expression with the modified body.
-        //return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
-    }
-
-    public class FilterExpressionVisitor<T, TValue> : ExpressionVisitor
-    {
-        private readonly ParameterExpression _oldParameter;
-        private readonly ParameterExpression _entityParameter;
-        private readonly Expression _valueExpression;
-        private readonly Expression _wildcardExpression;
-
-        public FilterExpressionVisitor(ParameterExpression oldParameter, ParameterExpression entityParameter, Expression valueExpression, Expression wildcardExpression)
-        {
-            _oldParameter = oldParameter;
-            _entityParameter = entityParameter;
-            _valueExpression = valueExpression;
-            _wildcardExpression = wildcardExpression;
-        }
-
-        protected override Expression VisitMember(MemberExpression node)
-        {
-            // Check if the member access is on the old parameter
-            if (node.Expression == _oldParameter)
-            {
-                if (node.Member.Name == "Entity")
-                {
-                    // If it's x.Entity, replace with the new entity parameter.
-                    return _entityParameter;
-                }
-                if (node.Member.Name == "Value")
-                {
-                    // If it's x.Value, replace with our constant value expression.
-                    return _valueExpression;
-                }
-                if (node.Member.Name == "WildCard")
-                {
-                    // If it's x.WildCard, replace with our constant wildcard expression.
-                    return _wildcardExpression;
-                }
-            }
-
-            // For all other members, continue visiting as normal.
-            return base.VisitMember(node);
-        }
-    }
-
-    //public DynamicActionFilter<Entity> IncludeNulls()
-    //{
-    //    this.ShowNulls = true;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> IncludeCreatedByCurrentUser(Expression<Func<Entity, long?>>? keySelector)
-    //{
-    //    this.CreatedByUserIDKeySelector = keySelector;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> IncludeSelfItems(string selfClaimId)
-    //{
-    //    this.SelfClaimId = selfClaimId;
-
-    //    return this;
-    //}
-
-    //public DynamicActionFilter<Entity> DecodeHashId<DTO>()
-    //{
-    //    this.DTOTypeForHashId = typeof(DTO);
-
-    //    return this;
-    //}
-}
-
-//public class DynamicActionFilterBy_New<Entity> where Entity : ShiftEntity<Entity>
-//{
-//    public DynamicAction? DynamicAction { get; set; }
-//    public List<string>? AccessibleKeys { get; set; }
-//    public string? ClaimId { get; set; }
-//    public ParameterExpression ParameterExpression { get; set; }
-//    public InvocationExpression InvocationExpression { get; set; }
-//    public Type TKey { get; set; }
-//    public Expression<Func<Entity, long?>>? CreatedByUserIDKeySelector { get; set; }
-//    public Type? DTOTypeForHashId { get; set; }
-//    public bool ShowNulls { get; set; }
-//    public string? SelfClaimId { get; set; }
-
-//    public DynamicActionFilterBy_New(DynamicAction dynamicAction, InvocationExpression invocationExpression, ParameterExpression parameterExpression, Type tKey)
-//    {
-//        this.DynamicAction = dynamicAction;
-//        this.InvocationExpression = invocationExpression;
-//        this.ParameterExpression = parameterExpression;
-//        this.TKey = tKey;
-//    }
-
-//    public DynamicActionFilterBy_New(List<string> accessibleKeys, InvocationExpression invocationExpression, ParameterExpression parameterExpression, Type tKey)
-//    {
-//        this.AccessibleKeys = accessibleKeys;
-//        this.InvocationExpression = invocationExpression;
-//        this.ParameterExpression = parameterExpression;
-//        this.TKey = tKey;
-//    }
-
-//    public DynamicActionFilterBy_New(string claimId, InvocationExpression invocationExpression, ParameterExpression parameterExpression, Type tKey)
-//    {
-//        this.ClaimId = claimId;
-//        this.InvocationExpression = invocationExpression;
-//        this.ParameterExpression = parameterExpression;
-//        this.TKey = tKey;
-//    }
-
-//    public DynamicActionFilterBy_New<Entity> IncludeNulls()
-//    {
-//        this.ShowNulls = true;
-
-//        return this;
-//    }
-
-//    public DynamicActionFilterBy_New<Entity> IncludeCreatedByCurrentUser(Expression<Func<Entity, long?>>? keySelector)
-//    {
-//        this.CreatedByUserIDKeySelector = keySelector;
-
-//        return this;
-//    }
-
-//    public DynamicActionFilterBy_New<Entity> IncludeSelfItems(string selfClaimId)
-//    {
-//        this.SelfClaimId = selfClaimId;
-
-//        return this;
-//    }
-
-//    public DynamicActionFilterBy_New<Entity> DecodeHashId<DTO>()
-//    {
-//        this.DTOTypeForHashId = typeof(DTO);
-
-//        return this;
-//    }
-//}

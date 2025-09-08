@@ -43,7 +43,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
-        if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
             this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
@@ -68,7 +68,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         upserted.LastSavedByUserID = userId;
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -115,7 +115,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
             entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -205,7 +205,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (entity is not null && includes?.Count > 0)
             entity.ReloadAfterSave = true;
 
-        if (!disableDefaultDataLevelAccess && (this.ShiftRepositoryOptions?.UseDefaultDataLevelAccess ?? false))
+        if (!disableDefaultDataLevelAccess)
         {
             var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -240,7 +240,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 query = query.Include(include);
         }
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
             query = this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
 
         query = this.ApplyGloballFilters(query);
@@ -328,7 +328,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null, bool disableDefaultDataLevelAccess = false)
     {
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,

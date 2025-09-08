@@ -1,74 +1,45 @@
 ﻿
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.Core;
-using ShiftSoftware.TypeAuth.Core.Actions;
 using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
 public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<EntityType>
 {
-    /// <summary>
-    /// Applies the default data level access on repository level instead of ShiftEntitySecureController level
-    /// </summary>
-    public bool UseDefaultDataLevelAccess { get; set; } = true;
     internal List<Action<IncludeOperations<EntityType>>> IncludeOperations { get; set; } = new();
     internal List<IRepositoryGlobalFilter> GlobalFilters { get; set; } = new();
     public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();
-    
     internal ICurrentUserProvider? CurrentUserProvider { get; set; }
     internal ITypeAuthService? TypeAuthService { get; set; }
-    
+
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
     {
         this.IncludeOperations = includeOperations.ToList();
     }
 
-    public RepositoryGlobalFilter<EntityType, TValue> FilterBy<TValue>(Expression<Func<RepositoryGlobalFilterContext<EntityType, TValue>, bool>> keySelector) 
+    public CustomValueRepositoryGlobalFilter<EntityType, TValue> FilterByCustomValue<TValue>(Expression<Func<CustomValueRepositoryGlobalFilterContext<EntityType, TValue>, bool>> keySelector)
         where TValue : class
     {
-        var createdFilter = new RepositoryGlobalFilter<EntityType, TValue>(
-            keySelector, 
-            CurrentUserProvider, 
-            TypeAuthService
-        );
+        var createdFilter = new CustomValueRepositoryGlobalFilter<EntityType, TValue>(keySelector);
 
         GlobalFilters.Add(createdFilter);
 
         return createdFilter;
     }
 
-    public TypeAuthGlobalFilter TypeAuth(DynamicAction dynamicAction)
+    public ClaimValuesRepositoryGlobalFilter<EntityType> FilterByClaimValues(Expression<Func<ClaimValuesRepositoryGlobalFilterContext<EntityType>, bool>> keySelector)
     {
-        var createdFilter = new TypeAuthGlobalFilter(dynamicAction);
+        var createdFilter = new ClaimValuesRepositoryGlobalFilter<EntityType>(keySelector, this.CurrentUserProvider);
 
         GlobalFilters.Add(createdFilter);
 
         return createdFilter;
     }
 
-    public TypeAuthGlobalFilter TypeAuth(DynamicAction dynamicAction, string claimId)
+    public TypeAuthValuesRepositoryGlobalFilter<EntityType> FilterByTypeAuthValues(Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<EntityType>, bool>> keySelector)
     {
-        var createdFilter = new TypeAuthGlobalFilter(dynamicAction, claimId);
-
-        GlobalFilters.Add(createdFilter);
-
-        return createdFilter;
-    }
-
-    public TypeAuthGlobalFilter TypeAuth<HashIdDTO>(DynamicAction dynamicAction) where HashIdDTO : ShiftEntityDTOBase, new()
-    {
-        var createdFilter = new TypeAuthGlobalFilter(dynamicAction, new HashIdDTO().GetType());
-
-        GlobalFilters.Add(createdFilter);
-
-        return createdFilter;
-    }
-
-    public TypeAuthGlobalFilter TypeAuth<HashIdDTO>(DynamicAction dynamicAction, string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
-    {
-        var createdFilter = new TypeAuthGlobalFilter(dynamicAction, new HashIdDTO().GetType(), claimId);
+        var createdFilter = new TypeAuthValuesRepositoryGlobalFilter<EntityType>(keySelector, this.CurrentUserProvider, this.TypeAuthService);
 
         GlobalFilters.Add(createdFilter);
 
