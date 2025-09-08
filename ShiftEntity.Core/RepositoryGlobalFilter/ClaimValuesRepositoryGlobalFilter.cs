@@ -7,8 +7,8 @@ using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 
-public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
-    where Entity : ShiftEntity<Entity>
+public class ClaimValuesRepositoryGlobalFilter<Entity> :
+    IRepositoryGlobalFilter where Entity : ShiftEntity<Entity>
 {
     public Guid ID { get; set; }
     public bool Disabled { get; set; }
@@ -40,9 +40,9 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
         return this;
     }
 
-    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
+    public Expression<Func<T, bool>>? GetFilterExpression<T>() where T : ShiftEntity<T>
     {
-        if (this.KeySelector is not Expression<Func<ClaimValuesRepositoryGlobalFilterContext<T>, bool>> typedFilter)
+        if (this.KeySelector is not Expression<Func<ClaimValuesRepositoryGlobalFilterContext<T>, bool>> filterContextExpression)
             throw new InvalidOperationException("Invalid filter expression.");
 
         List<string>? claimValues = null;
@@ -68,51 +68,44 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
         var entityParam = Expression.Parameter(typeof(T), "entity");
         var claimValuesExpression = Expression.Constant(claimValues, typeof(List<string>));
 
-
-        // Create the new visitor with all the necessary expressions.
         var visitor = new FilterExpressionVisitor<T>(
-            typedFilter.Parameters[0],
+            filterContextExpression.Parameters[0],
             entityParam,
             claimValuesExpression
         );
 
-        // Visit the body of the original expression to replace the members.
-        var newBody = visitor.Visit(typedFilter.Body);
+        var newBody = visitor.Visit(filterContextExpression.Body);
 
-        // Create and return the new lambda expression with the modified body.
         return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
     }
 
     public class FilterExpressionVisitor<T> : ExpressionVisitor
     {
-        private readonly ParameterExpression _oldParameter;
+        private readonly ParameterExpression _filterContextExpression;
         private readonly ParameterExpression _entityParameter;
         private readonly Expression _claimValuesExpression;
 
         public FilterExpressionVisitor(
-            ParameterExpression oldParameter,
+            ParameterExpression filterContextExpression,
             ParameterExpression entityParameter,
             Expression claimValuesExpression
         )
         {
-            _oldParameter = oldParameter;
+            _filterContextExpression = filterContextExpression;
             _entityParameter = entityParameter;
             _claimValuesExpression = claimValuesExpression;
         }
 
         protected override Expression VisitMember(MemberExpression node)
         {
-            // Check if the member access is on the old parameter
-            if (node.Expression == _oldParameter)
+            if (node.Expression == _filterContextExpression)
             {
                 if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.Entity))
                     return _entityParameter;
 
-
                 if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.ClaimValues))
                     return _claimValuesExpression;
 
-                // For all other members, continue visiting as normal.
                 return base.VisitMember(node);
             }
 
