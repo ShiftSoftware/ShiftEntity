@@ -1,5 +1,6 @@
 ﻿
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 using ShiftSoftware.TypeAuth.Core;
 using System.Linq.Expressions;
 
@@ -41,7 +42,10 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
         bool disabled = false
     )
     {
-        var createdFilter = new ClaimValuesRepositoryGlobalFilter<EntityType>(keySelector, this.CurrentUserProvider)
+        var createdFilter = new ClaimValuesRepositoryGlobalFilter<EntityType>(
+            keySelector, 
+            this.CurrentUserProvider
+        )
         {
             ID = id ?? Guid.NewGuid(),
             Disabled = disabled
@@ -58,7 +62,11 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
         bool disabled = false
     )
     {
-        var createdFilter = new TypeAuthValuesRepositoryGlobalFilter<EntityType>(keySelector, this.CurrentUserProvider, this.TypeAuthService)
+        var createdFilter = new TypeAuthValuesRepositoryGlobalFilter<EntityType>(
+            keySelector, 
+            this.CurrentUserProvider, 
+            this.TypeAuthService
+        )
         {
             ID = id ?? Guid.NewGuid(),
             Disabled = disabled
