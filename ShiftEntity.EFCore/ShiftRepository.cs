@@ -253,8 +253,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (this.ShiftRepositoryOptions.GlobalFilters.Count == 0)
             return query;
 
-        foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters)
+        foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters.Values)
         {
+            if (filter.Disabled)
+                continue;
+
             var expression = filter.GetFilterExpression<EntityType>();
 
             if (expression != null)

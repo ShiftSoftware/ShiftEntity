@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
+﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
@@ -7,21 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Security.Claims;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
 public interface IRepositoryGlobalFilter
 {
-    //DynamicAction? DynamicAction { get; set; }
-    //public List<string>? AccessibleKeys { get; set; }
-
-    //public Expression<Func<Entity, long?>>? CreatedByUserIDKeySelector { get; set; }
-
-    //public Type? DTOTypeForHashId { get; set; }
-    //public bool ShowNulls { get; set; }
-    //public string? SelfClaimId { get; set; }
-    //public string? ClaimId { get; set; }
+    public Guid ID { get; set; }
+    public bool Disabled { get; set; }
     Expression<Func<T, bool>>? GetFilterExpression<T>() where T : ShiftEntity<T>;
 }
 
@@ -67,6 +58,9 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
 {
     public Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
     internal Func<TValue>? ValuesProvider { get; set; }
+    public Guid ID { get; set; }
+    public bool Disabled { get; set; }
+
     public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector)
     {
         this.KeySelector = keySelector;
@@ -144,6 +138,8 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
 public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
     where Entity : ShiftEntity<Entity>
 {
+    public Guid ID { get; set; }
+    public bool Disabled { get; set; }
     public Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }   
     public Type? DTOTypeForHashId { get; set; }
     public string? ClaimIdForClaimValuesProvider { get; set; }
@@ -258,6 +254,8 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
 public class TypeAuthValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
     where Entity : ShiftEntity<Entity>
 {
+    public Guid ID { get; set; }
+    public bool Disabled { get; set; }
     public DynamicAction? DynamicAction { get; set; }
 
     public Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }
