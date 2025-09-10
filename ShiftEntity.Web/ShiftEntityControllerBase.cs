@@ -40,24 +40,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async ValueTask<IQueryable<ListDTO>> GetOdataListing(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
-    {
-        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-        var queryable = await repository.GetIQueryable();
-
-        if (where is not null)
-            queryable = queryable.Where(where);
-
-        var data = await repository.OdataList(queryable);
-
-        data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
-
-        return data;
-    }
-
-    [NonAction]
-    public async Task<ODataDTO<ListDTO>> GetOdataListingNew(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    public async Task<ODataDTO<ListDTO>> GetOdataListingNonAction(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -73,17 +56,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
     }
 
-
-    //[NonAction]
-    //public async Task<ODataDTO<RevisionDTO>> GetRevisionListing(string key)
-    //{
-    //    var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-    //    return await repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
-    //}
-
     [NonAction]
-    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNew(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
+    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNonAction(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -93,7 +67,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTimeOffset? asOf)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingleNonAction(string key, DateTimeOffset? asOf)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -141,7 +115,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItem(ViewAndUpsertDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -220,7 +194,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var createdDto = await repository.ViewAsync(newItem);
 
-        return new(CreatedAtAction(nameof(GetSingle), new { key = createdDto.ID }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
+        return new(CreatedAtAction(nameof(GetSingleNonAction), new { key = createdDto.ID }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
@@ -228,7 +202,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItem(string key, ViewAndUpsertDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItemNonAction(string key, ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -310,7 +284,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
     
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key, bool isHardDelete)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -356,7 +330,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ActionResult> Print(string key)
+    public async Task<ActionResult> PrintNonAction(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
