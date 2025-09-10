@@ -40,16 +40,16 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public IQueryable<ListDTO> GetOdataListing(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    public async ValueTask<IQueryable<ListDTO>> GetOdataListing(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = repository.GetIQueryable();
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
 
-        var data = repository.OdataList(queryable);
+        var data = await repository.OdataList(queryable);
 
         data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
 
@@ -61,12 +61,12 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = repository.GetIQueryable();
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
 
-        var data = repository.OdataList(queryable);
+        var data = await repository.OdataList(queryable);
 
         data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
 
@@ -378,14 +378,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var data = repository.GetIQueryable().Where(x => !x.IsDeleted);
+        var data = (await repository.GetIQueryable()).Where(x => !x.IsDeleted);
 
         if (defaultFilterExpression is not null)
             data = data.Where(defaultFilterExpression);
 
         if (ids.All)
         {
-            var listDTOData = repository.OdataList();
+            var listDTOData = await repository.OdataList();
 
             if (!string.IsNullOrWhiteSpace(ids.Filter))
             {

@@ -47,10 +47,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
-    public virtual IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null)
+    public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable = null)
     {
         if (queryable is null)
-            queryable = GetIQueryable();
+            queryable = await GetIQueryable();
 
         return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
     }
@@ -185,7 +185,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        var q = GetIQueryable(asOf, includes, disableDefaultDataLevelAccess);
+        var q = await GetIQueryable(asOf, includes, disableDefaultDataLevelAccess);
 
         EntityType? entity = null;
 
@@ -230,7 +230,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return await BaseFindAsync(0, null, idempotencyKey);
     }
 
-    public virtual IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false)
+    public virtual async ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false)
     {
         var query = asOf is null ? dbSet.AsQueryable() : dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
 
@@ -243,12 +243,12 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (!disableDefaultDataLevelAccess)
             query = this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
 
-        query = this.ApplyGloballFilters(query);
-        
+        query = await this.ApplyGloballFilters(query);
+
         return query;
     }
 
-    private IQueryable<EntityType> ApplyGloballFilters(IQueryable<EntityType> query)
+    private async ValueTask<IQueryable<EntityType>> ApplyGloballFilters(IQueryable<EntityType> query)
     {
         if (this.ShiftRepositoryOptions.GlobalFilters.Count == 0)
             return query;
@@ -258,7 +258,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (filter.Disabled)
                 continue;
 
-            var expression = filter.GetFilterExpression<EntityType>();
+            var expression = await filter.GetFilterExpression<EntityType>();
 
             if (expression != null)
                 query = query.Where(expression);

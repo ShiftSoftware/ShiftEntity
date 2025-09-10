@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 
@@ -75,12 +76,10 @@ public class TypeAuthValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFil
         return (null, false);
     }
 
-    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
+    public ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
     {
         if (this.KeySelector is not Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<T>, bool>> typedFilter)
             throw new InvalidOperationException("Invalid filter expression.");
-
-        List<string>? claimValues = null; // Hardcoded example for the string
 
         var wildCardRead = false;
         var wildCardWrite = false;
@@ -145,7 +144,7 @@ public class TypeAuthValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFil
         var newBody = visitor.Visit(typedFilter.Body);
 
         // Create and return the new lambda expression with the modified body.
-        return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
+        return new ValueTask<Expression<Func<T, bool>>?>(Expression.Lambda<Func<T, bool>>(newBody, entityParam));
     }
 
     public class FilterExpressionVisitor<T> : ExpressionVisitor

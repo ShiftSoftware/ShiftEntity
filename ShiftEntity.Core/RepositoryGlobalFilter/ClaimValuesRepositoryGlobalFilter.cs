@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 
@@ -42,7 +43,7 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> :
         return this;
     }
 
-    public Expression<Func<T, bool>>? GetFilterExpression<T>() where T : ShiftEntity<T>
+    public ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
     {
         if (this.KeySelector is not Expression<Func<ClaimValuesRepositoryGlobalFilterContext<T>, bool>> filterContextExpression)
             throw new InvalidOperationException("Invalid filter expression.");
@@ -78,7 +79,7 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> :
 
         var newBody = visitor.Visit(filterContextExpression.Body);
 
-        return Expression.Lambda<Func<T, bool>>(newBody, entityParam);
+        return new ValueTask<Expression<Func<T, bool>>>(Expression.Lambda<Func<T, bool>>(newBody, entityParam));
     }
 
     public class FilterExpressionVisitor<T> : ExpressionVisitor

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 
@@ -11,22 +12,22 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
     public bool Disabled { get; set; }
 
     private Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; }
-    private Func<TValue>? ValuesProvider { get; set; }
+    private Func<ValueTask<TValue>>? ValuesProvider { get; set; }
 
     public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector, Guid id)
     {
         this.ID = id;
         this.KeySelector = keySelector;
     }
-    
-    public CustomValueRepositoryGlobalFilter<Entity, TValue> ValueProvider(Func<TValue>? valuesProvider)
+
+    public CustomValueRepositoryGlobalFilter<Entity, TValue> ValueProvider(Func<ValueTask<TValue>> valuesProvider)
     {
         this.ValuesProvider = valuesProvider;
 
         return this;
     }
 
-    Expression<Func<T, bool>>? IRepositoryGlobalFilter.GetFilterExpression<T>()
+    public async ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
     {
         if (this.KeySelector is not Expression<Func<CustomValueRepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
             throw new InvalidOperationException("Invalid filter expression.");
@@ -34,7 +35,7 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
         TValue? value = null;
 
         if (ValuesProvider is not null)
-            value = ValuesProvider.Invoke();
+            value = await ValuesProvider.Invoke();
 
         var entityParam = Expression.Parameter(typeof(T), "entity");
         var valueExpr = Expression.Constant(value, typeof(TValue));
