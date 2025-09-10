@@ -25,9 +25,8 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
         bool disabled = false
     ) where TValue : class
     {
-        var createdFilter = new CustomValueRepositoryGlobalFilter<EntityType, TValue>(keySelector)
+        var createdFilter = new CustomValueRepositoryGlobalFilter<EntityType, TValue>(keySelector, id ?? Guid.NewGuid())
         {
-            ID = id ?? Guid.NewGuid(),
             Disabled = disabled
         };
 
@@ -44,10 +43,10 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     {
         var createdFilter = new ClaimValuesRepositoryGlobalFilter<EntityType>(
             keySelector, 
-            this.CurrentUserProvider
+            this.CurrentUserProvider,
+            id ?? Guid.NewGuid()
         )
         {
-            ID = id ?? Guid.NewGuid(),
             Disabled = disabled
         };
 
@@ -65,10 +64,10 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
         var createdFilter = new TypeAuthValuesRepositoryGlobalFilter<EntityType>(
             keySelector, 
             this.CurrentUserProvider, 
-            this.TypeAuthService
+            this.TypeAuthService,
+            id ?? Guid.NewGuid()
         )
         {
-            ID = id ?? Guid.NewGuid(),
             Disabled = disabled
         };
 

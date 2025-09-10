@@ -7,17 +7,19 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
     where Entity : ShiftEntity<Entity>
     where TValue : class
 {
-    public Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; set; }
-    internal Func<TValue>? ValuesProvider { get; set; }
-    public Guid ID { get; set; }
+    public Guid ID { get; }
     public bool Disabled { get; set; }
 
-    public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector)
+    private Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; }
+    private Func<TValue>? ValuesProvider { get; set; }
+
+    public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector, Guid id)
     {
+        this.ID = id;
         this.KeySelector = keySelector;
     }
     
-    public CustomValueRepositoryGlobalFilter<Entity, TValue> CustomValueProvider(Func<TValue>? valuesProvider)
+    public CustomValueRepositoryGlobalFilter<Entity, TValue> ValueProvider(Func<TValue>? valuesProvider)
     {
         this.ValuesProvider = valuesProvider;
 

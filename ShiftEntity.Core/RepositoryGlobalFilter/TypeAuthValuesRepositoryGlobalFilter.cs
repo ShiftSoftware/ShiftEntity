@@ -12,30 +12,38 @@ namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 public class TypeAuthValuesRepositoryGlobalFilter<Entity> : IRepositoryGlobalFilter
     where Entity : ShiftEntity<Entity>
 {
-    public Guid ID { get; set; }
+    public Guid ID { get; }
     public bool Disabled { get; set; }
-    public DynamicAction? DynamicAction { get; set; }
+    private  DynamicAction? DynamicAction { get; set; }
+    private Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; }
 
-    public Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }
+    private Type? TypeAuthDTOTypeForHashId { get; set; }
+    private string? SelfClaimIdForTypeAuthValuesProvider { get; set; }
 
-    public Type? TypeAuthDTOTypeForHashId { get; set; }
-    public string? SelfClaimIdForTypeAuthValuesProvider { get; set; }
-
-    private ICurrentUserProvider? CurrentUserProvider;
-    private ITypeAuthService? TypeAuthService;
+    private readonly ICurrentUserProvider? CurrentUserProvider;
+    private readonly ITypeAuthService? TypeAuthService;
 
     public TypeAuthValuesRepositoryGlobalFilter(
             Expression<Func<TypeAuthValuesRepositoryGlobalFilterContext<Entity>, bool>> keySelector,
             ICurrentUserProvider? currentUserProvider,
-            ITypeAuthService? TypeAuthService
+            ITypeAuthService? TypeAuthService,
+            Guid id
     )
     {
         this.KeySelector = keySelector;
         this.CurrentUserProvider = currentUserProvider;
         this.TypeAuthService = TypeAuthService;
+        this.ID = id;
     }
 
-    public TypeAuthValuesRepositoryGlobalFilter<Entity> TypeAuthValuesProvider<HashIdDTO>(DynamicAction dynamicAction, string? selfClaimId = null) where HashIdDTO : ShiftEntityDTOBase, new()
+    public TypeAuthValuesRepositoryGlobalFilter<Entity> ValueProvider(DynamicAction dynamicAction, string? selfClaimId = null)
+    {
+        this.SelfClaimIdForTypeAuthValuesProvider = selfClaimId;
+        this.DynamicAction = dynamicAction;
+        return this;
+    }
+
+    public TypeAuthValuesRepositoryGlobalFilter<Entity> ValueProvider<HashIdDTO>(DynamicAction dynamicAction, string? selfClaimId = null) where HashIdDTO : ShiftEntityDTOBase, new()
     {
         this.SelfClaimIdForTypeAuthValuesProvider = selfClaimId;
         this.DynamicAction = dynamicAction;

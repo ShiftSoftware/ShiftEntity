@@ -10,30 +10,32 @@ namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 public class ClaimValuesRepositoryGlobalFilter<Entity> :
     IRepositoryGlobalFilter where Entity : ShiftEntity<Entity>
 {
-    public Guid ID { get; set; }
+    public Guid ID { get; }
     public bool Disabled { get; set; }
-    public Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; set; }
-    public Type? DTOTypeForHashId { get; set; }
-    public string? ClaimIdForClaimValuesProvider { get; set; }
+    private Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; }
+    private Type? DTOTypeForHashId { get; set; }
+    private string? ClaimIdForClaimValuesProvider { get; set; }
 
-    private ICurrentUserProvider? CurrentUserProvider;
+    private readonly ICurrentUserProvider? CurrentUserProvider;
 
     public ClaimValuesRepositoryGlobalFilter(
         Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> keySelector,
-        ICurrentUserProvider? currentUserProvider
+        ICurrentUserProvider? currentUserProvider,
+        Guid id
     )
     {
+        this.ID = id;
         this.KeySelector = keySelector;
         this.CurrentUserProvider = currentUserProvider;
     }
 
-    public ClaimValuesRepositoryGlobalFilter<Entity> ClaimValuesProvider(string claimId)
+    public ClaimValuesRepositoryGlobalFilter<Entity> ValueProvider(string claimId)
     {
         this.ClaimIdForClaimValuesProvider = claimId;
         return this;
     }
 
-    public ClaimValuesRepositoryGlobalFilter<Entity> ClaimValuesProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
+    public ClaimValuesRepositoryGlobalFilter<Entity> ValueProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
     {
         this.ClaimIdForClaimValuesProvider = claimId;
         this.DTOTypeForHashId = new HashIdDTO().GetType();
