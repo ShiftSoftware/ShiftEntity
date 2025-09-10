@@ -7,6 +7,7 @@ using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
@@ -396,8 +397,13 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
 
     [HttpGet("print-token/{key}")]
-    public virtual ActionResult PrintToken(string key)
+    public virtual async Task<ActionResult> PrintToken(string key)
     {
+        var found = await this.HttpContext.RequestServices.GetRequiredService<Repository>().FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+
+        if (found is null)
+            return NotFound();
+
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
         var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
