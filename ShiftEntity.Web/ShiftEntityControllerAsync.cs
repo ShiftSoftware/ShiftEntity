@@ -45,7 +45,7 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpPost]
     public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Post([FromBody] ViewAndUpsertDTO dto)
     {
-        return (await base.PostItemNonAction(dto)).ActionResult;
+        return (await base.PostItemNonAction(dto, nameof(GetSingle)!)).ActionResult;
     }
 
     [HttpPut("{key}")]

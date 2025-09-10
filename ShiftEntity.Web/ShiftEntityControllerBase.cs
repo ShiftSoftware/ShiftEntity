@@ -115,7 +115,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto, string getActionName)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -194,7 +194,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var createdDto = await repository.ViewAsync(newItem);
 
-        return new(CreatedAtAction(nameof(GetSingleNonAction), new { key = createdDto.ID }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
+        return new(CreatedAtAction(getActionName, new { key = ShiftEntityHashIdService.Encode<ViewAndUpsertDTO>(newItem.ID) }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
