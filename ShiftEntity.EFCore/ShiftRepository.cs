@@ -244,26 +244,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             query = this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
 
         if (!disableGlobalFilters)
-            query = await this.ApplyGloballFilters(query);
-
-        return query;
-    }
-
-    private async ValueTask<IQueryable<EntityType>> ApplyGloballFilters(IQueryable<EntityType> query)
-    {
-        if (this.ShiftRepositoryOptions.GlobalFilters.Count == 0)
-            return query;
-
-        foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters.Values)
-        {
-            if (filter.Disabled)
-                continue;
-
-            var expression = await filter.GetFilterExpression<EntityType>();
-
-            if (expression != null)
-                query = query.Where(expression);
-        }
+            query = await query.ApplyRepositoryGloballFiltersAsync(this.ShiftRepositoryOptions.GlobalFilters);
 
         return query;
     }

@@ -1,7 +1,8 @@
 ﻿using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace System.Linq;
 
@@ -61,5 +62,36 @@ public static class IQueryableExtensions
     ) where EntityType : IEntityHasTeam<EntityType>
     {
         return defaultDataLevelAccess.ApplyDefaultTeamFilter(query);
+    }
+
+    public static IQueryable<EntityType> ApplyDefaultDataLevelAccessFilters<EntityType>(
+        this IQueryable<EntityType> query,
+        IDefaultDataLevelAccess defaultDataLevelAccess,
+        DefaultDataLevelAccessOptions defaultDataLevelAccessOptions
+    ) where EntityType : notnull
+    {
+        return defaultDataLevelAccess.ApplyDefaultDataLevelFilters(defaultDataLevelAccessOptions, query);
+    }
+
+    public static async ValueTask<IQueryable<EntityType>> ApplyRepositoryGloballFiltersAsync<EntityType>(
+        this IQueryable<EntityType> query,
+        Dictionary<Guid, IRepositoryGlobalFilter> GlobalFilters
+    ) where EntityType : ShiftEntity<EntityType>
+    {
+        if (GlobalFilters.Count == 0)
+            return query;
+
+        foreach (var filter in GlobalFilters.Values)
+        {
+            if (filter.Disabled)
+                continue;
+
+            var expression = await filter.GetFilterExpression<EntityType>();
+
+            if (expression != null)
+                query = query.Where(expression);
+        }
+
+        return query;
     }
 }
