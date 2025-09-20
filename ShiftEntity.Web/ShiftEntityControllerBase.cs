@@ -51,9 +51,9 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = await repository.OdataList(queryable);
 
-        data = ODataIqueryable.ApplyDefaultSoftDeleteFilter(data, oDataQueryOptions);
+        data = data.ApplyDefaultSoftDeleteFilter(oDataQueryOptions);
 
-        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
+        return await data.ToOdataDTO(oDataQueryOptions, Request);
     }
 
     [NonAction]
@@ -63,7 +63,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
 
-        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
+        return await data.ToOdataDTO(oDataQueryOptions, Request);
     }
 
     [NonAction]
