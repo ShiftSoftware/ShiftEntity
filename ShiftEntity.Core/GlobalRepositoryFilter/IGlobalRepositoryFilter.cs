@@ -2,9 +2,9 @@
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
+namespace ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 
-public interface IRepositoryGlobalFilter
+public interface IGlobalRepositoryFilter
 {
     public Guid ID { get; }
     public bool Disabled { get; set; }

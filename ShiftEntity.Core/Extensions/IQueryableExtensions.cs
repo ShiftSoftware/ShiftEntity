@@ -1,5 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
+using ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -73,9 +73,9 @@ public static class IQueryableExtensions
         return defaultDataLevelAccess.ApplyDefaultDataLevelFilters(defaultDataLevelAccessOptions, query);
     }
 
-    public static async ValueTask<IQueryable<EntityType>> ApplyRepositoryGloballFiltersAsync<EntityType>(
+    public static async ValueTask<IQueryable<EntityType>> ApplyGlobalRepositoryFiltersAsync<EntityType>(
         this IQueryable<EntityType> query,
-        Dictionary<Guid, IRepositoryGlobalFilter> GlobalFilters
+        Dictionary<Guid, IGlobalRepositoryFilter> GlobalFilters
     ) where EntityType : ShiftEntity<EntityType>
     {
         if (GlobalFilters.Count == 0)

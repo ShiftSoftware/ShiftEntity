@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 
-namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
+namespace ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 
-public class TypeAuthValuesRepositoryGlobalFilterContext<TEntity> where TEntity : ShiftEntity<TEntity>
+public class TypeAuthValuesFilterContext<TEntity> where TEntity : ShiftEntity<TEntity>
 {
     public TEntity Entity { get; } = default!;
     public bool WildCardRead { get; set; }

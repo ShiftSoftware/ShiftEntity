@@ -2,25 +2,25 @@
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
+namespace ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 
-public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlobalFilter
+public class CustomValueFilter<Entity, TValue> : IGlobalRepositoryFilter
     where Entity : ShiftEntity<Entity>
     where TValue : class
 {
     public Guid ID { get; }
     public bool Disabled { get; set; }
 
-    private Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> KeySelector { get; }
+    private Expression<Func<CustomValueFilterContext<Entity, TValue>, bool>> KeySelector { get; }
     private Func<ValueTask<TValue>>? ValuesProvider { get; set; }
 
-    public CustomValueRepositoryGlobalFilter(Expression<Func<CustomValueRepositoryGlobalFilterContext<Entity, TValue>, bool>> keySelector, Guid id)
+    public CustomValueFilter(Expression<Func<CustomValueFilterContext<Entity, TValue>, bool>> keySelector, Guid id)
     {
         this.ID = id;
         this.KeySelector = keySelector;
     }
 
-    public CustomValueRepositoryGlobalFilter<Entity, TValue> ValueProvider(Func<ValueTask<TValue>> valuesProvider)
+    public CustomValueFilter<Entity, TValue> ValueProvider(Func<ValueTask<TValue>> valuesProvider)
     {
         this.ValuesProvider = valuesProvider;
 
@@ -29,7 +29,7 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
 
     public async ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
     {
-        if (this.KeySelector is not Expression<Func<CustomValueRepositoryGlobalFilterContext<T, TValue>, bool>> typedFilter)
+        if (this.KeySelector is not Expression<Func<CustomValueFilterContext<T, TValue>, bool>> typedFilter)
             throw new InvalidOperationException("Invalid filter expression.");
 
         TValue? value = null;
@@ -75,10 +75,10 @@ public class CustomValueRepositoryGlobalFilter<Entity, TValue> : IRepositoryGlob
             // Check if the member access is on the old parameter
             if (node.Expression == _oldParameter)
             {
-                if (node.Member.Name == nameof(CustomValueRepositoryGlobalFilterContext<Entity, object>.Entity))
+                if (node.Member.Name == nameof(CustomValueFilterContext<Entity, object>.Entity))
                     return _entityParameter;
 
-                if (node.Member.Name == nameof(CustomValueRepositoryGlobalFilterContext<Entity, object>.CustomValue))
+                if (node.Member.Name == nameof(CustomValueFilterContext<Entity, object>.CustomValue))
                     return _valueExpression;
             }
 

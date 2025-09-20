@@ -6,21 +6,21 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core.RepositoryGlobalFilter;
+namespace ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 
-public class ClaimValuesRepositoryGlobalFilter<Entity> :
-    IRepositoryGlobalFilter where Entity : ShiftEntity<Entity>
+public class ClaimValuesFilter<Entity> :
+    IGlobalRepositoryFilter where Entity : ShiftEntity<Entity>
 {
     public Guid ID { get; }
     public bool Disabled { get; set; }
-    private Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> KeySelector { get; }
+    private Expression<Func<ClaimValuesFilterContext<Entity>, bool>> KeySelector { get; }
     private Type? DTOTypeForHashId { get; set; }
     private string? ClaimIdForClaimValuesProvider { get; set; }
 
     private readonly ICurrentUserProvider? CurrentUserProvider;
 
-    public ClaimValuesRepositoryGlobalFilter(
-        Expression<Func<ClaimValuesRepositoryGlobalFilterContext<Entity>, bool>> keySelector,
+    public ClaimValuesFilter(
+        Expression<Func<ClaimValuesFilterContext<Entity>, bool>> keySelector,
         ICurrentUserProvider? currentUserProvider,
         Guid id
     )
@@ -30,13 +30,13 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> :
         this.CurrentUserProvider = currentUserProvider;
     }
 
-    public ClaimValuesRepositoryGlobalFilter<Entity> ValueProvider(string claimId)
+    public ClaimValuesFilter<Entity> ValueProvider(string claimId)
     {
         this.ClaimIdForClaimValuesProvider = claimId;
         return this;
     }
 
-    public ClaimValuesRepositoryGlobalFilter<Entity> ValueProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
+    public ClaimValuesFilter<Entity> ValueProvider<HashIdDTO>(string claimId) where HashIdDTO : ShiftEntityDTOBase, new()
     {
         this.ClaimIdForClaimValuesProvider = claimId;
         this.DTOTypeForHashId = new HashIdDTO().GetType();
@@ -45,7 +45,7 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> :
 
     public ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
     {
-        if (this.KeySelector is not Expression<Func<ClaimValuesRepositoryGlobalFilterContext<T>, bool>> filterContextExpression)
+        if (this.KeySelector is not Expression<Func<ClaimValuesFilterContext<T>, bool>> filterContextExpression)
             throw new InvalidOperationException("Invalid filter expression.");
 
         List<string>? claimValues = null;
@@ -103,10 +103,10 @@ public class ClaimValuesRepositoryGlobalFilter<Entity> :
         {
             if (node.Expression == _filterContextExpression)
             {
-                if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.Entity))
+                if (node.Member.Name == nameof(ClaimValuesFilterContext<Entity>.Entity))
                     return _entityParameter;
 
-                if (node.Member.Name == nameof(ClaimValuesRepositoryGlobalFilterContext<Entity>.ClaimValues))
+                if (node.Member.Name == nameof(ClaimValuesFilterContext<Entity>.ClaimValues))
                     return _claimValuesExpression;
 
                 return base.VisitMember(node);
