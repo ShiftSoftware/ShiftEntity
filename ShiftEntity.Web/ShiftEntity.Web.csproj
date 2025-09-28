@@ -44,6 +44,7 @@
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="9.3.2" />
+		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.53.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.8" />
 		<PackageReference Include="Microsoft.OData.Client" Version="8.3.0" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
