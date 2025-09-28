@@ -1,15 +1,17 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Cosmos;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftEntity.Core.Extensions;
 using System.Linq;
-using ShiftSoftware.ShiftEntity.Model.Enums;
 
 namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 
@@ -20,24 +22,16 @@ public class FileExplorerController : ControllerBase
     private readonly AzureStorageService azureStorageService;
     private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private HttpClient httpClient;
-    private string AzureFunctionsEndpoint;
+    private string? AzureFunctionsEndpoint;
     private AzureFileProvider operation;
 
     [Obsolete]
-    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IConfiguration configuration, IFileExplorerAccessControl? fileExplorerAccessControl = null)
+    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IOptions<FileExplorerConfiguration> config, IIdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null, IFileExplorerAccessControl? fileExplorerAccessControl = null)
     {
         this.httpClient = httpClient;
         this.azureStorageService = azureStorageService;
-        this.operation = new AzureFileProvider(azureStorageService, fileExplorerAccessControl);
-
-        // temp
-        var endpoint = configuration.GetValue<string>("AzureFunctions:Endpoint");
-        if (string.IsNullOrWhiteSpace(endpoint))
-        {
-            throw new ArgumentNullException("AzureFunctions:Endpoint not found in appsettings.json");
-        }
-        this.AzureFunctionsEndpoint = endpoint;
-
+        this.operation = new AzureFileProvider(azureStorageService, fileExplorerAccessControl, config, identityClaimProvider, cosmosClient);
+        this.AzureFunctionsEndpoint = config.Value?.FunctionsEndpoint;
         this.fileExplorerAccessControl = fileExplorerAccessControl;
     }
 
@@ -83,9 +77,9 @@ public class FileExplorerController : ControllerBase
                 return this.operation.ToCamelCase(this.operation.GetFiles(args.Path, args.ShowHiddenItems, args.Data));
             case "delete":
                 // Deletes the selected file(s) or folder(s) from the given path.
-                return this.operation.ToCamelCase(this.operation.Delete(args.Path, args.Names, softDelete: true, args.Data));
+                return this.operation.ToCamelCase(this.operation.Delete(args.Path, softDelete: true, args.Data));
             case "restore":
-                return this.operation.ToCamelCase(this.operation.Restore(args.Path, args.Names, args.Data));
+                return this.operation.ToCamelCase(this.operation.Restore(args.Path, args.Data));
             case "details":
                 // Gets the details of the selected file(s) or folder(s).
                 return this.operation.ToCamelCase(this.operation.Details(args.Path, args.Names, args.Data));
@@ -112,6 +106,10 @@ public class FileExplorerController : ControllerBase
     [HttpPost("ZipFiles")]
     public async Task<ActionResult> ZipFiles(ZipOptionsDTO zipOptions)
     {
+        if (string.IsNullOrWhiteSpace(AzureFunctionsEndpoint))
+        {
+            throw new ArgumentNullException("AzureFunctions:Endpoint not found in appsettings.json");
+        }
         var res = await httpClient.PostAsJsonAsync(AzureFunctionsEndpoint + "/api/zip", zipOptions);
         return StatusCode((int)res.StatusCode);
     }
@@ -119,6 +117,10 @@ public class FileExplorerController : ControllerBase
     [HttpPost("UnzipFiles")]
     public async Task<ActionResult> UnzipFiles(ZipOptionsDTO zipOptions)
     {
+        if (string.IsNullOrWhiteSpace(AzureFunctionsEndpoint))
+        {
+            throw new ArgumentNullException("AzureFunctions:Endpoint not found in appsettings.json");
+        }
         var res = await httpClient.PostAsJsonAsync(AzureFunctionsEndpoint+ "/api/unzip", zipOptions);
         return StatusCode((int)res.StatusCode);
     }

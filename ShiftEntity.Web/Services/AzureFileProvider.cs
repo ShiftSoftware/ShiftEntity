@@ -1,25 +1,23 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Net;
-using System.Linq;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Azure.Storage;
+﻿using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using System.Text;
-using Azure.Storage.Blobs.Specialized;
-using System.Text.Json;
-using Azure;
-using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Services;
 using Azure.Storage.Sas;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
+using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Options;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Extensions;
+using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Enums;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Web;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services
@@ -43,6 +41,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         private AzureStorageOption? AzureStorageOption;
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
+        private readonly Container cosmosContainer;
+        private readonly IIdentityClaimProvider identityClaimProvider;
+        //private readonly Model.Dtos.User userId;
+
+
         private IEnumerable<string> ImageExtensions = new List<string>
         {
             ".jpg",
@@ -52,11 +55,21 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             ".webp",
         };
 
-        public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl)
+        public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl, IOptions<FileExplorerConfiguration> config, IIdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null)
         {
             this.azureStorageService = azureStorageService;
             this.SetContainer();
             this.fileExplorerAccessControl = fileExplorerAccessControl;
+            this.identityClaimProvider = identityClaimProvider;
+
+            try
+            {
+                if (cosmosClient != null && config.Value != null && !string.IsNullOrWhiteSpace(config.Value.DatabaseId) && !string.IsNullOrWhiteSpace(config.Value.ContainerId))
+                {
+                    this.cosmosContainer = cosmosClient.GetContainer(config.Value.DatabaseId, config.Value.ContainerId);
+                }
+            }
+            catch { }
         }
 
         public void SetRootDirectory(string root)
@@ -483,6 +496,8 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     content.Name = name;
                     FileExplorerDirectoryContent[] directories = new[] { content };
                     createResponse.Files = (IEnumerable<FileExplorerDirectoryContent>)directories;
+
+                    CreateLogItem(path + name, FileExplorerAction.Create).GetAwaiter().GetResult();
                 }
 
                 return createResponse;
@@ -595,7 +610,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Restores file(s) or folder(s)
-        public FileExplorerResponse Restore(string path, string[] names, params FileExplorerDirectoryContent[] data)
+        public FileExplorerResponse Restore(string path, params FileExplorerDirectoryContent[] data)
         {
             var newData = new List<FileExplorerDirectoryContent>();
 
@@ -608,10 +623,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 newData = data.ToList();
             }
 
-            return RestoreAsync(names, path, newData).GetAwaiter().GetResult();
+            return RestoreAsync(path, newData).GetAwaiter().GetResult();
         }
 
-        protected async Task<FileExplorerResponse> RestoreAsync(string[] names, string path, List<FileExplorerDirectoryContent> selectedItems)
+        protected async Task<FileExplorerResponse> RestoreAsync(string path, List<FileExplorerDirectoryContent> selectedItems)
         {
             FileExplorerResponse removeResponse = new FileExplorerResponse();
             List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
@@ -646,8 +661,10 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     };
                     details.Add(entry);
 
-                    var pathToFind = "/" + fileItem.Path;
-                    deletedList.Remove(pathToFind);
+                    var itemPath = "/" + fileItem.Path;
+                    deletedList.Remove(itemPath);
+
+                    await CreateLogItem(itemPath, FileExplorerAction.Restore);
                 }
 
                 using (var stream = await blobClient.OpenWriteAsync(overwrite: true))
@@ -670,7 +687,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Deletes file(s) or folder(s)
-        public FileExplorerResponse Delete(string path, string[] names, bool softDelete, params FileExplorerDirectoryContent[] data)
+        public FileExplorerResponse Delete(string path, bool softDelete, params FileExplorerDirectoryContent[] data)
         {
             var newData = new List<FileExplorerDirectoryContent>();
 
@@ -683,11 +700,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                 newData = data.ToList();
             }
 
-            return RemoveAsync(names, path, softDelete, newData).GetAwaiter().GetResult();
+            return RemoveAsync(path, softDelete, newData).GetAwaiter().GetResult();
         }
 
         // Deletes file(s) or folder(s)
-        protected async Task<FileExplorerResponse> RemoveAsync(string[] names, string path, bool softDelete, List<FileExplorerDirectoryContent> selectedItems)
+        protected async Task<FileExplorerResponse> RemoveAsync(string path, bool softDelete, List<FileExplorerDirectoryContent> selectedItems)
         {
             FileExplorerResponse removeResponse = new FileExplorerResponse();
             List<FileExplorerDirectoryContent> details = new List<FileExplorerDirectoryContent>();
@@ -726,21 +743,25 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
                     };
                     details.Add(entry);
 
+                    var itemPath = "/" + fileItem.Path;
+
+                    await CreateLogItem(itemPath, FileExplorerAction.Delete);
+
                     if (softDelete)
                     {
-                        var textToAppend = "/" + fileItem.Path;
+                        var textToAppend = itemPath;
                         addToDeleted += textToAppend + "\n";
                     }
                     else
                     {
                         if (fileItem.IsFile)
                         {
-                            BlobClient currentFile = container.GetBlobClient(path + fileItem.Name);
+                            BlobClient currentFile = container.GetBlobClient(itemPath);
                             currentFile.DeleteIfExists();
                         }
                         else
                         {
-                            foreach (Page<BlobItem> items in container.GetBlobs(prefix: path + fileItem.Name + "/").AsPages())
+                            foreach (Page<BlobItem> items in container.GetBlobs(prefix: itemPath + "/").AsPages())
                             {
                                 foreach (BlobItem item in items.Values)
                                 {
@@ -1124,7 +1145,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         }
 
         // Gets all files
-        protected virtual void GetAllFiles(string path, bool ViewDeleted, FileExplorerResponse data)
+        public virtual void GetAllFiles(string path, bool ViewDeleted, FileExplorerResponse data)
         {
             FileExplorerResponse directoryList = new FileExplorerResponse();
             directoryList.Files = data.Files.Where(item => item.IsFile == false);
@@ -1158,6 +1179,33 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             };
 
             return JsonSerializer.Serialize(userData, options);
+        }
+
+        private async Task CreateLogItem(string path, FileExplorerAction action)
+        {
+            if (cosmosContainer == null)
+            {
+                return;
+            }
+
+            var log = new LogItem
+            {
+                Id = Guid.NewGuid().ToString(),
+                Action = action.ToString(),
+                Path = path,
+                Timestamp = DateTime.Now,
+                AccountName = container.AccountName,
+                Container = container.Name,
+                CompanyID = identityClaimProvider.GetCompanyID(),
+                CompanyHashedID = identityClaimProvider.GetHashedCompanyID(),
+                CompanyBranchID = identityClaimProvider.GetCompanyBranchID(),
+                CompanyBranchHashedID = identityClaimProvider.GetHashedCompanyBranchID(),
+                UserID = identityClaimProvider.GetUserID(),
+                UserHashedID = identityClaimProvider.GetHashedUserID(),
+            };
+
+            var partKey = new PartitionKeyBuilder().Add(log.Path).Add(log.Action).Build();
+            await cosmosContainer.CreateItemAsync(log, partKey);
         }
 
         [GeneratedRegex("/?([^/]+)/?$")]
