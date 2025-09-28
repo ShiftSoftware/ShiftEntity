@@ -28,9 +28,9 @@ public class AzureStorageController : ControllerBase
     private AzureStorageService azureStorageService;
     private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private Container? cosmosContainer;
-    private IIdentityClaimProvider identityClaimProvider;
+    private IdentityClaimProvider identityClaimProvider;
 
-    public AzureStorageController(AzureStorageService azureStorageService, IOptions<FileExplorerConfiguration> config, IIdentityClaimProvider identityClaimProvider, IFileExplorerAccessControl? fileExplorerAccessControl = null, CosmosClient? cosmosClient = null)
+    public AzureStorageController(AzureStorageService azureStorageService, IOptions<FileExplorerConfiguration> config, IdentityClaimProvider identityClaimProvider, IFileExplorerAccessControl? fileExplorerAccessControl = null, CosmosClient? cosmosClient = null)
     {
         this.azureStorageService = azureStorageService;
         this.fileExplorerAccessControl = fileExplorerAccessControl;

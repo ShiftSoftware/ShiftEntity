@@ -6,6 +6,7 @@ using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Flags;
+using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Text;
 
@@ -23,29 +24,33 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
     private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
-    private readonly IIdentityClaimProvider identityClaimProvider;
+    private readonly IdentityClaimProvider identityClaimProvider;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
         this.mapper = db.GetService<IMapper>();
-        this.identityClaimProvider = db.GetService<IIdentityClaimProvider>();
+        this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
         this.ShiftRepositoryOptions = new();
 
         if (shiftRepositoryBuilder is not null)
         {
+            this.ShiftRepositoryOptions.CurrentUserProvider = db.GetService<ICurrentUserProvider>();
+
+            this.ShiftRepositoryOptions.TypeAuthService = db.GetService<ITypeAuthService>();
+
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
-        if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
             this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
-    public virtual IQueryable<ListDTO> OdataList(IQueryable<EntityType>? queryable = null)
+    public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable = null)
     {
         if (queryable is null)
-            queryable = GetIQueryable();
+            queryable = await GetIQueryable();
 
         return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
     }
@@ -63,7 +68,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         upserted.LastSavedByUserID = userId;
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -110,7 +115,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
             entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -164,7 +169,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     //    return Find(id, asOf, includes);
     //}
 
-    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null, Guid? idempotencyKey = null, bool disableDefaultDataLevelAccess = false)
+    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null, Guid? idempotencyKey = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {
         List<string>? includes = null;
 
@@ -180,7 +185,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        var q = GetIQueryable(asOf, includes, disableDefaultDataLevelAccess);
+        var q = await GetIQueryable(asOf, includes, disableDefaultDataLevelAccess, disableGlobalFilters);
 
         EntityType? entity = null;
 
@@ -200,7 +205,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (entity is not null && includes?.Count > 0)
             entity.ReloadAfterSave = true;
 
-        if (!disableDefaultDataLevelAccess && (this.ShiftRepositoryOptions?.UseDefaultDataLevelAccess ?? false))
+        if (!disableDefaultDataLevelAccess)
         {
             var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -215,9 +220,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return entity;
     }
 
-    public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, bool disableDefaultDataLevelAccess = false)
+    public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {
-        return await BaseFindAsync(id, asOf, null, disableDefaultDataLevelAccess);
+        return await BaseFindAsync(id, asOf, null, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 
     public virtual async Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey)
@@ -225,7 +230,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return await BaseFindAsync(0, null, idempotencyKey);
     }
 
-    public virtual IQueryable<EntityType> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false)
+    public virtual async ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {
         var query = asOf is null ? dbSet.AsQueryable() : dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
 
@@ -235,26 +240,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 query = query.Include(include);
         }
 
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
             query = this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
 
-        query = this.ApplyGloballFilters(query);
-        
-        return query;
-    }
-
-    private IQueryable<EntityType> ApplyGloballFilters(IQueryable<EntityType> query)
-    {
-        if (this.ShiftRepositoryOptions.GlobalFilters.Count == 0)
-            return query;
-
-        foreach (var filter in this.ShiftRepositoryOptions.GlobalFilters)
-        {
-            var expression = filter.GetFilterExpression<EntityType>();
-
-            if (expression != null)
-                query = query.Where(expression);
-        }
+        if (!disableGlobalFilters)
+            query = await query.ApplyGlobalRepositoryFiltersAsync(this.ShiftRepositoryOptions.GlobalRepositoryFilters);
 
         return query;
     }
@@ -323,7 +313,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null, bool disableDefaultDataLevelAccess = false)
     {
-        if (!disableDefaultDataLevelAccess && this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        if (!disableDefaultDataLevelAccess)
         {
             var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,

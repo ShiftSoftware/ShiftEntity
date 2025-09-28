@@ -42,7 +42,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
         private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
 
         private readonly Container cosmosContainer;
-        private readonly IIdentityClaimProvider identityClaimProvider;
+        private readonly IdentityClaimProvider identityClaimProvider;
         //private readonly Model.Dtos.User userId;
 
 
@@ -55,7 +55,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services
             ".webp",
         };
 
-        public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl, IOptions<FileExplorerConfiguration> config, IIdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null)
+        public AzureFileProvider(AzureStorageService azureStorageService, IFileExplorerAccessControl? fileExplorerAccessControl, IOptions<FileExplorerConfiguration> config, IdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null)
         {
             this.azureStorageService = azureStorageService;
             this.SetContainer();

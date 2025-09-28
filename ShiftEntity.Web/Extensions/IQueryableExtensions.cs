@@ -4,15 +4,19 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using System;
-using System.Linq;
+using ShiftSoftware.ShiftEntity.Web.Services;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Web.Services;
+namespace System.Linq;
 
-public class ODataIqueryable
+public static class IQueryableExtensions
 {
-    public static async ValueTask<ODataDTO<T>> GetOdataDTOFromIQueryableAsync<T>(IQueryable<T> data, ODataQueryOptions<T> oDataQueryOptions, HttpRequest httpRequest, bool runAsync = true)
+    public static async ValueTask<ODataDTO<T>> ToOdataDTO<T>(
+        this IQueryable<T> data, 
+        ODataQueryOptions<T> oDataQueryOptions, 
+        HttpRequest httpRequest, 
+        bool isAsync = true
+    )
     {
         if (oDataQueryOptions.Filter != null)
         {
@@ -42,7 +46,7 @@ public class ODataIqueryable
         if (oDataQueryOptions.OrderBy != null)
             data = oDataQueryOptions.OrderBy.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<T>;
 
-        var count = runAsync ? await data.CountAsync() : data.Count();
+        var count = isAsync ? await data.CountAsync() : data.Count();
 
         if (oDataQueryOptions.Skip != null)
             data = data.Skip(oDataQueryOptions.Skip.Value);
@@ -53,7 +57,31 @@ public class ODataIqueryable
         return new ODataDTO<T>
         {
             Count = count,
-            Value = runAsync ? await data.ToListAsync() : data.ToList(),
+            Value = isAsync ? await data.ToListAsync() : data.ToList(),
         };
+    }
+
+    public static IQueryable<EntityType> ApplyDefaultSoftDeleteFilter<EntityType>(
+        this IQueryable<EntityType> query,
+        ODataQueryOptions<EntityType> oDataQueryOptions
+    ) where EntityType : ShiftEntityDTOBase
+    {
+        bool isFilteringByIsDeleted = false;
+
+        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
+
+        if (filterClause is not null)
+        {
+            var visitor = new SoftDeleteQueryNodeVisitor();
+
+            var visited = filterClause.Expression.Accept(visitor);
+
+            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
+        }
+
+        if (!isFilteringByIsDeleted)
+            query = query.Where(x => x.IsDeleted == false);
+
+        return query;
     }
 }

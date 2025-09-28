@@ -21,9 +21,9 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     private readonly ITypeAuthService typeAuthService;
-    private readonly IIdentityClaimProvider identityClaimProvider;
+    private readonly IdentityClaimProvider identityClaimProvider;
 
-    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IIdentityClaimProvider identityClaimProvider)
+    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider)
     {
         this.typeAuthService = typeAuthService;
         this.identityClaimProvider = identityClaimProvider;
@@ -279,37 +279,37 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         return query;
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnCountries<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCountry<EntityType>
+    public IQueryable<EntityType> ApplyDefaultCountryFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCountry<EntityType>
     {
         return ApplyFilter(this.GetAccessibleCountries(), query, x => x.CountryID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnRegions<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasRegion<EntityType>
+    public IQueryable<EntityType> ApplyDefaultRegionFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasRegion<EntityType>
     {
         return ApplyFilter(this.GetAccessibleRegions(), query, x => x.RegionID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnCompanies<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompany<EntityType>
+    public IQueryable<EntityType> ApplyDefaultCompanyFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompany<EntityType>
     {
         return ApplyFilter(this.GetAccessibleCompanies(), query, x => x.CompanyID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnBranches<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompanyBranch<EntityType>
+    public IQueryable<EntityType> ApplyDefaultBranchFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompanyBranch<EntityType>
     {
         return ApplyFilter(this.GetAccessibleBranches(), query, x => x.CompanyBranchID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnBrands<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasBrand<EntityType>
+    public IQueryable<EntityType> ApplyDefaultBrandFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasBrand<EntityType>
     {
         return ApplyFilter(this.GetAccessibleBrands(), query, x => x.BrandID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnCities<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCity<EntityType>
+    public IQueryable<EntityType> ApplyDefaultCityFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCity<EntityType>
     {
         return ApplyFilter(this.GetAccessibleCities(), query, x => x.CityID);
     }
 
-    public IQueryable<EntityType> ApplyDefaultFilterOnTeams<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasTeam<EntityType>
+    public IQueryable<EntityType> ApplyDefaultTeamFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasTeam<EntityType>
     {
         return ApplyFilter(this.GetAccessibleTeams(), query, x => x.TeamID);
     }

@@ -1,6 +1,7 @@
 ﻿using Google.Apis.Auth.OAuth2;
 using Google.Apis.Firebaseappcheck.v1beta;
 using Google.Apis.Firebaseappcheck.v1beta.Data;
+using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -10,10 +11,12 @@ namespace ShiftSoftware.ShiftEntity.Functions.AppCheck;
 public class AntiBotService
 {
     private readonly AntiBotOptions antiBotOptions;
+    private readonly ILogger<AntiBotService> logger;
 
-    public AntiBotService(AntiBotOptions antiBotOptions)
+    public AntiBotService(AntiBotOptions antiBotOptions, ILogger<AntiBotService> logger)
     {
         this.antiBotOptions = antiBotOptions;
+        this.logger = logger;
     }
 
     public async ValueTask<bool> IsItBot(string token, Platforms? platform = null)
@@ -27,7 +30,7 @@ public class AntiBotService
                 HttpClientInitializer = googleCredentials,
             });
 
-            //try
+            try
             {
                 var appCheckResult = await appCheck.Projects.VerifyAppCheckToken(body: new GoogleFirebaseAppcheckV1betaVerifyAppCheckTokenRequest
                 {
@@ -39,10 +42,11 @@ public class AntiBotService
                     return false;
                 }
             }
-            //catch (Exception)
-            //{
-            //    return true;
-            //}
+            catch (Exception e)
+            {
+                logger.LogError(e, $"App Check Token Verification Error, Token: {token}");
+                return true;
+            }
 
             return true;
         }

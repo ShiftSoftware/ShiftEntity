@@ -39,6 +39,76 @@ public class StringJsonHashIdConverter : JsonConverter<string>
     }
 }
 
+public class NullableLongJsonHashIdConverter : JsonConverter<long?>
+{
+    private ShiftEntityHashId hashids;
+
+    public NullableLongJsonHashIdConverter(ShiftEntityHashId hashids)
+    {
+        this.hashids = hashids;
+    }
+
+    public override long? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var id = reader.GetString();
+
+        if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
+        {
+            return this.hashids.Decode(id!)!;
+        }
+
+        return long.Parse(id!);
+    }
+
+    public override void Write(Utf8JsonWriter writer, long? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+            writer.WriteNullValue();
+        else
+        {
+            if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
+                writer.WriteStringValue(this.hashids.Encode(value.Value));
+            else
+                writer.WriteStringValue(value.ToString());
+        }
+    }
+}
+
+public class LongJsonHashIdConverter : JsonConverter<long>
+{
+    private ShiftEntityHashId hashids;
+
+    public LongJsonHashIdConverter(ShiftEntityHashId hashids)
+    {
+        this.hashids = hashids;
+    }
+
+    public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var id = reader.GetString();
+
+        if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
+        {
+            return this.hashids.Decode(id!)!;
+        }
+
+        return long.Parse(id!);
+    }
+
+    public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options)
+    {
+        if (value == 0)
+            writer.WriteNullValue();
+        else
+        {
+            if ((HashId.Enabled && !(this.hashids?.IsIdentityHasher ?? true)) || (HashId.IdentityHashIdEnabled && (this.hashids?.IsIdentityHasher ?? false)))
+                writer.WriteStringValue(this.hashids.Encode(value));
+            else
+                writer.WriteStringValue(value.ToString());
+        }
+    }
+}
+
 public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntitySelectDTO>
 {
     private ShiftEntityHashId hashids;
@@ -295,6 +365,10 @@ public class JsonHashIdConverterAttribute : JsonConverterAttribute
     {
         if (typeToConvert == typeof(string))
             return new StringJsonHashIdConverter(this.Hashids!);
+        if (typeToConvert == typeof(long))
+            return new LongJsonHashIdConverter(this.Hashids!);
+        if (typeToConvert == typeof(long?))
+            return new NullableLongJsonHashIdConverter(this.Hashids!);
         else if (typeToConvert == typeof(ShiftEntitySelectDTO))
             return new ShiftEntitySelectDTOJsonHashIdConverter(this.Hashids!);
         else if (typeToConvert == typeof(IEnumerable<ShiftEntitySelectDTO>))

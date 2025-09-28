@@ -24,9 +24,9 @@ public class FileExplorerController : ControllerBase
     private HttpClient httpClient;
     private string? AzureFunctionsEndpoint;
     private AzureFileProvider operation;
-
+    
     [Obsolete]
-    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IOptions<FileExplorerConfiguration> config, IIdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null, IFileExplorerAccessControl? fileExplorerAccessControl = null)
+    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IOptions<FileExplorerConfiguration> config, IdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null, IFileExplorerAccessControl? fileExplorerAccessControl = null)
     {
         this.httpClient = httpClient;
         this.azureStorageService = azureStorageService;

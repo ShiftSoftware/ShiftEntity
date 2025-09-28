@@ -67,7 +67,8 @@ public static class IMvcBuilderExtensions
             });
 
         builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
-        builder.Services.AddScoped<IIdentityClaimProvider, IdentityClaimProvider>();
+        builder.Services.AddScoped<IdentityClaimProvider>();
+        builder.Services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
         return builder;
     }

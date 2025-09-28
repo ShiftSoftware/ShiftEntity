@@ -40,88 +40,34 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public IQueryable<ListDTO> GetOdataListing(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    public async Task<ODataDTO<ListDTO>> GetOdataListingNonAction(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        bool isFilteringByIsDeleted = false;
-
-        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
-
-        if (filterClause is not null)
-        {
-            var visitor = new SoftDeleteQueryNodeVisitor();
-
-            var visited = filterClause.Expression.Accept(visitor);
-
-            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
-        }
-
-        var queryable = repository.GetIQueryable();
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
 
-        var data = repository.OdataList(queryable);
+        var data = await repository.OdataList(queryable);
 
-        if (!isFilteringByIsDeleted)
-            data = data.Where(x => x.IsDeleted == false);
+        data = data.ApplyDefaultSoftDeleteFilter(oDataQueryOptions);
 
-        return data;
+        return await data.ToOdataDTO(oDataQueryOptions, Request);
     }
 
     [NonAction]
-    public async Task<ODataDTO<ListDTO>> GetOdataListingNew(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
-    {
-        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-        bool isFilteringByIsDeleted = false;
-
-        FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause;
-
-        if (filterClause is not null)
-        {
-            var visitor = new SoftDeleteQueryNodeVisitor();
-
-            var visited = filterClause.Expression.Accept(visitor);
-
-            isFilteringByIsDeleted = visitor.IsFilteringByIsDeleted;
-        }
-
-        var queryable = repository.GetIQueryable();
-
-        if (where is not null)
-            queryable = queryable.Where(where);
-
-        var data = repository.OdataList(queryable);
-
-        if (!isFilteringByIsDeleted)
-            data = data.Where(x => x.IsDeleted == false);
-
-        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
-    }
-
-
-    //[NonAction]
-    //public async Task<ODataDTO<RevisionDTO>> GetRevisionListing(string key)
-    //{
-    //    var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
-
-    //    return await repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
-    //}
-
-    [NonAction]
-    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNew(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
+    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNonAction(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
 
-        return await ODataIqueryable.GetOdataDTOFromIQueryableAsync(data, oDataQueryOptions, Request);
+        return await data.ToOdataDTO(oDataQueryOptions, Request);
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingle(string key, DateTimeOffset? asOf)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingleNonAction(string key, DateTimeOffset? asOf)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -169,7 +115,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItem(ViewAndUpsertDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto, string getActionName)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -248,7 +194,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var createdDto = await repository.ViewAsync(newItem);
 
-        return new(CreatedAtAction(nameof(GetSingle), new { key = createdDto.ID }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
+        return new(CreatedAtAction(getActionName, new { key = ShiftEntityHashIdService.Encode<ViewAndUpsertDTO>(newItem.ID) }, new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
@@ -256,7 +202,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItem(string key, ViewAndUpsertDTO dto)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItemNonAction(string key, ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -338,7 +284,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
     
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItem(string key, bool isHardDelete)
+    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key, bool isHardDelete)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -384,7 +330,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ActionResult> Print(string key)
+    public async Task<ActionResult> PrintNonAction(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -406,14 +352,14 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var data = repository.GetIQueryable().Where(x => !x.IsDeleted);
+        var data = (await repository.GetIQueryable()).Where(x => !x.IsDeleted);
 
         if (defaultFilterExpression is not null)
             data = data.Where(defaultFilterExpression);
 
         if (ids.All)
         {
-            var listDTOData = repository.OdataList();
+            var listDTOData = await repository.OdataList();
 
             if (!string.IsNullOrWhiteSpace(ids.Filter))
             {
