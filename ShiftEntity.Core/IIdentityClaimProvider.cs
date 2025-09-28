@@ -15,7 +15,7 @@ public interface IIdentityClaimProvider
     public string? GetHashedCompanyBranchID();
     public long? GetCompanyBranchID();
     public long? GetUserID();
-    public string? GetUserStringID();
+    public string? GetHashedUserID();
     public List<string>? GetHashedTeamIDs();
     public List<long>? GetTeamIDs();
 }

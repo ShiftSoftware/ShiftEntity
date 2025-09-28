@@ -78,8 +78,8 @@ public class IdentityClaimProvider : IIdentityClaimProvider
         return this.context.GetUserID();
     }
 
-    public string? GetUserStringID()
+    public string? GetHashedUserID()
     {
-        return this.context.GetUserStringID();
+        return this.context.GetHashedUserID();
     }
 }
