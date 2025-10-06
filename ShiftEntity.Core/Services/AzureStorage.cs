@@ -135,6 +135,27 @@ public class AzureStorageService
         accountName = accountName ?? defaultAccountName;
         return blobServiceClients[accountName];
     }
+
+    public AzureStorageOption GetStorageOption(string? accountName = null)
+    {
+        accountName = accountName ?? defaultAccountName;
+        return azureStorageAccounts[accountName];
+    }
+
+    public BlobContainerClient GetBlobContainerClient(string? accountName = null, string? containerName = null)
+    {
+        accountName ??= defaultAccountName;
+        containerName ??= GetDefaultContainerName(accountName);
+
+        blobServiceClients.TryGetValue(accountName, out BlobServiceClient? client);
+
+        if (client == null)
+        {
+            throw new Exception($"Blob container not found ({containerName})");
+        }
+
+        return client.GetBlobContainerClient(containerName);
+    }
 }
 
 
