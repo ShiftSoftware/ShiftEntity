@@ -18,7 +18,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 [ApiController]
 public class FileExplorerController : ControllerBase
 {
-    private readonly AzureStorageService azureStorageService;
     private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private HttpClient httpClient;
     private string? AzureFunctionsEndpoint;
@@ -39,28 +38,35 @@ public class FileExplorerController : ControllerBase
     [Route("list")]
     public async Task<FileExplorerResponseDTO> List([FromQuery] FileExplorerReadDTO data)
     {
-        return await fileProvider.GetFiles(data.Path ?? "", data.IncludeDeleted);
+        return await fileProvider.GetFiles(data);
     }
 
     [HttpPost]
     [Route("create")]
     public async Task<FileExplorerResponseDTO> Create([FromBody] FileExplorerCreateDTO data)
     {
-        return await fileProvider.Create(data.Path);
+        return await fileProvider.Create(data);
     }
 
     [HttpPost]
     [Route("delete")]
     public async Task<FileExplorerResponseDTO> Delete([FromBody] FileExplorerDeleteDTO data)
     {
-        return await fileProvider.Delete(data.Paths);
+        return await fileProvider.Delete(data);
     }
 
     [HttpPost]
     [Route("restore")]
-    public async Task<FileExplorerResponseDTO> Restore([FromBody] FileExplorerDeleteDTO data)
+    public async Task<FileExplorerResponseDTO> Restore([FromBody] FileExplorerRestoreDTO data)
     {
-        return await fileProvider.Restore(data.Paths);
+        return await fileProvider.Restore(data);
+    }
+
+    [HttpGet]
+    [Route("detail")]
+    public async Task<FileExplorerResponseDTO> Detail([FromQuery] FileExplorerDetailDTO data)
+    {
+        return await fileProvider.Details(data);
     }
 
     [HttpPost("ZipFiles")]

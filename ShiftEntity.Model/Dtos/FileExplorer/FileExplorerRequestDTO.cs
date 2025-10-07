@@ -12,6 +12,7 @@ public class FileExplorerRequestDTOBase
 public class FileExplorerReadDTO : FileExplorerRequestDTOBase
 {
     public bool IncludeDeleted { get; set; }
+    public string? ContinuationToken { get; set; }
 }
 
 public class FileExplorerCreateDTO : FileExplorerRequestDTOBase
@@ -29,12 +30,18 @@ public class FileExplorerRestoreDTO : FileExplorerRequestDTOBase
     public string[] Paths { get; set; } = [];
 }
 
+public class FileExplorerDetailDTO : FileExplorerReadDTO
+{
+}
+
 public class FileExplorerResponseDTO(string? path = null)
 {
     public bool Success { get; set; }
     public Message? Message { get; set; }
     public string? Path { get; set; } = path;
+    public string? ContinuationToken { set; get; }
     public List<FileExplorerItemDTO>? Items { get; set; }
+    public object? Additional { get; set; }
 }
 
 public class FileExplorerItemDTO
