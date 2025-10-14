@@ -66,7 +66,7 @@ public class FileExplorerController : ControllerBase
     [Route("detail")]
     public async Task<FileExplorerResponseDTO> Detail([FromQuery] FileExplorerDetailDTO data)
     {
-        return await fileProvider.Details(data);
+        return await fileProvider.Detail(data);
     }
 
     [HttpPost("ZipFiles")]

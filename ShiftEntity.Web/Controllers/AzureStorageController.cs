@@ -68,7 +68,7 @@ public class AzureStorageController : ControllerBase
 
             file.Url = azureStorageService.GetSignedURL(file.Blob, BlobSasPermissions.Write | BlobSasPermissions.Read, containerName, accountName, 60);
 
-            await CreateLogItem(file.Blob, FileExplorerAction.Create, accountName, containerName);
+            CreateLogItem(file.Blob, FileExplorerAction.Create, accountName, containerName);
         }
 
         if (this.fileExplorerAccessControl is not null)
@@ -85,7 +85,7 @@ public class AzureStorageController : ControllerBase
         };
     }
 
-    private async Task CreateLogItem(string path, FileExplorerAction action, string accountName, string containerName)
+    private void CreateLogItem(string path, FileExplorerAction action, string accountName, string containerName)
     {
         if (cosmosContainer == null)
             return;
@@ -93,7 +93,7 @@ public class AzureStorageController : ControllerBase
         var log = new LogItem
         {
             Id = Guid.NewGuid().ToString(),
-            Action = FileExplorerAction.Create.ToString(),
+            Action = action.ToString(),
             Path = path,
             Timestamp = DateTime.Now,
             AccountName = accountName,
@@ -107,6 +107,10 @@ public class AzureStorageController : ControllerBase
         };
 
         var partKey = new PartitionKeyBuilder().Add(log.Path).Add(log.Action).Build();
-        await cosmosContainer.CreateItemAsync(log, partKey);
+        try
+        {
+            _ = cosmosContainer.CreateItemAsync(log, partKey);
+        }
+        catch (Exception) { }
     }
 }

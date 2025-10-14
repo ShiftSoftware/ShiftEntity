@@ -1,23 +1,21 @@
 ﻿using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Sas;
-using FastReport.Utils;
 using Microsoft.Azure.Cosmos;
-using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Extensions;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Enums;
+using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
@@ -31,16 +29,21 @@ public class BlobStorageFileProvider : IFileProvider
     private readonly IdentityClaimProvider identityClaimProvider;
     private readonly Container? cosmosContainer;
     private readonly FileExplorerConfiguration config;
+    private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
+
+    const int MAX_CREATE_RETRY_ATTEMPTS = 25;
 
     public BlobStorageFileProvider(AzureStorageService azureStorageService,
         IOptions<FileExplorerConfiguration> config,
         IdentityClaimProvider identityClaimProvider,
+        IFileExplorerAccessControl? fileExplorerAccessControl = null,
         CosmosClient? cosmosClient = null)
     {
         this.azureStorageService = azureStorageService;
         this.container = azureStorageService.GetBlobContainerClient();
         this.storageOption = azureStorageService.GetStorageOption();
         this.identityClaimProvider = identityClaimProvider;
+        this.fileExplorerAccessControl = fileExplorerAccessControl;
         this.config = config.Value;
 
         if (storageOption?.SupportsFileExplorer != true)
@@ -58,64 +61,60 @@ public class BlobStorageFileProvider : IFileProvider
         catch { }
     }
 
-    public char Delimiter => '/';
-    private IEnumerable<string> ImageExtensions = new List<string>
-        {
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".png",
-            ".webp",
-        };
-    private string? GetName(string path) => path.Split(Delimiter, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+    public char Delimiter => BlobHelper.Delimiter;
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+    };
 
     private async Task<(List<string> list, BlobClient blob)> GetDeletedItems(string path)
     {
-        var deletedFilesBlob = container.GetBlobClient(path.AddUrlPath(Constants.FileExplorerHiddenFilename));
-        var deletedList = new List<string>();
+        var hiddenPath = BlobHelper.Combine(path, Constants.FileExplorerHiddenFilename);
 
-        if (await deletedFilesBlob.ExistsAsync())
+        var blob = container.GetBlobClient(hiddenPath);
+        var list = new List<string>();
+
+        try
         {
-            using BlobDownloadInfo file = await deletedFilesBlob.DownloadAsync();
-            using var reader = new StreamReader(file.Content, Encoding.UTF8);
-            deletedList = (await reader.ReadToEndAsync())
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToList();
+            // instead of using blob.ExistsAsync, we get the Properties of the blob
+            // and check for the content length, and if the file doesn't exist, we catch the error
+            // both methods make a HEAD request
+            var props = await blob.GetPropertiesAsync().ConfigureAwait(false);
+            if (props.Value.ContentLength > 0)
+            {
+                BlobDownloadResult file = await blob.DownloadContentAsync().ConfigureAwait(false);
+                var text = file.Content.ToString();
+                list = text
+                    .Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList() ?? [];
+            }
         }
+        catch (Azure.RequestFailedException e) when (e.Status == 404) { }
 
-        return (deletedList, deletedFilesBlob);
+        return (list, blob);
     }
 
     private async Task EnsurePathNotDeletedAsync(string path)
     {
-        var pathParts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (pathParts.Length == 0)
+        var pathParts = path?.Split(Delimiter, StringSplitOptions.RemoveEmptyEntries);
+        if (pathParts == null || pathParts.Length == 0)
             return;
 
-        var deletedItems = new List<string>();
+        //var deletedItems = new List<string>();
         var currentPath = "";
+        var fullPath = Delimiter + path;
 
         foreach (var part in pathParts)
         {
             var (list, _) = await GetDeletedItems(currentPath);
-            deletedItems.AddRange(list);
-            currentPath += part + "/";
+            if (list.Any(p => fullPath.StartsWith(p, StringComparison.Ordinal)))
+                throw new DirectoryNotFoundException();
+
+            currentPath += part + Delimiter;
         }
-
-        var _path = "/" + path;
-
-        if (deletedItems.Any(item => _path.StartsWith(item, StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new Exception("Directory not found");
-        }
-    }
-
-    private bool IsPathDirectory(string path)
-    {
-        if (path == null || path.StartsWith("/") || (!string.IsNullOrWhiteSpace(path) && !path.EndsWith("/")))
-            return false;
-
-        return true;
     }
 
     private async Task<bool> PathExists(string path)
@@ -135,7 +134,7 @@ public class BlobStorageFileProvider : IFileProvider
         var path = data.Path ?? "";
         var res = new FileExplorerResponseDTO(path);
 
-        if (!IsPathDirectory(path))
+        if (!BlobHelper.IsPathDirectory(path))
         {
             res.Message = new Message("Invalid path");
             return res;
@@ -153,25 +152,32 @@ public class BlobStorageFileProvider : IFileProvider
         // otherwise we start checking previous dirs to make sure
         // that this current dir is not deleted or is in a deleted dir
         // then we will process the list of items in the Page
-        var pages = container.GetBlobsByHierarchy(BlobTraits.Metadata, delimiter: Delimiter.ToString(), prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
+        var pages = container.GetBlobsByHierarchyAsync(BlobTraits.Metadata, delimiter: Delimiter.ToString(), prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
 
-        var workingPage = pages.First();
-        res.ContinuationToken = workingPage.ContinuationToken;
+        Page<BlobHierarchyItem>? workingPage = null;
 
-        if (workingPage.Values.Count == 0)
+        await foreach (var page in pages)
+        {
+            workingPage = page;
+            break;
+        }
+
+        if (workingPage == null || workingPage.Values.Count == 0)
         {
             res.Message = new Message("Directory not found");
             return res;
         }
+
+        res.ContinuationToken = workingPage.ContinuationToken;
 
         try
         {
             if (!data.IncludeDeleted)
                 await EnsurePathNotDeletedAsync(path);
         }
-        catch (Exception e)
+        catch (DirectoryNotFoundException)
         {
-            res.Message = new Message(e.Message);
+            res.Message = new Message("Directory not found");
             return res;
         }
 
@@ -204,37 +210,43 @@ public class BlobStorageFileProvider : IFileProvider
                 item.Blob.Metadata.TryGetValue(Constants.FileExplorerNameMetadataKey, out string? originalName);
                 item.Blob.Metadata.TryGetValue(Constants.FileExplorerCreatedByMetadataKey, out string? userId);
 
-                entry.Name = HttpUtility.UrlDecode(originalName) ?? GetName(item.Blob.Name);
+                // Blob names could change after upload, display the original name in the UI
+                // if not found, fallback to the current blob name
+                entry.Name = HttpUtility.UrlDecode(originalName) ?? BlobHelper.GetName(item.Blob.Name);
                 entry.Path = item.Blob.Name;
                 entry.Type = Path.GetExtension(entry.Name)?.ToLower();
                 entry.IsFile = true;
                 entry.Size = item.Blob.Properties.ContentLength ?? 0;
-                entry.DateModified = item.Blob.Properties.LastModified?.LocalDateTime ?? default;
+                entry.CreatedDate = item.Blob.Properties.CreatedOn?.UtcDateTime ?? default;
+                entry.DateModified = item.Blob.Properties.LastModified?.UtcDateTime ?? default;
                 entry.CreatedBy = userId;
 
                 entry.Url = azureStorageService.GetSignedURL(item.Blob.Name, BlobSasPermissions.Read, container.Name);
 
-                if (ImageExtensions.Contains(entry.Type))
+                if (entry.Type != null && ImageExtensions.Contains(entry.Type))
                 {
                     item.Blob.Metadata.TryGetValue(Constants.FileExplorerSizesMetadataKey, out string? thumbnailSizes);
                     var prefix = $"{container.AccountName}_{container.Name}";
                     var size = thumbnailSizes?.Split("|").First() ?? "250x250";
-                    // GetFileNameWithoutExtension also removes the dir
-                    var dir = Path.GetDirectoryName(item.Blob.Name)?.TrimEnd(Delimiter);
-                    var name = Path.GetFileNameWithoutExtension(item.Blob.Name);
-                    var blobName = $"{dir}/{name}_{size}.png";
-                    var thumbnailBlob = prefix.AddUrlPath(blobName);
+                    var (dir, name) = BlobHelper.PathAndName(item.Blob.Name);
+                    var blobName = $"{dir}{name}_{size}.png";
+                    var thumbnailBlob = BlobHelper.Combine(prefix, blobName);
                     entry.ThumbnailUrl = azureStorageService.GetSignedURL(thumbnailBlob, BlobSasPermissions.Read, storageOption.ThumbnailContainerName, storageOption.AccountName);
                 }
             }
             else if (item.IsPrefix)
             {
-                entry.Name = GetName(item.Prefix);
+                entry.Name = BlobHelper.GetName(item.Prefix);
                 entry.Type = "Directory";
                 entry.Path = item.Prefix;
             }
 
             files.Add(entry);
+        }
+
+        if (this.fileExplorerAccessControl is not null)
+        {
+            files = await this.fileExplorerAccessControl.FilterWithReadAccessAsync(container, files);
         }
 
         res.Items = files;
@@ -243,112 +255,67 @@ public class BlobStorageFileProvider : IFileProvider
         return res;
     }
 
-    public string Combine(params string[] parts)
-    {
-        if (parts.Length < 2)
-        {
-            return parts[0];
-        }
-
-        var path = string.Join(Delimiter, parts.Select(x => x.Trim(Delimiter)));
-
-        if (parts[0].StartsWith(Delimiter))
-            path = Delimiter + path;
-
-        if (parts.Last().EndsWith(Delimiter))
-            path = path + Delimiter;
-
-        return path;
-    }
-
-    public string EnsureEnding(string path)
-    {
-        return path.EndsWith(Delimiter) ? path : path + Delimiter;
-    }
-
-    public string EnsureStart(string path)
-    {
-        return path.StartsWith(Delimiter) ? path : Delimiter + path;
-    }
-
     public async Task<FileExplorerResponseDTO> Create(FileExplorerCreateDTO data)
     {
-        // instead of listing (GetBlobsByHierarchy), keep retrying to upload the file
-        // or await foreach instead of .ToList
-        // consider validating folder names to work with common operators 
+        // consider validating folder names to work with common OSs 
 
-        var path = data.Path;
+        var path = this.fileExplorerAccessControl == null
+            ? data.Path
+            : this.fileExplorerAccessControl.FilterWithWriteAccess([data.Path]).FirstOrDefault();
+
         var res = new FileExplorerResponseDTO(path);
-        (string dir, string? folderName) = PathDetail(path);
+        var (dir, name) = BlobHelper.PathAndName(path);
 
-        if (path == null || !IsPathDirectory(path) || string.IsNullOrWhiteSpace(folderName))
+        if (path == null || !BlobHelper.IsPathDirectory(path) || string.IsNullOrWhiteSpace(name))
         {
             res.Message = new Message("Invalid path");
             return res;
         }
 
-        var pages = container.GetBlobsByHierarchy(BlobTraits.Metadata, delimiter: Delimiter.ToString(), prefix: dir).AsPages().ToList();
-        var dirs = pages.Select(x => x.Values.Where(x => x.IsPrefix)).SelectMany(x => x);
-        // remove whitespaces
-        folderName = folderName.Trim();
+        name = name.Trim();
+        var newPath = dir + name + Delimiter;
 
-        var newPath = dir + folderName + "/";
-        var count = 1;
-
-        while (dirs.Any(x => x.Prefix == newPath))
+        for (var i = 1; i <= MAX_CREATE_RETRY_ATTEMPTS; i++)
         {
-            newPath = $"{dir}{folderName} ({count++})/";
+            try
+            {
+                BlobClient blob = container.GetBlobClient(newPath + Constants.FileExplorerHiddenFilename);
+                await blob.UploadAsync(BinaryData.FromBytes(Array.Empty<byte>()), overwrite: false);
+
+                CreateLogItem(newPath, FileExplorerAction.Create);
+                
+                res.Success = true;
+                res.Path = newPath;
+                return res;
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+            {
+                // Status 409 == Blob already exists
+                newPath = $"{dir}{name} ({i}){Delimiter}";
+                continue;
+            }
         }
 
-        try
-        {
-            var stream = new MemoryStream();
-            BlobClient blob = container.GetBlobClient(newPath + Constants.FileExplorerHiddenFilename);
-            await blob.UploadAsync(stream, overwrite: false);
-            stream.Dispose();
-
-            await CreateLogItem(newPath, FileExplorerAction.Create);
-            res.Success = true;
-        }
-        catch (Azure.RequestFailedException e)
-        {
-            if (e.Status == 409)
-                res.Message = new Message("Folder already exists");
-            else
-                res.Message = new Message($"Could not create folder");
-        }
-
-        res.Path = newPath;
+        res.Message = new Message("Could not create folder");
         return res;
-    }
-
-    private (string dir, string? name) PathDetail(string? path)
-    {
-        var parts = path?.Split(Delimiter, StringSplitOptions.RemoveEmptyEntries).ToList();
-        if (parts == null || parts.Count == 0)
-            return ("", null);
-
-        var name = parts.Last();
-        parts.RemoveAt(parts.Count - 1);
-        var dir = string.Join('/', parts);
-        dir = string.IsNullOrWhiteSpace(dir) ? "" : dir + "/";
-
-        return (dir, name);
     }
 
     public async Task<FileExplorerResponseDTO> Delete(FileExplorerDeleteDTO data)
     {
         var res = new FileExplorerResponseDTO();
+        var paths = this.fileExplorerAccessControl == null
+            ? data.Paths.ToList()
+            : this.fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
 
-        await QueryDeletedItems(data.Paths, static (path, list) =>
+        await QueryDeletedItems(paths.ToArray(), static (path, list) =>
         {
             if (!list.Contains(path))
                 list.Add(path);
             return ValueTask.CompletedTask;
         });
 
-        foreach (var path in data.Paths)
-            await CreateLogItem(path, FileExplorerAction.Delete);
+        foreach (var path in paths)
+            CreateLogItem(path, FileExplorerAction.Delete);
         res.Success = true;
         return res;
     }
@@ -357,14 +324,18 @@ public class BlobStorageFileProvider : IFileProvider
     {
         var res = new FileExplorerResponseDTO();
 
-        await QueryDeletedItems(data.Paths, static (path, list) =>
+        var paths = this.fileExplorerAccessControl == null
+            ? data.Paths.ToList()
+            : this.fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
+
+        await QueryDeletedItems(paths.ToArray(), static (path, list) =>
         {
             list.RemoveAll(x => x == path);
             return ValueTask.CompletedTask;
         });
 
-        foreach (var path in data.Paths)
-            await CreateLogItem(path, FileExplorerAction.Restore);
+        foreach (var path in paths)
+            CreateLogItem(path, FileExplorerAction.Restore);
         res.Success = true;
         return res;
     }
@@ -373,15 +344,15 @@ public class BlobStorageFileProvider : IFileProvider
     {
         var groupList = paths.Select(static path =>
         {
-            var paths = path.Split('/', StringSplitOptions.RemoveEmptyEntries).ToList();
+            var paths = path.Split(BlobHelper.Delimiter, StringSplitOptions.RemoveEmptyEntries).ToList();
             var name = paths.Last();
             paths.RemoveAt(paths.Count - 1);
 
             return new
             {
                 name,
-                IsFile = !path.EndsWith('/'),
-                path = string.Join('/', paths),
+                IsFile = !path.EndsWith(BlobHelper.Delimiter),
+                path = string.Join(BlobHelper.Delimiter, paths),
             };
         }).GroupBy(x => x.path);
 
@@ -392,9 +363,9 @@ public class BlobStorageFileProvider : IFileProvider
 
             foreach (var item in group)
             {
-                var fullPath = EnsureStart(Combine(path, item.name));
+                var fullPath = BlobHelper.AppendDelimiter(BlobHelper.Combine(path, item.name), prepend: true);
                 if (!item.IsFile)
-                    fullPath = EnsureEnding(fullPath);
+                    fullPath = BlobHelper.AppendDelimiter(fullPath);
 
                 await callback.Invoke(fullPath, deletedList);
             }
@@ -408,7 +379,105 @@ public class BlobStorageFileProvider : IFileProvider
         }
     }
 
-    private async Task CreateLogItem(string path, FileExplorerAction action)
+    public async Task<FileExplorerResponseDTO> Detail(FileExplorerDetailDTO data)
+    {
+        var path = data.Path ?? "";
+        var isDir = path.EndsWith(Delimiter) || path == string.Empty;
+        var res = new FileExplorerResponseDTO(path)
+        {
+            Items = [],
+        };
+
+        if (isDir)
+        {
+            var pages = container.GetBlobsAsync(prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
+
+            Page<BlobItem>? workingPage = null;
+
+            await foreach (var page in pages)
+            {
+                workingPage = page;
+                break;
+            }
+
+            if (workingPage == null || workingPage.Values.Count == 0)
+            {
+                res.Success = true;
+                return res;
+            }
+
+            res.ContinuationToken = workingPage.ContinuationToken;
+
+            try
+            {
+                if (!data.IncludeDeleted)
+                    await EnsurePathNotDeletedAsync(path);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                res.Success = true;
+                return res;
+            }
+
+            IEnumerable<string> deletedItems = [];
+
+            if (data.IncludeDeleted)
+            {
+                var semaphore = new SemaphoreSlim(10);
+                var deletedTask = workingPage.Values
+                    .Where(blob => blob.Name.EndsWith(Delimiter + Constants.FileExplorerHiddenFilename))
+                    .Select(async blob =>
+                    {
+                        await semaphore.WaitAsync();
+                        try { return await GetDeletedItems(blob.Name); }
+                        finally { semaphore.Release(); }
+                    });
+                var deletedResult = await Task.WhenAll(deletedTask);
+                deletedItems = deletedResult.SelectMany(x => x.list);
+            }
+
+            var blobs = data.IncludeDeleted
+                ? workingPage.Values
+                : workingPage.Values.Where(blob => !deletedItems.Contains(Delimiter + blob.Name));
+
+            int count = blobs.Count();
+            var totalSize = blobs.Sum(blob => blob.Properties.ContentLength ?? 0);
+
+            res.Items.Add(new FileExplorerItemDTO
+            {
+                Name = BlobHelper.GetName(path),
+                Type = "Directory",
+                Path = path,
+                Size = totalSize,
+                Additional = count,
+            });
+        }
+
+        res.Success = true;
+        return res;
+    }
+
+    public Task<FileExplorerResponseDTO> Copy(string[] names, string targetPath)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<FileExplorerResponseDTO> Move(string[] names, string targetPath)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<FileExplorerResponseDTO> Rename(string path, string newName)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<FileExplorerResponseDTO> Search(string searchString, string path)
+    {
+        throw new NotImplementedException();
+    }
+
+    private void CreateLogItem(string path, FileExplorerAction action)
     {
         if (cosmosContainer == null)
         {
@@ -432,86 +501,11 @@ public class BlobStorageFileProvider : IFileProvider
         };
 
         var partKey = new PartitionKeyBuilder().Add(log.Path).Add(log.Action).Build();
-        await cosmosContainer.CreateItemAsync(log, partKey);
-    }
-
-    public Task<FileExplorerResponseDTO> Copy(string[] names, string targetPath)
-    {
-        throw new NotImplementedException();
-    }
-
-    public async Task<FileExplorerResponseDTO> Details(FileExplorerDetailDTO data)
-    {
-        var path = data.Path ?? "";
-        var isDir = path.EndsWith("/") || path == string.Empty;
-        var res = new FileExplorerResponseDTO(path);
-
-        if (isDir)
+        try
         {
-            var pages = container.GetBlobs(prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
-            var workingPage = pages.First();
-            res.ContinuationToken = workingPage.ContinuationToken;
-
-            if (workingPage.Values.Count == 0)
-            {
-                res.Success = true;
-                return res;
-            }
-
-            try
-            {
-                if (!data.IncludeDeleted)
-                    await EnsurePathNotDeletedAsync(path);
-            }
-            catch
-            {
-                res.Success = true;
-                return res;
-            }
-
-
-            IEnumerable<string> deletedItems = [];
-
-            if (data.IncludeDeleted)
-            {
-                deletedItems = workingPage.Values
-                    .Where(blob => blob.Name.EndsWith("/" + Constants.FileExplorerHiddenFilename))
-                    .Select(blob => GetDeletedItems(blob.Name).Result.list)
-                    .SelectMany(x => x);
-            }
-
-            var blobs = data.IncludeDeleted
-                ? workingPage.Values
-                : workingPage.Values.Where(blob => !deletedItems.Contains(blob.Name));
-
-            int count = blobs.Count();
-            var totalSize = blobs.Aggregate(0L, (total, blob) => total += blob.Properties.ContentLength ?? 0);
-
-            res.Additional = new
-            {
-                Count = count,
-                TotalSize = totalSize,
-            };
-            return res;
+            _ = cosmosContainer.CreateItemAsync(log, partKey);
         }
-        else
-        {
-            return res;
-        }
+        catch (Exception) { }
     }
 
-    public Task<FileExplorerResponseDTO> Move(string[] names, string targetPath)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<FileExplorerResponseDTO> Rename(string path, string newName)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<FileExplorerResponseDTO> Search(string searchString, string path)
-    {
-        throw new NotImplementedException();
-    }
 }
