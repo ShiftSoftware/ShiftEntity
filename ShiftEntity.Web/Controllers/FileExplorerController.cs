@@ -7,6 +7,8 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Explorer;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.TypeAuth.AspNetCore;
+using ShiftSoftware.TypeAuth.Core;
 using System;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -18,24 +20,20 @@ namespace ShiftSoftware.ShiftEntity.Web.Controllers;
 [ApiController]
 public class FileExplorerController : ControllerBase
 {
-    private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
     private HttpClient httpClient;
     private string? AzureFunctionsEndpoint;
     private IFileProvider fileProvider;
 
-    public FileExplorerController(AzureStorageService azureStorageService, HttpClient httpClient, IFileProvider? fileProvider, IOptions<FileExplorerConfiguration> config, IdentityClaimProvider identityClaimProvider, CosmosClient? cosmosClient = null, IFileExplorerAccessControl? fileExplorerAccessControl = null)
+    public FileExplorerController(HttpClient httpClient, IFileProvider? fileProvider, IOptions<FileExplorerConfiguration> config)
     {
-        //TODO
-        // implement access control
-
         this.httpClient = httpClient;
         this.AzureFunctionsEndpoint = config.Value?.FunctionsEndpoint;
-        this.fileExplorerAccessControl = fileExplorerAccessControl;
         this.fileProvider = fileProvider;
     }
 
     [HttpGet]
     [Route("list")]
+    [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Read)]
     public async Task<FileExplorerResponseDTO> List([FromQuery] FileExplorerReadDTO data)
     {
         return await fileProvider.GetFiles(data);
@@ -43,6 +41,7 @@ public class FileExplorerController : ControllerBase
 
     [HttpPost]
     [Route("create")]
+    [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Write)]
     public async Task<FileExplorerResponseDTO> Create([FromBody] FileExplorerCreateDTO data)
     {
         return await fileProvider.Create(data);
@@ -50,6 +49,7 @@ public class FileExplorerController : ControllerBase
 
     [HttpPost]
     [Route("delete")]
+    [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Delete)]
     public async Task<FileExplorerResponseDTO> Delete([FromBody] FileExplorerDeleteDTO data)
     {
         return await fileProvider.Delete(data);
@@ -57,6 +57,7 @@ public class FileExplorerController : ControllerBase
 
     [HttpPost]
     [Route("restore")]
+    [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Delete)]
     public async Task<FileExplorerResponseDTO> Restore([FromBody] FileExplorerRestoreDTO data)
     {
         return await fileProvider.Restore(data);
@@ -64,6 +65,7 @@ public class FileExplorerController : ControllerBase
 
     [HttpGet]
     [Route("detail")]
+    [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Read)]
     public async Task<FileExplorerResponseDTO> Detail([FromQuery] FileExplorerDetailDTO data)
     {
         return await fileProvider.Detail(data);

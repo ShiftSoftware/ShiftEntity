@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Enums;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.TypeAuth.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -30,12 +31,14 @@ public class BlobStorageFileProvider : IFileProvider
     private readonly Container? cosmosContainer;
     private readonly FileExplorerConfiguration config;
     private readonly IFileExplorerAccessControl? fileExplorerAccessControl;
+    private readonly ITypeAuthService? typeAuthService;
 
     const int MAX_CREATE_RETRY_ATTEMPTS = 25;
 
     public BlobStorageFileProvider(AzureStorageService azureStorageService,
         IOptions<FileExplorerConfiguration> config,
         IdentityClaimProvider identityClaimProvider,
+        ITypeAuthService typeAuthService,
         IFileExplorerAccessControl? fileExplorerAccessControl = null,
         CosmosClient? cosmosClient = null)
     {
@@ -45,6 +48,7 @@ public class BlobStorageFileProvider : IFileProvider
         this.identityClaimProvider = identityClaimProvider;
         this.fileExplorerAccessControl = fileExplorerAccessControl;
         this.config = config.Value;
+        this.typeAuthService = typeAuthService;
 
         if (storageOption?.SupportsFileExplorer != true)
         {
@@ -169,10 +173,11 @@ public class BlobStorageFileProvider : IFileProvider
         }
 
         res.ContinuationToken = workingPage.ContinuationToken;
+        var canViewDeletedFiles = typeAuthService?.CanAccess(AzureStorageActionTree.ViewDeletedFiles) != false;
 
         try
         {
-            if (!data.IncludeDeleted)
+            if (!canViewDeletedFiles || !data.IncludeDeleted)
                 await EnsurePathNotDeletedAsync(path);
         }
         catch (DirectoryNotFoundException)
@@ -194,7 +199,7 @@ public class BlobStorageFileProvider : IFileProvider
             // otherwise mark it as deleted so the UI can show it as such
             if (deletedItems.list.Contains(Delimiter + itemPath))
             {
-                if (!data.IncludeDeleted)
+                if (!canViewDeletedFiles || !data.IncludeDeleted)
                     continue;
 
                 entry.IsDeleted = true;
@@ -407,10 +412,11 @@ public class BlobStorageFileProvider : IFileProvider
             }
 
             res.ContinuationToken = workingPage.ContinuationToken;
+            var canViewDeletedFiles = typeAuthService?.CanAccess(AzureStorageActionTree.ViewDeletedFiles) != false;
 
             try
             {
-                if (!data.IncludeDeleted)
+                if (!canViewDeletedFiles || !data.IncludeDeleted)
                     await EnsurePathNotDeletedAsync(path);
             }
             catch (DirectoryNotFoundException)
@@ -421,22 +427,19 @@ public class BlobStorageFileProvider : IFileProvider
 
             IEnumerable<string> deletedItems = [];
 
-            if (data.IncludeDeleted)
-            {
-                var semaphore = new SemaphoreSlim(10);
-                var deletedTask = workingPage.Values
-                    .Where(blob => blob.Name.EndsWith(Delimiter + Constants.FileExplorerHiddenFilename))
-                    .Select(async blob =>
-                    {
-                        await semaphore.WaitAsync();
-                        try { return await GetDeletedItems(blob.Name); }
-                        finally { semaphore.Release(); }
-                    });
-                var deletedResult = await Task.WhenAll(deletedTask);
-                deletedItems = deletedResult.SelectMany(x => x.list);
-            }
+            var semaphore = new SemaphoreSlim(10);
+            var deletedTask = workingPage.Values
+                .Where(blob => blob.Name.EndsWith(Delimiter + Constants.FileExplorerHiddenFilename))
+                .Select(async blob =>
+                {
+                    await semaphore.WaitAsync();
+                    try { return await GetDeletedItems(blob.Name); }
+                    finally { semaphore.Release(); }
+                });
+            var deletedResult = await Task.WhenAll(deletedTask);
+            deletedItems = deletedResult.SelectMany(x => x.list);
 
-            var blobs = data.IncludeDeleted
+            var blobs = canViewDeletedFiles && data.IncludeDeleted
                 ? workingPage.Values
                 : workingPage.Values.Where(blob => !deletedItems.Contains(Delimiter + blob.Name));
 
