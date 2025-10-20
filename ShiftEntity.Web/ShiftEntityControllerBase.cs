@@ -348,18 +348,18 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         }
     }
 
-    internal async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids, Expression<Func<Entity, bool>>? defaultFilterExpression)
+    internal async Task<List<Entity>> GetSelectedEntitiesAsyncBase(SelectStateDTO<ListDTO> ids, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var data = (await repository.GetIQueryable()).Where(x => !x.IsDeleted);
-
-        if (defaultFilterExpression is not null)
-            data = data.Where(defaultFilterExpression);
+        var data = (await repository.GetIQueryable(
+            disableDefaultDataLevelAccess: disableDefaultDataLevelAccess,
+            disableGlobalFilters: disableGlobalFilters
+        )).Where(x => !x.IsDeleted);
 
         if (ids.All)
         {
-            var listDTOData = await repository.OdataList();
+            var listDTOData = await repository.OdataList(data);
 
             if (!string.IsNullOrWhiteSpace(ids.Filter))
             {
@@ -415,5 +415,68 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             return await data.ToListAsync();
 
         return new List<Entity>();
+    }
+
+    internal async Task<List<ListDTO>> GetSelectedListDTOsAsyncBase(SelectStateDTO<ListDTO> ids, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var q = (await repository.GetIQueryable(
+            disableDefaultDataLevelAccess: disableDefaultDataLevelAccess,
+            disableGlobalFilters: disableGlobalFilters
+        )).Where(x => !x.IsDeleted);
+
+        var odataList = await repository.OdataList(q);
+
+        if (ids.All)
+        {
+            if (!string.IsNullOrWhiteSpace(ids.Filter))
+            {
+                var builder = new ODataConventionModelBuilder();
+
+                builder.EntitySet<ListDTO>("ListDTOs");
+
+                var model = builder.GetEdmModel();
+
+                this.Request.QueryString = this.Request.QueryString.Add("$filter", ids.Filter);
+
+                ODataQueryContext oDataQueryContext = new ODataQueryContext(model, typeof(ListDTO), new());
+
+                ODataQueryOptions<ListDTO> modifiedODataQueryOptions = new(oDataQueryContext, this.Request);
+
+                var modifiedFilterNode = modifiedODataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+
+                FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, modifiedODataQueryOptions.Filter.FilterClause.RangeVariable);
+
+                ODataUriParser parser = new ODataUriParser(model, new Uri("", UriKind.Relative));
+
+                var odataUri = parser.ParseUri();
+
+                odataUri.Filter = modifiedFilterClause;
+
+                var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
+
+                var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
+
+                this.Request.QueryString = newQueryString;
+
+                ODataQueryOptions<ListDTO> modifiedODataQueryOptions2 = new(oDataQueryContext, this.Request);
+
+                odataList = modifiedODataQueryOptions2.Filter.ApplyTo(odataList, new ODataQuerySettings()) as IQueryable<ListDTO>;
+            }
+        }
+        else
+        {
+            var selectedIds = ids.Items.Select(x => x.ID!);
+
+            return await odataList
+                .Where(x => selectedIds.Contains(x.ID))
+                .ToListAsync();
+        }
+
+        if (odataList != null)
+            return await odataList.ToListAsync();
+
+        return new List<ListDTO>();
     }
 }
