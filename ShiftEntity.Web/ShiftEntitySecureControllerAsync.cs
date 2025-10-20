@@ -549,10 +549,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                 return new List<Entity> { };
         }
 
-        //if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
-            return await base.GetSelectedEntitiesAsyncBase(ids, disableDefaultDataLevelAccess, disableGlobalFilters);
-        
-        //return await base.GetSelectedEntitiesAsync(ids, GetDefaultFilterExpression(typeAuthService));
+        return await base.GetSelectedEntitiesAsyncBase(ids, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 
     [NonAction]
@@ -566,9 +563,34 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
                 return new List<ListDTO> { };
         }
 
-        //if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
         return await base.GetSelectedListDTOsAsyncBase(ids, disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
 
-        //return await base.GetSelectedEntitiesAsync(ids, GetDefaultFilterExpression(typeAuthService));
+    [NonAction]
+    public async Task<List<Entity>> GetSelectedEntitiesAsync(ODataQueryOptions<ListDTO> oDataQueryOptions, bool skipAuthentication = false, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    {
+        if (!skipAuthentication)
+        {
+            var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+            if (action is not null && !typeAuthService.CanRead(action))
+                return new List<Entity> { };
+        }
+
+        return await base.GetSelectedEntitiesAsyncBase(oDataQueryOptions, disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
+
+    [NonAction]
+    public async Task<List<ListDTO>> GetSelectedListDTOsAsync(ODataQueryOptions<ListDTO> oDataQueryOptions, bool skipAuthentication = false, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    {
+        if (!skipAuthentication)
+        {
+            var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+            if (action is not null && !typeAuthService.CanRead(action))
+                return new List<ListDTO> { };
+        }
+
+        return await base.GetSelectedListDTOsAsyncBase(oDataQueryOptions, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 }
