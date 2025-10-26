@@ -34,7 +34,6 @@
 
 
 	<ItemGroup>
-		<Folder Include="Interface\" />
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftBlazor" />
