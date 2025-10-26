@@ -22,6 +22,10 @@ using System.Web;
 
 namespace ShiftSoftware.ShiftEntity.Web.Explorer;
 
+// TODO?
+// - use Hashset for deleted items to speed up lookups
+// - GetFiles could potentially return empty list if the first page only contains deleted files
+
 public class BlobStorageFileProvider : IFileProvider
 {
     private readonly AzureStorageService azureStorageService;
@@ -121,18 +125,6 @@ public class BlobStorageFileProvider : IFileProvider
         }
     }
 
-    private async Task<bool> PathExists(string path)
-    {
-        var exists = false;
-        await foreach (var blobItem in container.GetBlobsAsync(prefix: path))
-        {
-            exists = true;
-            break;
-        }
-
-        return exists;
-    }
-
     public async Task<FileExplorerResponseDTO> GetFiles(FileExplorerReadDTO data)
     {
         var path = data.Path ?? "";
@@ -143,13 +135,6 @@ public class BlobStorageFileProvider : IFileProvider
             res.Message = new Message("Invalid path");
             return res;
         }
-
-        // - (?)have an option for recursivly getting file sizes of the folder
-        // - check access permissions for the user
-        // - use Hashset for deleted items to speed up lookups
-        // - more consistancy when it comes to the path delimiter
-        // - GetFiles could potentially return empty list if the first page only contains deleted files
-
 
         // get the full list of items in the first Page
         // if list is empty, then we stop as the dir is empty
@@ -262,13 +247,18 @@ public class BlobStorageFileProvider : IFileProvider
 
     public async Task<FileExplorerResponseDTO> Create(FileExplorerCreateDTO data)
     {
-        // consider validating folder names to work with common OSs 
+        // consider validating folder names to work with common OSs
+        var res = new FileExplorerResponseDTO(data.Path);
+        if (data.Path == null)
+        {
+            res.Message = new Message("Invalid path");
+            return res;
+        }
 
         var path = this.fileExplorerAccessControl == null
             ? data.Path
             : this.fileExplorerAccessControl.FilterWithWriteAccess([data.Path]).FirstOrDefault();
 
-        var res = new FileExplorerResponseDTO(path);
         var (dir, name) = BlobHelper.PathAndName(path);
 
         if (path == null || !BlobHelper.IsPathDirectory(path) || string.IsNullOrWhiteSpace(name))
