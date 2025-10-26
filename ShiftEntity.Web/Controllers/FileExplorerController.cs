@@ -5,6 +5,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Explorer;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.TypeAuth.AspNetCore;

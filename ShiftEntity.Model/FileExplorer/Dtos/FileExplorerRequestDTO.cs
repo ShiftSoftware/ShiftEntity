@@ -1,5 +1,4 @@
-﻿
-namespace ShiftSoftware.ShiftEntity.Model.Dtos;
+﻿namespace ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 
 
 public class FileExplorerRequestDTOBase

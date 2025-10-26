@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System.Text.Json.Serialization;
 
-namespace ShiftSoftware.ShiftEntity.Model.Dtos;
+namespace ShiftSoftware.ShiftEntity.Model.FileExplorer;
 
 public class LogItem
 {

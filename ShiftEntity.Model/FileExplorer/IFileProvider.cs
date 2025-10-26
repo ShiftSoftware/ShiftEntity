@@ -1,4 +1,4 @@
-﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+﻿using ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 using System;
 using System.Collections.Generic;
 using System.Linq;

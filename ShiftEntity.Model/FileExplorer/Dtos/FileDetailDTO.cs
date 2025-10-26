@@ -1,6 +1,6 @@
-﻿namespace ShiftSoftware.ShiftEntity.Model.Dtos;
+﻿namespace ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 
-public class FileDetails
+public class FileDetailDTO
 {
     public string? Name { get; set; }
     public string? Location { get; set; }

@@ -7,9 +7,10 @@ using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Enums;
-using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
+using ShiftSoftware.ShiftEntity.Model.FileExplorer;
+using ShiftSoftware.ShiftEntity.Web.Explorer;
 using ShiftSoftware.TypeAuth.Core;
 using System;
 using System.Collections.Generic;
@@ -20,7 +21,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
-namespace ShiftSoftware.ShiftEntity.Web.Explorer;
+namespace ShiftSoftware.ShiftEntity.Web.Services;
 
 // TODO?
 // - use Hashset for deleted items to speed up lookups
@@ -47,8 +48,8 @@ public class BlobStorageFileProvider : IFileProvider
         CosmosClient? cosmosClient = null)
     {
         this.azureStorageService = azureStorageService;
-        this.container = azureStorageService.GetBlobContainerClient();
-        this.storageOption = azureStorageService.GetStorageOption();
+        container = azureStorageService.GetBlobContainerClient();
+        storageOption = azureStorageService.GetStorageOption();
         this.identityClaimProvider = identityClaimProvider;
         this.fileExplorerAccessControl = fileExplorerAccessControl;
         this.config = config.Value;
@@ -63,7 +64,7 @@ public class BlobStorageFileProvider : IFileProvider
         {
             if (cosmosClient != null && config.Value != null && !string.IsNullOrWhiteSpace(config.Value.DatabaseId) && !string.IsNullOrWhiteSpace(config.Value.ContainerId))
             {
-                this.cosmosContainer = cosmosClient.GetContainer(config.Value.DatabaseId, config.Value.ContainerId);
+                cosmosContainer = cosmosClient.GetContainer(config.Value.DatabaseId, config.Value.ContainerId);
             }
         }
         catch { }
@@ -100,7 +101,7 @@ public class BlobStorageFileProvider : IFileProvider
                     .ToList() ?? [];
             }
         }
-        catch (Azure.RequestFailedException e) when (e.Status == 404) { }
+        catch (RequestFailedException e) when (e.Status == 404) { }
 
         return (list, blob);
     }
@@ -234,9 +235,9 @@ public class BlobStorageFileProvider : IFileProvider
             files.Add(entry);
         }
 
-        if (this.fileExplorerAccessControl is not null)
+        if (fileExplorerAccessControl is not null)
         {
-            files = await this.fileExplorerAccessControl.FilterWithReadAccessAsync(container, files);
+            files = await fileExplorerAccessControl.FilterWithReadAccessAsync(container, files);
         }
 
         res.Items = files;
@@ -255,9 +256,9 @@ public class BlobStorageFileProvider : IFileProvider
             return res;
         }
 
-        var path = this.fileExplorerAccessControl == null
+        var path = fileExplorerAccessControl == null
             ? data.Path
-            : this.fileExplorerAccessControl.FilterWithWriteAccess([data.Path]).FirstOrDefault();
+            : fileExplorerAccessControl.FilterWithWriteAccess([data.Path]).FirstOrDefault();
 
         var (dir, name) = BlobHelper.PathAndName(path);
 
@@ -283,7 +284,7 @@ public class BlobStorageFileProvider : IFileProvider
                 res.Path = newPath;
                 return res;
             }
-            catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+            catch (RequestFailedException ex) when (ex.Status == 409)
             {
                 // Status 409 == Blob already exists
                 newPath = $"{dir}{name} ({i}){Delimiter}";
@@ -298,9 +299,9 @@ public class BlobStorageFileProvider : IFileProvider
     public async Task<FileExplorerResponseDTO> Delete(FileExplorerDeleteDTO data)
     {
         var res = new FileExplorerResponseDTO();
-        var paths = this.fileExplorerAccessControl == null
+        var paths = fileExplorerAccessControl == null
             ? data.Paths.ToList()
-            : this.fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
+            : fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
 
         await QueryDeletedItems(paths.ToArray(), static (path, list) =>
         {
@@ -319,9 +320,9 @@ public class BlobStorageFileProvider : IFileProvider
     {
         var res = new FileExplorerResponseDTO();
 
-        var paths = this.fileExplorerAccessControl == null
+        var paths = fileExplorerAccessControl == null
             ? data.Paths.ToList()
-            : this.fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
+            : fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
 
         await QueryDeletedItems(paths.ToArray(), static (path, list) =>
         {
