@@ -40,7 +40,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ODataDTO<ListDTO>> GetOdataListingNonAction(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
+    internal async Task<ODataDTO<ListDTO>> GetOdataListingNonAction(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -57,7 +57,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ODataDTO<RevisionDTO>> GetRevisionListingNonAction(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
+    internal async Task<ODataDTO<RevisionDTO>> GetRevisionListingNonAction(string key, ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -67,7 +67,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingleNonAction(string key, DateTimeOffset? asOf)
+    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> GetSingleNonAction(string key, DateTimeOffset? asOf)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -115,7 +115,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto, string getActionName)
+    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PostItemNonAction(ViewAndUpsertDTO dto, string getActionName)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -202,7 +202,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItemNonAction(string key, ViewAndUpsertDTO dto)
+    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> PutItemNonAction(string key, ViewAndUpsertDTO dto)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -282,9 +282,9 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             Additional = repository.AdditionalResponseData,
         }), item);
     }
-    
+
     [NonAction]
-    public async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key, bool isHardDelete)
+    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key, bool isHardDelete)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -330,7 +330,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    public async Task<ActionResult> PrintNonAction(string key)
+    internal async Task<ActionResult> PrintNonAction(string key)
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
@@ -348,72 +348,181 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         }
     }
 
-    internal async Task<List<Entity>> GetSelectedEntitiesAsync(SelectStateDTO<ListDTO> ids, Expression<Func<Entity, bool>>? defaultFilterExpression)
+    private async Task<IQueryable<Entity>> GetQueryForSelectionAsync(
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
+    )
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var data = (await repository.GetIQueryable()).Where(x => !x.IsDeleted);
+        var query = await repository.GetIQueryable(
+            disableDefaultDataLevelAccess: disableDefaultDataLevelAccess,
+            disableGlobalFilters: disableGlobalFilters
+        );
 
-        if (defaultFilterExpression is not null)
-            data = data.Where(defaultFilterExpression);
+        query = query.Where(x => !x.IsDeleted);
 
-        if (ids.All)
+        return query;
+    }
+
+    private async Task<List<ListDTO>> GetListDTOForSelectionAsync(List<string?>? selectedIds, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
+    {
+        var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+        var query = await this.GetQueryForSelectionAsync(disableDefaultDataLevelAccess, disableGlobalFilters);
+
+        var odataList = await repository.OdataList(query);
+
+        if (odataList is not null)
         {
-            var listDTOData = await repository.OdataList();
+            if (selectedIds is not null)
+                odataList = odataList.Where(x => selectedIds.Contains(x.ID));
 
-            if (!string.IsNullOrWhiteSpace(ids.Filter))
-            {
-                //ShiftEntityODataOptions options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
+            return await odataList.ToListAsync();
+        }
 
-                var builder = new ODataConventionModelBuilder();
+        return new List<ListDTO>();
+    }
 
-                builder.EntitySet<ListDTO>("ListDTOs");
+    private ODataQueryOptions<ListDTO> GetODataQueryOptionsFromSelectStateDTO(SelectStateDTO<ListDTO> ids)
+    {
+        var builder = new ODataConventionModelBuilder();
 
-                var model = builder.GetEdmModel();
+        builder.EntitySet<ListDTO>("ListDTOs");
 
-                this.Request.QueryString = this.Request.QueryString.Add("$filter", ids.Filter);
+        var model = builder.GetEdmModel();
 
-                ODataQueryContext oDataQueryContext = new ODataQueryContext(model, typeof(ListDTO), new());
+        this.Request.QueryString = this.Request.QueryString.Add("$filter", ids.Filter!);
 
-                ODataQueryOptions<ListDTO> modifiedODataQueryOptions = new(oDataQueryContext, this.Request);
+        ODataQueryContext oDataQueryContext = new ODataQueryContext(model, typeof(ListDTO), new());
 
-                var modifiedFilterNode = modifiedODataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+        ODataQueryOptions<ListDTO> modifiedODataQueryOptions = new(oDataQueryContext, this.Request);
 
-                FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, modifiedODataQueryOptions.Filter.FilterClause.RangeVariable);
+        return modifiedODataQueryOptions;
+    }
 
-                ODataUriParser parser = new ODataUriParser(model, new Uri("", UriKind.Relative));
+    internal async Task<List<ListDTO>> GetSelectedListDTOsAsyncBase(
+        ODataQueryOptions<ListDTO> oDataQueryOptions,
+        bool disableDefaultDataLevelAccess = false,
+        bool disableGlobalFilters = false
+    )
+    {
+        if (oDataQueryOptions?.Filter is not null)
+        {
+            var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor());
 
-                var odataUri = parser.ParseUri();
+            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, oDataQueryOptions.Filter.FilterClause.RangeVariable);
 
-                odataUri.Filter = modifiedFilterClause;
+            ODataUriParser parser = new ODataUriParser(oDataQueryOptions.Context.Model, new Uri("", UriKind.Relative));
 
-                var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
+            var odataUri = parser.ParseUri();
 
-                var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
+            odataUri.Filter = modifiedFilterClause;
 
-                this.Request.QueryString = newQueryString;
+            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
 
-                ODataQueryOptions<ListDTO> modifiedODataQueryOptions2 = new(oDataQueryContext, this.Request);
+            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
 
-                listDTOData = modifiedODataQueryOptions2.Filter.ApplyTo(listDTOData, new ODataQuerySettings()) as IQueryable<ListDTO>;
+            this.Request.QueryString = newQueryString;
 
-                var filteredIds = await listDTOData!.Select(x => x.ID!.ToLong()).ToListAsync();
+            ODataQueryOptions<ListDTO> modifiedODataQueryOptions2 = new(oDataQueryOptions.Context, this.Request);
 
-                data = data.Where(x => filteredIds.Contains(x.ID));
-            }
+            var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
+
+            var query = await this.GetQueryForSelectionAsync(disableDefaultDataLevelAccess, disableGlobalFilters);
+
+            var odataList = await repository.OdataList(query);
+
+            odataList = modifiedODataQueryOptions2.Filter.ApplyTo(odataList, new ODataQuerySettings()) as IQueryable<ListDTO>;
+
+            return await odataList!.ToListAsync();
+        }
+
+        return await this.GetListDTOForSelectionAsync(null, disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
+
+    internal async Task<List<ListDTO>> GetSelectedListDTOsAsyncBase(
+        SelectStateDTO<ListDTO> ids,
+        bool disableDefaultDataLevelAccess = false,
+        bool disableGlobalFilters = false
+    )
+    {
+        if (ids.All && !string.IsNullOrWhiteSpace(ids.Filter))
+        {
+            return await this.GetSelectedListDTOsAsyncBase(
+                this.GetODataQueryOptionsFromSelectStateDTO(ids),
+                disableDefaultDataLevelAccess,
+                disableGlobalFilters
+            );
+        }
+
+        return await this.GetListDTOForSelectionAsync(
+            ids.All ? null : ids?.Items?.Select(x => x.ID)?.ToList(),
+            disableDefaultDataLevelAccess,
+            disableGlobalFilters
+        );
+    }
+
+    internal async Task<List<Entity>> GetSelectedEntitiesAsyncBase(
+        ODataQueryOptions<ListDTO> oDataQueryOptions,
+        bool disableDefaultDataLevelAccess = false,
+        bool disableGlobalFilters = false
+    )
+    {
+        var query = await this.GetQueryForSelectionAsync(
+            disableDefaultDataLevelAccess,
+            disableGlobalFilters
+        );
+
+        if (oDataQueryOptions.Filter is not null)
+        {
+            var listDTOData = await this.GetSelectedListDTOsAsyncBase(
+                oDataQueryOptions,
+                disableDefaultDataLevelAccess,
+                disableGlobalFilters
+            );
+
+            var filteredIds = listDTOData!.Select(x => x.ID!.ToLong()).ToList();
+
+            query = query.Where(x => filteredIds.Contains(x.ID));
+        }
+
+        if (query != null)
+            return await query.ToListAsync();
+
+        return new List<Entity>();
+    }
+
+    internal async Task<List<Entity>> GetSelectedEntitiesAsyncBase(
+        SelectStateDTO<ListDTO> ids,
+        bool disableDefaultDataLevelAccess = false,
+        bool disableGlobalFilters = false
+    )
+    {
+        if (ids.All && !string.IsNullOrWhiteSpace(ids.Filter))
+        {
+            return await this.GetSelectedEntitiesAsyncBase(
+                this.GetODataQueryOptionsFromSelectStateDTO(ids),
+                disableDefaultDataLevelAccess,
+                disableGlobalFilters
+            );
         }
         else
         {
-            var longIds = ids.Items.Select(x => x.ID!.ToLong());
+            var query = await this.GetQueryForSelectionAsync(
+                disableDefaultDataLevelAccess,
+                disableGlobalFilters
+            );
 
-            return await data
-                .Where(x => longIds.Contains(x.ID))
+            if (!ids.All)
+            {
+                var longIds = ids.Items.Select(x => x.ID!.ToLong());
+
+                query = query.Where(x => longIds.Contains(x.ID));
+            }
+
+            return await query
                 .ToListAsync();
         }
-
-        if (data != null)
-            return await data.ToListAsync();
-
-        return new List<Entity>();
     }
 }
