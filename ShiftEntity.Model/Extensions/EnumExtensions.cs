@@ -12,12 +12,12 @@ public static class EnumExtensions
 
     private static string GetDescriptionString<T>(T val)
     {
-        var displayAttributes = (DisplayAttribute[])val!
+        var displayAttributes = (DisplayAttribute[]?)val?
            .GetType()
-           .GetField(val.ToString()!)!
+           .GetField(val.ToString())?
            .GetCustomAttributes(typeof(DisplayAttribute), false);
 
-        if (displayAttributes.Length > 0)
+        if (displayAttributes?.Length > 0)
         {
             try
             {
@@ -29,11 +29,11 @@ public static class EnumExtensions
             }
         }
 
-        var attributes = (DescriptionAttribute[])val!
+        var attributes = (DescriptionAttribute[]?)val?
            .GetType()
-           .GetField(val.ToString()!)!
+           .GetField(val.ToString())?
            .GetCustomAttributes(typeof(DescriptionAttribute), false);
 
-        return attributes.Length > 0 ? attributes[0].Description : val.ToString();
+        return attributes?.Length > 0 ? attributes[0].Description : val?.ToString() ?? "";
     }
 }
