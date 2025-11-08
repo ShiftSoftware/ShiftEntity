@@ -163,29 +163,17 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         {
             await repository.SaveChangesAsync();
         }
-        catch (DbUpdateException dbUpdateException)
+        catch (DuplicateIdempotencyKeyException)
         {
-            var sqlException = dbUpdateException.InnerException as SqlException;
+            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
 
-            //2601: This error occurs when you attempt to put duplicate index values into a column or columns that have a unique index.
-            //Message looks something like: {"Cannot insert duplicate key row in object 'dbo.Countries' with unique index 'IX_Countries_IdempotencyKey'. The duplicate key value is (88320ba8-345f-410a-9aa4-3e8a7112c040)."}
+            var existingDto = await repository.ViewAsync(existingItem!);
 
-            if (sqlException != null && sqlException.Errors.OfType<SqlError>().Any(se => se.Number == 2601 && se.Message.Contains(idempotencyKey!.ToString()!)))
+            return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(existingDto)
             {
-                var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
-
-                var existingDto = await repository.ViewAsync(existingItem!);
-
-                return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(existingDto)
-                {
-                    Message = repository.ResponseMessage,
-                    Additional = repository.AdditionalResponseData
-                }), existingItem);
-            }
-            else
-            {
-                throw;
-            }
+                Message = repository.ResponseMessage,
+                Additional = repository.AdditionalResponseData
+            }), existingItem);
         }
         catch (ShiftEntityException ex)
         {

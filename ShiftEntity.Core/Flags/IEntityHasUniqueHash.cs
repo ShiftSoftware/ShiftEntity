@@ -8,5 +8,6 @@ public interface IEntityHasUniqueHash<Entity> : IEntityHasUniqueHash
 
 public interface IEntityHasUniqueHash
 {
+    public const string UniqueHash = nameof(UniqueHash);
     public string? CalculateUniqueHash();
 }

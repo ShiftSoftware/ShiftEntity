@@ -31,18 +31,16 @@ public static class ModelBuilderExtensions
 
             if (clrType.GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<>))))
             {
-                var uniqueHashColumnName = "UniqueHash";
-
                 modelBuilder
                     .Entity(clrType)
-                    .Property<byte[]>(uniqueHashColumnName)
+                    .Property<byte[]>(IEntityHasUniqueHash.UniqueHash)
                     .HasColumnType("BINARY(32)");
 
                 modelBuilder
                     .Entity(clrType)
-                    .HasIndex(uniqueHashColumnName)
+                    .HasIndex(IEntityHasUniqueHash.UniqueHash)
                     .IsUnique()
-                    .HasFilter($"{uniqueHashColumnName} IS NOT NULL and IsDeleted = 0");
+                    .HasFilter($"{IEntityHasUniqueHash.UniqueHash} IS NOT NULL and IsDeleted = 0");
             }
         }
 

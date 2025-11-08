@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
@@ -44,7 +45,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
-            this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
+        this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
     public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable = null)
@@ -90,10 +91,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         var now = DateTime.UtcNow;
 
         //if (entity.LastSaveDate == default)
-            entity.LastSaveDate = now;
+        entity.LastSaveDate = now;
 
         //if (entity.CreateDate == default)
-            entity.CreateDate = now;
+        entity.CreateDate = now;
 
         entity.IsDeleted = false;
 
@@ -102,7 +103,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
             entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
-        
+
         if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
             entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
 
@@ -308,7 +309,31 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException dbUpdateException)
+        {
+            if (dbUpdateException.InnerException is SqlException sqlException)
+            {
+                //2601: This error occurs when you attempt to put duplicate index values into a column or columns that have a unique index.
+                //Message looks something like: {"Cannot insert duplicate key row in object 'dbo.Countries' with unique index 'IX_Countries_IdempotencyKey'. The duplicate key value is (88320ba8-345f-410a-9aa4-3e8a7112c040)."}
+
+                var error = sqlException
+                    .Errors
+                    .OfType<SqlError>()
+                    .FirstOrDefault(se => se.Number == 2601);
+
+                //Check if the error is from duplicate idempotency key
+                if ((error?.Message?.Contains(nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey))) ?? false)
+                    throw new DuplicateIdempotencyKeyException(error.Message);
+
+                //Check if the error is from duplicate unique hash
+                if ((error?.Message?.Contains(nameof(IEntityHasUniqueHash.UniqueHash))) ?? false)
+                    throw new ShiftEntityException(new Message("Conflict", "An item with the same Unique Fields already exists."), (int)HttpStatusCode.Conflict);
+            }
+        }
     }
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null, bool disableDefaultDataLevelAccess = false)
