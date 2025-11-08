@@ -30,7 +30,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class BlobStorageFileProvider : IFileProvider
 {
     private readonly AzureStorageService azureStorageService;
-    private readonly BlobContainerClient container;
+    private BlobContainerClient container;
     private readonly AzureStorageOption storageOption;
     private readonly IdentityClaimProvider identityClaimProvider;
     private readonly Container? cosmosContainer;
@@ -47,8 +47,7 @@ public class BlobStorageFileProvider : IFileProvider
         IFileExplorerAccessControl? fileExplorerAccessControl = null,
         CosmosClient? cosmosClient = null)
     {
-        this.azureStorageService = azureStorageService;
-        container = azureStorageService.GetBlobContainerClient();
+        this.azureStorageService = azureStorageService;        
         storageOption = azureStorageService.GetStorageOption();
         this.identityClaimProvider = identityClaimProvider;
         this.fileExplorerAccessControl = fileExplorerAccessControl;
@@ -502,4 +501,8 @@ public class BlobStorageFileProvider : IFileProvider
         catch (Exception) { }
     }
 
+    public void PrepareBlobContainer(string? accountName, string? containerName)
+    {
+        this.container = azureStorageService.GetBlobContainerClient(accountName, containerName);
+    }
 }
