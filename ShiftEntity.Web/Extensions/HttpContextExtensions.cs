@@ -86,6 +86,11 @@ public static class HttpContextExtensions
         return GetDecodedClaimValues<ShiftSoftware.ShiftIdentity.Core.DTOs.User.UserDTO>(httpContext, ClaimTypes.NameIdentifier)?.FirstOrDefault();
     }
 
+    public static string? GetUserEmail(this HttpContext httpContext)
+    {
+        return GetClaimValues(httpContext, ClaimTypes.Email)?.FirstOrDefault();
+    }
+
     public static string? GetHashedUserID(this HttpContext httpContext)
     {
         return GetClaimValues(httpContext, ClaimTypes.NameIdentifier)?.FirstOrDefault();
