@@ -1,19 +1,15 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.OData;
 using Microsoft.OData.Edm;
-using Microsoft.OData;
+using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
 using System.Linq;
-using Microsoft.OData.UriParser;
-using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.OData.Query;
-using Microsoft.AspNetCore.Http.Extensions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
 public static class OdataHashIdConverter
 {
-    internal static JsonHashIdConverterAttribute GetJsonConverterAttribute(string fullTypeName, string propertyName)
+    internal static JsonHashIdConverterAttribute? GetJsonConverterAttribute(string fullTypeName, string propertyName)
     {
         var declaringType = AppDomain.CurrentDomain.GetAssemblies()
                    .Reverse()
@@ -126,18 +122,21 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
     }
 }
 
-public class HashIdQueryNodeVisitor :
-    QueryNodeVisitor<SingleValueNode>
+public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
 {
     public JsonHashIdConverterAttribute? JsonConverterAttribute { get; set; }
 
     public override SingleValueNode Visit(ConstantNode nodeIn)
     {
         if (JsonConverterAttribute is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
+        {
+            this.JsonConverterAttribute = null;
+
             return new ConstantNode(
                 $"'{converterAttribute!.Hashids!.Decode(nodeIn.Value.ToString()!)}'",
                 $"'{converterAttribute.Hashids.Decode(nodeIn.Value.ToString()!)}'"
             );
+        }
 
         return nodeIn;
     }
@@ -181,6 +180,8 @@ public class HashIdQueryNodeVisitor :
     {
         if (nodeIn is SingleValuePropertyAccessNode propertyAccess && HasJsonConverterAttributeForProperty(propertyAccess) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             this.JsonConverterAttribute = converterAttribute;
+        else
+            this.JsonConverterAttribute = null;
 
         return nodeIn;
     }
@@ -201,7 +202,7 @@ public class HashIdQueryNodeVisitor :
         return nodeIn;
     }
 
-    private JsonHashIdConverterAttribute HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
+    private JsonHashIdConverterAttribute? HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
     {
         var fullTypeName = propertyAccessNode.Property.DeclaringType.FullTypeName();
         var propertyName = propertyAccessNode.Property.Name;
@@ -211,7 +212,7 @@ public class HashIdQueryNodeVisitor :
 
     public override SingleValueNode Visit(UnaryOperatorNode nodeIn)
     {
-        return new UnaryOperatorNode (nodeIn.OperatorKind, nodeIn.Operand.Accept(this));
+        return new UnaryOperatorNode(nodeIn.OperatorKind, nodeIn.Operand.Accept(this));
     }
 
     public override SingleValueNode Visit(NonResourceRangeVariableReferenceNode nodeIn)

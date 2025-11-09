@@ -51,8 +51,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = await repository.OdataList(queryable);
 
-        data = data.ApplyDefaultSoftDeleteFilter(oDataQueryOptions);
-
         return await data.ToOdataDTO(oDataQueryOptions, Request);
     }
 
