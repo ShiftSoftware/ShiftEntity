@@ -9,6 +9,7 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.TypeAuth.Core;
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
@@ -24,8 +25,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public readonly DB db;
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
+    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; }
     private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
     private readonly IdentityClaimProvider identityClaimProvider;
+    private readonly ICurrentUserProvider? currentUserProvider;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
@@ -33,16 +36,17 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.dbSet = db.Set<EntityType>();
         this.mapper = db.GetService<IMapper>();
         this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
+        this.currentUserProvider = db.GetService<ICurrentUserProvider>();
         this.ShiftRepositoryOptions = new();
 
         if (shiftRepositoryBuilder is not null)
         {
-            this.ShiftRepositoryOptions.CurrentUserProvider = db.GetService<ICurrentUserProvider>();
-
-            this.ShiftRepositoryOptions.TypeAuthService = db.GetService<ITypeAuthService>();
-
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
+
+        this.ShiftRepositoryOptions.CurrentUserProvider = this.currentUserProvider;
+
+        this.ShiftRepositoryOptions.TypeAuthService = db.GetService<ITypeAuthService>();
 
         //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
@@ -65,10 +69,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         var upserted = await UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
 
-        upserted.LastSaveDate = DateTime.Now;
-
-        upserted.LastSavedByUserID = userId;
-
         if (!disableDefaultDataLevelAccess)
         {
             var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
@@ -87,19 +87,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public virtual async ValueTask<EntityType> CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey, bool disableDefaultDataLevelAccess = false)
     {
         var entity = await UpsertAsync(new EntityType(), dto, ActionTypes.Insert, userId, idempotencyKey);
-
-        var now = DateTime.UtcNow;
-
-        //if (entity.LastSaveDate == default)
-        entity.LastSaveDate = now;
-
-        //if (entity.CreateDate == default)
-        entity.CreateDate = now;
-
-        entity.IsDeleted = false;
-
-        entity.CreatedByUserID = userId;
-        entity.LastSavedByUserID = userId;
 
         if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
             entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
@@ -145,8 +132,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public Message? ResponseMessage { get; set; }
     public Dictionary<string, object>? AdditionalResponseData { get; set; }
-
-    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; }
 
     //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
     //{
@@ -284,27 +269,47 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual async Task SaveChangesAsync()
     {
+        var now = DateTime.UtcNow;
+
+        long? userId = this.currentUserProvider?.GetUser()?.GetUserID();
+
         foreach (var entry in db.ChangeTracker.Entries())
         {
-            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            var added = entry.State == EntityState.Added;
+            var modified = entry.State == EntityState.Modified;
+
+            if (!added && !modified)
+                continue;
+
+            if (entry.Entity is ShiftEntity<EntityType> entity)
             {
-                if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
+                if (added)
                 {
-                    var entryWithUniqueHash = entry.Entity as IEntityHasUniqueHash<EntityType>;
+                    entity.CreateDate = now;
+                    entity.IsDeleted = false;
+                    entity.CreatedByUserID = userId;
+                }
 
-                    if (entryWithUniqueHash is null)
-                        continue;
+                entity.LastSaveDate = now;
+                entity.LastSavedByUserID = userId;
+            }
 
-                    var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
+            if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
+            {
+                var entryWithUniqueHash = entry.Entity as IEntityHasUniqueHash<EntityType>;
 
-                    if (uniqueHash != null)
-                    {
-                        using var sha256 = System.Security.Cryptography.SHA256.Create();
+                if (entryWithUniqueHash is null)
+                    continue;
 
-                        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
+                var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
 
-                        entry.Property("UniqueHash").CurrentValue = hashBytes;
-                    }
+                if (uniqueHash != null)
+                {
+                    using var sha256 = System.Security.Cryptography.SHA256.Create();
+
+                    var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
+
+                    entry.Property("UniqueHash").CurrentValue = hashBytes;
                 }
             }
         }
@@ -351,10 +356,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         entity.IsDeleted = true;
-
-        entity.LastSaveDate = DateTime.UtcNow;
-
-        entity.LastSavedByUserID = userId;
 
         return new ValueTask<EntityType>(entity);
     }
