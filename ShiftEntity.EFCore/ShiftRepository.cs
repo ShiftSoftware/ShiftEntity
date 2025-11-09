@@ -41,12 +41,12 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (shiftRepositoryBuilder is not null)
         {
+            this.ShiftRepositoryOptions.SetCurrentUserProvider(this.currentUserProvider);
+
+            this.ShiftRepositoryOptions.SetTypeAuthService(db.GetService<ITypeAuthService>());
+
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
-
-        this.ShiftRepositoryOptions.CurrentUserProvider = this.currentUserProvider;
-
-        this.ShiftRepositoryOptions.TypeAuthService = db.GetService<ITypeAuthService>();
 
         //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
@@ -159,11 +159,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         List<string>? includes = null;
 
-        if (ShiftRepositoryOptions is not null)
+        if (this.ShiftRepositoryOptions is not null)
         {
             includes = new();
 
-            foreach (var i in ShiftRepositoryOptions.IncludeOperations)
+            foreach (var i in this.ShiftRepositoryOptions.IncludeOperations)
             {
                 IncludeOperations<EntityType> operation = new();
                 i.Invoke(operation);

@@ -11,8 +11,18 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     internal List<Action<IncludeOperations<EntityType>>> IncludeOperations { get; set; } = new();
     public Dictionary<Guid, IGlobalRepositoryFilter> GlobalRepositoryFilters { get; set; } = new();
     public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();
-    internal ICurrentUserProvider? CurrentUserProvider { get; set; }
-    internal ITypeAuthService? TypeAuthService { get; set; }
+    private ICurrentUserProvider? CurrentUserProvider { get; set; }
+    private ITypeAuthService? TypeAuthService { get; set; }
+
+    public void SetCurrentUserProvider(ICurrentUserProvider currentUserProvider)
+    {
+        this.CurrentUserProvider = currentUserProvider;
+    }
+
+    public void SetTypeAuthService(ITypeAuthService typeAuthService)
+    {
+        this.TypeAuthService = typeAuthService;
+    }
 
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
     {
