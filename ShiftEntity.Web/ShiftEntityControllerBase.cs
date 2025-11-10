@@ -146,7 +146,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             if (typeof(Entity).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasIdempotencyKey<Entity>))))
                 idempotencyKey = Guid.Parse(HttpContext.Request.Headers["Idempotency-Key"].ToString());
 
-            newItem = await repository.CreateAsync(dto, this.GetUserID(), idempotencyKey);
+            //newItem = await repository.CreateAsync(dto, this.GetUserID(), idempotencyKey);
+            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, this.GetUserID(), idempotencyKey);
         }
         catch (ShiftEntityException ex)
         {
@@ -244,7 +245,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                 );
             }
 
-            await repository.UpdateAsync(item, dto, this.GetUserID());
+            //await repository.UpdateAsync(item, dto, this.GetUserID());
+            await repository.UpsertAsync(item, dto, ActionTypes.Update, this.GetUserID());
         }
         catch (ShiftEntityException ex)
         {

@@ -15,6 +15,9 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> wher
     [NotMapped]
     public bool ReloadAfterSave { get; set; }
 
+    [NotMapped]
+    public bool AuditFieldsAreSet { get; set; }
+
     public ShiftEntity()
     {
 

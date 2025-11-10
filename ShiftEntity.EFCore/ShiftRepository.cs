@@ -65,66 +65,106 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
     }
 
-    public virtual async ValueTask<EntityType> UpdateAsync(EntityType entity, ViewAndUpsertDTO dto, long? userId, bool disableDefaultDataLevelAccess = false)
-    {
-        var upserted = await UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
+    //public virtual async ValueTask<EntityType> UpdateAsync(EntityType entity, ViewAndUpsertDTO dto, long? userId, bool disableDefaultDataLevelAccess = false)
+    //{
+    //    var upserted = await UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
 
-        if (!disableDefaultDataLevelAccess)
-        {
-            var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-                entity,
-                TypeAuth.Core.Access.Write
-            );
+    //    if (!disableDefaultDataLevelAccess)
+    //    {
+    //        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+    //            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+    //            entity,
+    //            TypeAuth.Core.Access.Write
+    //        );
 
-            if (!canWrite)
-                throw new ShiftEntityException(new Message("Forbidden", "Can Not Update Item"), (int)HttpStatusCode.Forbidden);
-        }
+    //        if (!canWrite)
+    //            throw new ShiftEntityException(new Message("Forbidden", "Can Not Update Item"), (int)HttpStatusCode.Forbidden);
+    //    }
 
-        return upserted;
-    }
+    //    return upserted;
+    //}
 
-    public virtual async ValueTask<EntityType> CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey, bool disableDefaultDataLevelAccess = false)
-    {
-        var entity = await UpsertAsync(new EntityType(), dto, ActionTypes.Insert, userId, idempotencyKey);
+    //public virtual async ValueTask<EntityType> CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey, bool disableDefaultDataLevelAccess = false)
+    //{
+    //    var entity = await UpsertAsync(new EntityType(), dto, ActionTypes.Insert, userId, idempotencyKey);
 
-        if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
-            entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
+    //    if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
+    //        entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
 
-        if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
-            entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
+    //    if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
+    //        entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
 
-        if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
-            entityWithCity.CityID = identityClaimProvider.GetCityID();
+    //    if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
+    //        entityWithCity.CityID = identityClaimProvider.GetCityID();
 
-        if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
-            entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
+    //    if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
+    //        entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
 
-        if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
-            entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+    //    if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
+    //        entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
 
-        if (!disableDefaultDataLevelAccess)
-        {
-            var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-                entity,
-                TypeAuth.Core.Access.Write
-            );
+    //    if (!disableDefaultDataLevelAccess)
+    //    {
+    //        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+    //            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+    //            entity,
+    //            TypeAuth.Core.Access.Write
+    //        );
 
-            if (!canWrite)
-                throw new ShiftEntityException(new Message("Forbidden", "Can Not Create Item"), (int)HttpStatusCode.Forbidden);
-        }
+    //        if (!canWrite)
+    //            throw new ShiftEntityException(new Message("Forbidden", "Can Not Create Item"), (int)HttpStatusCode.Forbidden);
+    //    }
 
-        return entity;
-    }
+    //    return entity;
+    //}
 
-    public virtual ValueTask<EntityType> UpsertAsync(EntityType entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null, Guid? idempotencyKey = null)
+    public virtual ValueTask<EntityType> UpsertAsync(
+        EntityType entity, ViewAndUpsertDTO dto,
+        ActionTypes actionType,
+        long? userId = null,
+        Guid? idempotencyKey = null
+    )
     {
         entity = mapper.Map(dto, entity);
+
+        var now = DateTime.UtcNow;
+
+        this.SetAuditFields(entity, actionType == ActionTypes.Insert, userId, now);
 
         if (idempotencyKey != null)
         {
             (entity as IEntityHasIdempotencyKey<EntityType>)!.IdempotencyKey = idempotencyKey;
+        }
+
+        if (actionType == ActionTypes.Insert)
+        {
+            if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
+                entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
+
+            if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
+                entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
+
+            if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
+                entityWithCity.CityID = identityClaimProvider.GetCityID();
+
+            if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
+                entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
+
+            if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
+                entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+        }
+
+        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+            entity,
+            TypeAuth.Core.Access.Write
+        );
+
+        if (!canWrite)
+        {
+            var messageText = actionType == ActionTypes.Insert ? "Can Not Create Item" : "Can Not Update Item";
+
+            throw new ShiftEntityException(new Message("Forbidden", messageText), (int)HttpStatusCode.Forbidden);
         }
 
         return new ValueTask<EntityType>(entity);
@@ -267,6 +307,25 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
+    private void SetAuditFields<T>(ShiftEntity<T> entity, bool isAdded, long? userId, DateTime now)
+        where T : ShiftEntity<EntityType>, new()
+    {
+        if (entity.AuditFieldsAreSet)
+            return;
+
+        if (isAdded)
+        {
+            entity.CreateDate = now;
+            entity.IsDeleted = false;
+            entity.CreatedByUserID = userId;
+        }
+
+        entity.LastSaveDate = now;
+        entity.LastSavedByUserID = userId;
+
+        entity.AuditFieldsAreSet = true;
+    }
+
     public virtual async Task SaveChangesAsync()
     {
         var now = DateTime.UtcNow;
@@ -283,15 +342,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             if (entry.Entity is ShiftEntity<EntityType> entity)
             {
-                if (added)
-                {
-                    entity.CreateDate = now;
-                    entity.IsDeleted = false;
-                    entity.CreatedByUserID = userId;
-                }
-
-                entity.LastSaveDate = now;
-                entity.LastSavedByUserID = userId;
+                this.SetAuditFields(entity, added, userId, now);
             }
 
             if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
@@ -356,6 +407,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         entity.IsDeleted = true;
+
+        this.SetAuditFields(entity, false, userId, DateTime.UtcNow);
 
         return new ValueTask<EntityType>(entity);
     }
