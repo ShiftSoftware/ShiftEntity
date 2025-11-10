@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
@@ -16,7 +15,6 @@ using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -395,7 +393,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         if (oDataQueryOptions?.Filter is not null)
         {
-            var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor());
+            var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression.Accept(new HashIdQueryNodeVisitor<ListDTO>());
 
             FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, oDataQueryOptions.Filter.FilterClause.RangeVariable);
 

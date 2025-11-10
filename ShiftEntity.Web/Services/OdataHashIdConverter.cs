@@ -3,99 +3,17 @@ using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
-public static class OdataHashIdConverter
+public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantNode>
 {
-    internal static JsonHashIdConverterAttribute? GetJsonConverterAttribute(string fullTypeName, string propertyName)
-    {
-        var declaringType = AppDomain.CurrentDomain.GetAssemblies()
-                   .Reverse()
-                   .Select(assembly => assembly.GetType(fullTypeName))
-                   .FirstOrDefault(t => t != null)
-               // Safely delete the following part
-               // if you do not want fall back to first partial result
-               ??
-               AppDomain.CurrentDomain.GetAssemblies()
-                   .Reverse()
-                   .SelectMany(assembly => assembly.GetTypes())
-                   .FirstOrDefault(t => t.Name.Contains(fullTypeName));
+    public HashIdQueryNodeVisitor<T> HashIdQueryNodeVisitor { get; private set; }
 
-        if (declaringType == null)
-            return null;
-
-        var theProperty = declaringType.GetProperty(propertyName);
-
-        if (theProperty == null)
-            return null;
-
-        var jsonHashIdConverterAttribute = (JsonHashIdConverterAttribute)theProperty.GetCustomAttributes(typeof(JsonHashIdConverterAttribute), true).FirstOrDefault()!;
-
-        return jsonHashIdConverterAttribute!;
-    }
-}
-
-//public class EnableQueryWithHashIdConverter : EnableQueryAttribute
-//{
-//    public override void OnActionExecuting(ActionExecutingContext actionExecutingContext)
-//    {
-//        ShiftEntityODataOptions options = actionExecutingContext.HttpContext.RequestServices.GetRequiredService<ShiftEntityODataOptions>();
-
-//        if (!HashId.Enabled)
-//        {
-//            base.OnActionExecuting(actionExecutingContext);
-
-//            return;
-//        }
-
-//        var queryStringValue = actionExecutingContext.HttpContext.Request.QueryString.Value;
-
-//        var originalUrl = actionExecutingContext.HttpContext.Request.GetEncodedUrl();
-
-//        if (!string.IsNullOrWhiteSpace(queryStringValue) && queryStringValue.Contains("$filter") && !actionExecutingContext.HttpContext.Request.Path.Value!.EndsWith("revisions"))
-//        {
-//            //This will remove the base url all the way to the odata prefix
-//            //http://localhost:5028/odata/ToDo?$filter=ID eq 'MQaLZ' will be turned to
-//            ///ToDo?$filter=ID eq 'MQaLZ'
-//            var relativePath = originalUrl.Substring(originalUrl.IndexOf(options.RoutePrefix) + options.RoutePrefix.Length);
-
-//            ODataUriParser parser = new ODataUriParser(options.EdmModel, new Uri(relativePath, UriKind.Relative));
-
-//            var odataUri = parser.ParseUri();
-
-//            FilterClause filterClause = parser.ParseFilter();
-
-//            if (filterClause == null)
-//            {
-//                base.OnActionExecuting(actionExecutingContext);
-
-//                return;
-//            }
-
-//            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor());
-
-//            FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
-
-//            odataUri.Filter = modifiedFilterClause;
-
-//            var updatedUrl = odataUri.BuildUri(parser.UrlKeyDelimiter).ToString();
-
-//            var newQueryString = new Microsoft.AspNetCore.Http.QueryString(updatedUrl.Substring(updatedUrl.IndexOf("?")));
-
-//            actionExecutingContext.HttpContext.Request.QueryString = newQueryString;
-//        }
-
-//        base.OnActionExecuting(actionExecutingContext);
-//    }
-//}
-
-public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode>
-{
-    public HashIdQueryNodeVisitor HashIdQueryNodeVisitor { get; private set; }
-
-    public CollectionConstantVisitor(HashIdQueryNodeVisitor hashIdQueryNodeVisitor)
+    public CollectionConstantVisitor(HashIdQueryNodeVisitor<T> hashIdQueryNodeVisitor)
     {
         this.HashIdQueryNodeVisitor = hashIdQueryNodeVisitor;
     }
@@ -122,9 +40,38 @@ public class CollectionConstantVisitor : QueryNodeVisitor<CollectionConstantNode
     }
 }
 
-public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
+public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
 {
+    private readonly Type _rootType;
+
+    private JsonHashIdConverterAttribute? _preservedConverterAttribute;
+
+    // Cache for property converter attributes to avoid repeated reflection
+    internal static readonly ConcurrentDictionary<(Type, string), JsonHashIdConverterAttribute?> _converterCache = new();
+
+    /// <summary>
+    /// Gets the JsonHashIdConverterAttribute for a property on the specified type.
+    /// </summary>
+    internal static JsonHashIdConverterAttribute? GetJsonConverterAttribute(Type type, string propertyName)
+    {
+        return _converterCache.GetOrAdd((type, propertyName), key =>
+        {
+            var (declType, propName) = key;
+            var property = declType.GetProperty(propName);
+
+            if (property == null)
+                return null;
+
+            return property.GetCustomAttribute<JsonHashIdConverterAttribute>(inherit: true);
+        });
+    }
+
     public JsonHashIdConverterAttribute? JsonConverterAttribute { get; set; }
+
+    public HashIdQueryNodeVisitor()
+    {
+        _rootType = typeof(T);
+    }
 
     public override SingleValueNode Visit(ConstantNode nodeIn)
     {
@@ -143,7 +90,11 @@ public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
 
     public override SingleValueNode Visit(BinaryOperatorNode nodeIn)
     {
-        var visitor = new HashIdQueryNodeVisitor();
+        var visitor = new HashIdQueryNodeVisitor<T>()
+        {
+            JsonConverterAttribute = this.JsonConverterAttribute,
+            _preservedConverterAttribute = this._preservedConverterAttribute
+        };
 
         var visitedLeft = nodeIn.Left is BinaryOperatorNode leftBinary ?
             Visit(leftBinary) :
@@ -172,14 +123,27 @@ public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
     {
         return new InNode(
             nodeIn.Left.Accept(this),
-            nodeIn.Right.Accept(new CollectionConstantVisitor(this))
+            nodeIn.Right.Accept(new CollectionConstantVisitor<T>(this))
         );
     }
 
     public override SingleValueNode Visit(SingleValuePropertyAccessNode nodeIn)
     {
-        if (nodeIn is SingleValuePropertyAccessNode propertyAccess && HasJsonConverterAttributeForProperty(propertyAccess) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
-            this.JsonConverterAttribute = converterAttribute;
+        // Check if we have a preserved converter from an Any node
+        // If so, don't overwrite it unless we find a more specific one on this property
+        var converterForThisProperty = GetJsonConverterAttribute(_rootType, nodeIn.Property.Name);
+
+        if (converterForThisProperty != null)
+        {
+            // This property has its own converter, use it
+            this.JsonConverterAttribute = converterForThisProperty;
+        }
+        else if (_preservedConverterAttribute != null)
+        {
+            // This property doesn't have a converter, but we have one from the parent collection
+            // Keep using the preserved one (don't reset to null)
+            this.JsonConverterAttribute = _preservedConverterAttribute;
+        }
         else
             this.JsonConverterAttribute = null;
 
@@ -197,17 +161,52 @@ public class HashIdQueryNodeVisitor : QueryNodeVisitor<SingleValueNode>
 
     public override SingleValueNode Visit(AnyNode nodeIn)
     {
-        nodeIn.Body = nodeIn.Body.Accept(this);
+        // When we encounter an Any node, infer the converter from the Source collection property.
+        // Example: DepartmentIds/any(item: item eq 'bPp2M')
+        // Example: Departments/any(item: item/Value eq 'bPp2M')
+        // The Source is the collection property which carries the DepartmentHashIdConverter attribute.
+        JsonHashIdConverterAttribute? converter = null;
+
+        try
+        {
+            QueryNode? source = nodeIn.Source;
+
+            // Unwrap ConvertNode wrappers
+            while (source is ConvertNode convertSource)
+                source = convertSource.Source;
+
+            // Try to extract property info from various node types
+            if (source != null)
+            {
+                // Use reflection to get Property from CollectionPropertyAccessNode or similar
+                var propertyInfo = source.GetType().GetProperty("Property");
+                if (propertyInfo != null)
+                {
+                    var property = propertyInfo.GetValue(source) as IEdmProperty;
+                    if (property != null)
+                    {
+                        var propertyName = property.Name;
+                        // Use the root type T to look up the property
+                        converter = GetJsonConverterAttribute(_rootType, propertyName);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors and fall back to default behavior
+        }
+
+        // Create a child visitor with the converter set for the body traversal
+        // Use _preservedConverterAttribute so nested property access (like item/Value) doesn't lose the converter
+        var childVisitor = new HashIdQueryNodeVisitor<T>()
+        {
+            JsonConverterAttribute = converter,
+            _preservedConverterAttribute = converter
+        };
+        nodeIn.Body = nodeIn.Body.Accept(childVisitor);
 
         return nodeIn;
-    }
-
-    private JsonHashIdConverterAttribute? HasJsonConverterAttributeForProperty(SingleValuePropertyAccessNode propertyAccessNode)
-    {
-        var fullTypeName = propertyAccessNode.Property.DeclaringType.FullTypeName();
-        var propertyName = propertyAccessNode.Property.Name;
-
-        return OdataHashIdConverter.GetJsonConverterAttribute(fullTypeName, propertyName);
     }
 
     public override SingleValueNode Visit(UnaryOperatorNode nodeIn)
