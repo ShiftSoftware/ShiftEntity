@@ -30,8 +30,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public readonly IdentityClaimProvider identityClaimProvider;
     public readonly ICurrentUserProvider? currentUserProvider;
     private readonly bool _hasUniqueHashInterface;
-    private readonly bool _beforeSaveIsOverridden;
-    private readonly bool _afterSaveIsOverridden;
+
+    private readonly IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
+    private readonly IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
@@ -45,13 +46,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         _hasUniqueHashInterface = typeof(EntityType).GetInterfaces()
             .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
 
-        // Check if BeforeSave is overridden in derived class
-        var beforeSaveMethod = GetType().GetMethod(nameof(BeforeSave));
-        _beforeSaveIsOverridden = beforeSaveMethod?.DeclaringType != typeof(ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO>);
+        if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
+            this.beforeSaveHook = beforeSaveHook;
 
-        // Check if AfterSave is overridden in derived class
-        var afterSaveMethod = GetType().GetMethod(nameof(AfterSave));
-        _afterSaveIsOverridden = afterSaveMethod?.DeclaringType != typeof(ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO>);
+        if (this is IShiftEntityHasAfterSaveHook<EntityType> afterSaveHook)
+            this.afterSaveHook = afterSaveHook;
 
         if (shiftRepositoryBuilder is not null)
         {
@@ -62,7 +61,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
-        //if (this.ShiftRepositoryOptions.UseDefaultDataLevelAccess)
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
@@ -79,59 +77,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
     }
 
-    //public virtual async ValueTask<EntityType> UpdateAsync(EntityType entity, ViewAndUpsertDTO dto, long? userId, bool disableDefaultDataLevelAccess = false)
-    //{
-    //    var upserted = await UpsertAsync(entity, dto, ActionTypes.Update, userId, null);
-
-    //    if (!disableDefaultDataLevelAccess)
-    //    {
-    //        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-    //            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-    //            entity,
-    //            TypeAuth.Core.Access.Write
-    //        );
-
-    //        if (!canWrite)
-    //            throw new ShiftEntityException(new Message("Forbidden", "Can Not Update Item"), (int)HttpStatusCode.Forbidden);
-    //    }
-
-    //    return upserted;
-    //}
-
-    //public virtual async ValueTask<EntityType> CreateAsync(ViewAndUpsertDTO dto, long? userId, Guid? idempotencyKey, bool disableDefaultDataLevelAccess = false)
-    //{
-    //    var entity = await UpsertAsync(new EntityType(), dto, ActionTypes.Insert, userId, idempotencyKey);
-
-    //    if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
-    //        entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
-
-    //    if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
-    //        entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
-
-    //    if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
-    //        entityWithCity.CityID = identityClaimProvider.GetCityID();
-
-    //    if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
-    //        entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
-
-    //    if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
-    //        entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
-
-    //    if (!disableDefaultDataLevelAccess)
-    //    {
-    //        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-    //            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-    //            entity,
-    //            TypeAuth.Core.Access.Write
-    //        );
-
-    //        if (!canWrite)
-    //            throw new ShiftEntityException(new Message("Forbidden", "Can Not Create Item"), (int)HttpStatusCode.Forbidden);
-    //    }
-
-    //    return entity;
-    //}
-
     public virtual ValueTask<EntityType> UpsertAsync(
         EntityType entity, ViewAndUpsertDTO dto,
         ActionTypes actionType,
@@ -141,7 +86,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         entity = mapper.Map(dto, entity);
 
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
 
         this.SetAuditFields(entity, actionType == ActionTypes.Insert, userId, now);
 
@@ -190,28 +135,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public Message? ResponseMessage { get; set; }
     public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-    //public virtual EntityType Find(long id, DateTime? asOf = null, List<string> includes = null)
-    //{
-    //    return GetIQueryable(asOf, includes)
-    //        .FirstOrDefault(x =>
-    //            EF.Property<long>(x, nameof(ShiftEntity<EntityType>.ID)) == id
-    //        );
-    //}
-
-    //public virtual EntityType Find(long id, DateTime? asOf = null, params Action<IncludeOperations<EntityType>>[] includeOperations)
-    //{
-    //    List<string> includes = new();
-
-    //    foreach (var i in includeOperations)
-    //    {
-    //        IncludeOperations<EntityType> operation = new();
-    //        i.Invoke(operation);
-    //        includes.Add(operation.Includes);
-    //    }
-
-    //    return Find(id, asOf, includes);
-    //}
-
     private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null, Guid? idempotencyKey = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {
         List<string>? includes = null;
@@ -251,7 +174,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (!disableDefaultDataLevelAccess)
         {
             var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                this.ShiftRepositoryOptions!.DefaultDataLevelAccessOptions,
                 entity,
                 TypeAuth.Core.Access.Read
             );
@@ -324,8 +247,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    private void SetAuditFields<T>(ShiftEntity<T> entity, bool isAdded, long? userId, DateTimeOffset now)
-        where T : ShiftEntity<EntityType>, new()
+    private void SetAuditFields(ShiftEntity<EntityType> entity, bool isAdded, long? userId, DateTimeOffset now)
     {
         if (entity.AuditFieldsAreSet)
             return;
@@ -343,16 +265,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         entity.AuditFieldsAreSet = true;
     }
 
-    public virtual ValueTask BeforeSave(EntityType entity, ActionTypes action)
-    {
-        return ValueTask.CompletedTask;
-    }
-
-    public virtual ValueTask AfterSave(EntityType entity, ActionTypes action)
-    {
-        return ValueTask.CompletedTask;
-    }
-
     public virtual async Task SaveChangesAsync()
     {
         var now = DateTimeOffset.UtcNow;
@@ -361,7 +273,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 
         // Only use explicit transaction if AfterSave is overridden
-        if (_afterSaveIsOverridden)
+        if (this.afterSaveHook is not null)
         {
             await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
         }
@@ -384,7 +296,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
 
             // Execute all AfterSave hooks - if this fails, transaction will rollback
-            var afterSaveTasks = afterSaveEntities.Select(x => AfterSave(x.entity, x.action));
+            var afterSaveTasks = afterSaveEntities.Select(x => this.afterSaveHook!.AfterSaveAsync(x.entity, x.action));
             await Task.WhenAll(afterSaveTasks.Select(vt => vt.AsTask()));
 
             await transaction.CommitAsync();
@@ -445,13 +357,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
             
             // Only call BeforeSave if it's overridden
-            if (_beforeSaveIsOverridden)
+            if (this.beforeSaveHook is not null)
             {
-                beforeSaveTasks.Add(BeforeSave(entityType, actionType));
+                beforeSaveTasks.Add(this.beforeSaveHook.BeforeSaveAsync(entityType, actionType));
             }
             
             // Only track entities for AfterSave if it's overridden
-            if (_afterSaveIsOverridden)
+            if (this.afterSaveHook is not null)
             {
                 afterSaveEntities.Add((entityType, actionType));
             }
@@ -506,7 +418,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         entity.IsDeleted = true;
 
-        this.SetAuditFields(entity, false, userId, DateTime.UtcNow);
+        this.SetAuditFields(entity, false, userId, DateTimeOffset.UtcNow);
 
         return new ValueTask<EntityType>(entity);
     }
