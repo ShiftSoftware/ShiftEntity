@@ -7,9 +7,10 @@ using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Enums;
-using ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 using ShiftSoftware.ShiftEntity.Model.FileExplorer;
+using ShiftSoftware.ShiftEntity.Model.FileExplorer.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Explorer;
 using ShiftSoftware.TypeAuth.Core;
 using System;
@@ -236,7 +237,9 @@ public class BlobStorageFileProvider : IFileProvider
 
         if (fileExplorerAccessControl is not null)
         {
-            files = await fileExplorerAccessControl.FilterWithReadAccessAsync(container, files);
+            var blobPaths = files.Select(x => x.Path!);
+            var accessList = await this.fileExplorerAccessControl.FilterWithReadAccessAsync(container, blobPaths);
+            files = files.Where(x => accessList.Contains(x.Path)).ToList();
         }
 
         res.Items = files;
