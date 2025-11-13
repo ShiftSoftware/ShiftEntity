@@ -29,6 +29,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
     private readonly IdentityClaimProvider identityClaimProvider;
     private readonly ICurrentUserProvider? currentUserProvider;
+    private readonly bool _hasUniqueHashInterface;
+    private readonly bool _beforeSaveIsOverridden;
+    private readonly bool _afterSaveIsOverridden;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
@@ -38,6 +41,17 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
         this.currentUserProvider = db.GetService<ICurrentUserProvider>();
         this.ShiftRepositoryOptions = new();
+
+        _hasUniqueHashInterface = typeof(EntityType).GetInterfaces()
+            .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
+
+        // Check if BeforeSave is overridden in derived class
+        var beforeSaveMethod = GetType().GetMethod(nameof(BeforeSave));
+        _beforeSaveIsOverridden = beforeSaveMethod?.DeclaringType != typeof(ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO>);
+
+        // Check if AfterSave is overridden in derived class
+        var afterSaveMethod = GetType().GetMethod(nameof(AfterSave));
+        _afterSaveIsOverridden = afterSaveMethod?.DeclaringType != typeof(ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO>);
 
         if (shiftRepositoryBuilder is not null)
         {
@@ -154,17 +168,20 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
         }
 
-        var canWrite = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-            entity,
-            TypeAuth.Core.Access.Write
-        );
-
-        if (!canWrite)
+        if (this.defaultDataLevelAccess is not null)
         {
-            var messageText = actionType == ActionTypes.Insert ? "Can Not Create Item" : "Can Not Update Item";
+            var canWrite = this.defaultDataLevelAccess.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
+                entity,
+                TypeAuth.Core.Access.Write
+            );
 
-            throw new ShiftEntityException(new Message("Forbidden", messageText), (int)HttpStatusCode.Forbidden);
+            if (!canWrite)
+            {
+                var messageText = actionType == ActionTypes.Insert ? "Can Not Create Item" : "Can Not Update Item";
+
+                throw new ShiftEntityException(new Message("Forbidden", messageText), (int)HttpStatusCode.Forbidden);
+            }
         }
 
         return new ValueTask<EntityType>(entity);
@@ -307,7 +324,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    private void SetAuditFields<T>(ShiftEntity<T> entity, bool isAdded, long? userId, DateTime now)
+    private void SetAuditFields<T>(ShiftEntity<T> entity, bool isAdded, long? userId, DateTimeOffset now)
         where T : ShiftEntity<EntityType>, new()
     {
         if (entity.AuditFieldsAreSet)
@@ -326,12 +343,76 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         entity.AuditFieldsAreSet = true;
     }
 
+    public virtual ValueTask BeforeSave(EntityType entity, ActionTypes action)
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    public virtual ValueTask AfterSave(EntityType entity, ActionTypes action)
+    {
+        return ValueTask.CompletedTask;
+    }
+
     public virtual async Task SaveChangesAsync()
     {
-        var now = DateTime.UtcNow;
-
+        var now = DateTimeOffset.UtcNow;
         long? userId = this.currentUserProvider?.GetUser()?.GetUserID();
+        var beforeSaveTasks = new List<ValueTask>();
+        var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 
+        // Only use explicit transaction if AfterSave is overridden
+        if (_afterSaveIsOverridden)
+        {
+            await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+        }
+        else
+        {
+            await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+        }
+    }
+
+    private async Task SaveChangesWithTransactionAsync(
+        DateTimeOffset now,
+        long? userId,
+        List<ValueTask> beforeSaveTasks,
+        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        
+        try
+        {
+            await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
+
+            // Execute all AfterSave hooks - if this fails, transaction will rollback
+            var afterSaveTasks = afterSaveEntities.Select(x => AfterSave(x.entity, x.action));
+            await Task.WhenAll(afterSaveTasks.Select(vt => vt.AsTask()));
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private async Task SaveChangesWithoutTransactionAsync(
+        DateTimeOffset now,
+        long? userId,
+        List<ValueTask> beforeSaveTasks,
+        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
+    {
+        await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
+        
+        // No AfterSave to execute since it's not overridden
+    }
+
+    private async Task ProcessEntriesAndSave(
+        DateTimeOffset now,
+        long? userId,
+        List<ValueTask> beforeSaveTasks,
+        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
+    {
         foreach (var entry in db.ChangeTracker.Entries())
         {
             var added = entry.State == EntityState.Added;
@@ -340,31 +421,49 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (!added && !modified)
                 continue;
 
-            if (entry.Entity is ShiftEntity<EntityType> entity)
+            // Type-safe entity check
+            if (entry.Entity is not ShiftEntity<EntityType> entity)
+                continue;
+
+            this.SetAuditFields(entity, added, userId, now);
+
+            // Only process unique hash if the interface is implemented
+            if (_hasUniqueHashInterface && entity is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
             {
-                this.SetAuditFields(entity, added, userId, now);
-            }
-
-            if (typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>))))
-            {
-                var entryWithUniqueHash = entry.Entity as IEntityHasUniqueHash<EntityType>;
-
-                if (entryWithUniqueHash is null)
-                    continue;
-
                 var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
-
-                if (uniqueHash != null)
+                if (uniqueHash is not null)
                 {
                     using var sha256 = System.Security.Cryptography.SHA256.Create();
-
                     var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
-
                     entry.Property("UniqueHash").CurrentValue = hashBytes;
                 }
             }
+
+            if (entry.Entity is not EntityType entityType)
+                continue;
+
+            var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
+            
+            // Only call BeforeSave if it's overridden
+            if (_beforeSaveIsOverridden)
+            {
+                beforeSaveTasks.Add(BeforeSave(entityType, actionType));
+            }
+            
+            // Only track entities for AfterSave if it's overridden
+            if (_afterSaveIsOverridden)
+            {
+                afterSaveEntities.Add((entityType, actionType));
+            }
         }
 
+        // Execute all BeforeSave hooks only if there are any
+        if (beforeSaveTasks.Count > 0)
+        {
+            await Task.WhenAll(beforeSaveTasks.Select(vt => vt.AsTask()));
+        }
+
+        // Proceed with database save
         try
         {
             await db.SaveChangesAsync();
@@ -373,22 +472,21 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             if (dbUpdateException.InnerException is SqlException sqlException)
             {
-                //2601: This error occurs when you attempt to put duplicate index values into a column or columns that have a unique index.
-                //Message looks something like: {"Cannot insert duplicate key row in object 'dbo.Countries' with unique index 'IX_Countries_IdempotencyKey'. The duplicate key value is (88320ba8-345f-410a-9aa4-3e8a7112c040)."}
-
-                var error = sqlException
-                    .Errors
+                var error = sqlException.Errors
                     .OfType<SqlError>()
                     .FirstOrDefault(se => se.Number == 2601);
 
-                //Check if the error is from duplicate idempotency key
-                if ((error?.Message?.Contains(nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey))) ?? false)
+                if (error?.Message?.Contains(nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey)) ?? false)
                     throw new DuplicateIdempotencyKeyException(error.Message);
 
-                //Check if the error is from duplicate unique hash
-                if ((error?.Message?.Contains(nameof(IEntityHasUniqueHash.UniqueHash))) ?? false)
-                    throw new ShiftEntityException(new Message("Conflict", "An item with the same Unique Fields already exists."), (int)HttpStatusCode.Conflict);
+                if (error?.Message?.Contains(nameof(IEntityHasUniqueHash.UniqueHash)) ?? false)
+                    throw new ShiftEntityException(
+                        new Message("Conflict", "An item with the same Unique Fields already exists."),
+                        (int)HttpStatusCode.Conflict
+                    );
             }
+
+            throw;
         }
     }
 
