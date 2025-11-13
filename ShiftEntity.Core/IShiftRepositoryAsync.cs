@@ -17,7 +17,7 @@ public interface IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO> :
 {
 
     void Add(Entity entity);
-    Task SaveChangesAsync();
+    Task<int> SaveChangesAsync();
     Message? ResponseMessage { get; set; }
     Dictionary<string, object>? AdditionalResponseData { get; set; }
     public ValueTask<Entity> UpsertAsync(Entity entity, ViewAndUpsertDTO dto, ActionTypes actionType, long? userId = null, Guid? idempotencyKey = null);

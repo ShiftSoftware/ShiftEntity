@@ -265,7 +265,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         entity.AuditFieldsAreSet = true;
     }
 
-    public virtual async Task SaveChangesAsync()
+    public virtual async Task<int> SaveChangesAsync()
     {
         var now = DateTimeOffset.UtcNow;
         long? userId = this.currentUserProvider?.GetUser()?.GetUserID();
@@ -275,15 +275,15 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         // Only use explicit transaction if AfterSave is overridden
         if (this.afterSaveHook is not null)
         {
-            await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+            return await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
         }
         else
         {
-            await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+            return await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
         }
     }
 
-    private async Task SaveChangesWithTransactionAsync(
+    private async Task<int> SaveChangesWithTransactionAsync(
         DateTimeOffset now,
         long? userId,
         List<ValueTask> beforeSaveTasks,
@@ -293,13 +293,15 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         
         try
         {
-            await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
+            var result = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
 
             // Execute all AfterSave hooks - if this fails, transaction will rollback
             var afterSaveTasks = afterSaveEntities.Select(x => this.afterSaveHook!.AfterSaveAsync(x.entity, x.action));
             await Task.WhenAll(afterSaveTasks.Select(vt => vt.AsTask()));
 
             await transaction.CommitAsync();
+
+            return result;
         }
         catch
         {
@@ -308,18 +310,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
     }
 
-    private async Task SaveChangesWithoutTransactionAsync(
+    private async Task<int> SaveChangesWithoutTransactionAsync(
         DateTimeOffset now,
         long? userId,
         List<ValueTask> beforeSaveTasks,
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
-        await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
+        return await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
         
         // No AfterSave to execute since it's not overridden
     }
 
-    private async Task ProcessEntriesAndSave(
+    private async Task<int> ProcessEntriesAndSave(
         DateTimeOffset now,
         long? userId,
         List<ValueTask> beforeSaveTasks,
@@ -378,7 +380,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         // Proceed with database save
         try
         {
-            await db.SaveChangesAsync();
+            return await db.SaveChangesAsync();
         }
         catch (DbUpdateException dbUpdateException)
         {
