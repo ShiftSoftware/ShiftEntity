@@ -37,7 +37,6 @@ public class FileExplorerController : ControllerBase
     [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Read)]
     public async Task<FileExplorerResponseDTO> List([FromQuery] FileExplorerReadDTO data)
     {
-        this.fileProvider.PrepareBlobContainer(data.AccountName, data.ContainerName);
         return await fileProvider.GetFiles(data);
     }
 
@@ -46,7 +45,6 @@ public class FileExplorerController : ControllerBase
     [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Write)]
     public async Task<FileExplorerResponseDTO> Create([FromBody] FileExplorerCreateDTO data)
     {
-        this.fileProvider.PrepareBlobContainer(data.AccountName, data.ContainerName);
         return await fileProvider.Create(data);
     }
 
@@ -55,7 +53,6 @@ public class FileExplorerController : ControllerBase
     [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Delete)]
     public async Task<FileExplorerResponseDTO> Delete([FromBody] FileExplorerDeleteDTO data)
     {
-        this.fileProvider.PrepareBlobContainer(data.AccountName, data.ContainerName);
         return await fileProvider.Delete(data);
     }
 
@@ -64,7 +61,6 @@ public class FileExplorerController : ControllerBase
     [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Delete)]
     public async Task<FileExplorerResponseDTO> Restore([FromBody] FileExplorerRestoreDTO data)
     {
-        this.fileProvider.PrepareBlobContainer(data.AccountName, data.ContainerName);
         return await fileProvider.Restore(data);
     }
 
@@ -73,7 +69,6 @@ public class FileExplorerController : ControllerBase
     [TypeAuth(typeof(AzureStorageActionTree), nameof(AzureStorageActionTree.UploadFiles), Access.Read)]
     public async Task<FileExplorerResponseDTO> Detail([FromQuery] FileExplorerDetailDTO data)
     {
-        this.fileProvider.PrepareBlobContainer(data.AccountName, data.ContainerName);
         return await fileProvider.Detail(data);
     }
 

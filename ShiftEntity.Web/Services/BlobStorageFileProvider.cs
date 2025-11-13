@@ -31,7 +31,6 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 public class BlobStorageFileProvider : IFileProvider
 {
     private readonly AzureStorageService azureStorageService;
-    private BlobContainerClient container;
     private readonly AzureStorageOption storageOption;
     private readonly IdentityClaimProvider identityClaimProvider;
     private readonly Container? cosmosContainer;
@@ -79,10 +78,9 @@ public class BlobStorageFileProvider : IFileProvider
         ".webp",
     };
 
-    private async Task<(List<string> list, BlobClient blob)> GetDeletedItems(string path)
+    private async Task<(List<string> list, BlobClient blob)> GetDeletedItems(string path, BlobContainerClient container)
     {
         var hiddenPath = BlobHelper.Combine(path, Constants.FileExplorerHiddenFilename);
-
         var blob = container.GetBlobClient(hiddenPath);
         var list = new List<string>();
 
@@ -106,7 +104,7 @@ public class BlobStorageFileProvider : IFileProvider
         return (list, blob);
     }
 
-    private async Task EnsurePathNotDeletedAsync(string path)
+    private async Task EnsurePathNotDeletedAsync(string path, BlobContainerClient container)
     {
         var pathParts = path?.Split(Delimiter, StringSplitOptions.RemoveEmptyEntries);
         if (pathParts == null || pathParts.Length == 0)
@@ -118,7 +116,7 @@ public class BlobStorageFileProvider : IFileProvider
 
         foreach (var part in pathParts)
         {
-            var (list, _) = await GetDeletedItems(currentPath);
+            var (list, _) = await GetDeletedItems(currentPath, container);
             if (list.Any(p => fullPath.StartsWith(p, StringComparison.Ordinal)))
                 throw new DirectoryNotFoundException();
 
@@ -136,6 +134,8 @@ public class BlobStorageFileProvider : IFileProvider
             res.Message = new Message("Invalid path");
             return res;
         }
+
+        var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
 
         // get the full list of items in the first Page
         // if list is empty, then we stop as the dir is empty
@@ -164,7 +164,7 @@ public class BlobStorageFileProvider : IFileProvider
         try
         {
             if (!canViewDeletedFiles || !data.IncludeDeleted)
-                await EnsurePathNotDeletedAsync(path);
+                await EnsurePathNotDeletedAsync(path, container);
         }
         catch (DirectoryNotFoundException)
         {
@@ -173,7 +173,7 @@ public class BlobStorageFileProvider : IFileProvider
         }
 
         var files = new List<FileExplorerItemDTO>();
-        var deletedItems = await GetDeletedItems(path);
+        var deletedItems = await GetDeletedItems(path, container);
 
         foreach (BlobHierarchyItem item in workingPage.Values)
         {
@@ -277,10 +277,11 @@ public class BlobStorageFileProvider : IFileProvider
         {
             try
             {
+                var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
                 BlobClient blob = container.GetBlobClient(newPath + Constants.FileExplorerHiddenFilename);
                 await blob.UploadAsync(BinaryData.FromBytes(Array.Empty<byte>()), overwrite: false);
 
-                CreateLogItem(newPath, FileExplorerAction.Create);
+                CreateLogItem(newPath, FileExplorerAction.Create, container);
                 
                 res.Success = true;
                 res.Path = newPath;
@@ -305,7 +306,9 @@ public class BlobStorageFileProvider : IFileProvider
             ? data.Paths.ToList()
             : fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
 
-        await QueryDeletedItems(paths.ToArray(), static (path, list) =>
+        var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
+
+        await QueryDeletedItems(paths.ToArray(), container, static (path, list) =>
         {
             if (!list.Contains(path))
                 list.Add(path);
@@ -313,7 +316,7 @@ public class BlobStorageFileProvider : IFileProvider
         });
 
         foreach (var path in paths)
-            CreateLogItem(path, FileExplorerAction.Delete);
+            CreateLogItem(path, FileExplorerAction.Delete, container);
         res.Success = true;
         return res;
     }
@@ -326,19 +329,21 @@ public class BlobStorageFileProvider : IFileProvider
             ? data.Paths.ToList()
             : fileExplorerAccessControl.FilterWithDeleteAccess(data.Paths);
 
-        await QueryDeletedItems(paths.ToArray(), static (path, list) =>
+        var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
+
+        await QueryDeletedItems(paths.ToArray(), container, static (path, list) =>
         {
             list.RemoveAll(x => x == path);
             return ValueTask.CompletedTask;
         });
 
         foreach (var path in paths)
-            CreateLogItem(path, FileExplorerAction.Restore);
+            CreateLogItem(path, FileExplorerAction.Restore, container);
         res.Success = true;
         return res;
     }
 
-    private async Task QueryDeletedItems(string[] paths, Func<string, List<string>, ValueTask> callback)
+    private async Task QueryDeletedItems(string[] paths, BlobContainerClient container, Func<string, List<string>, ValueTask> callback)
     {
         var groupList = paths.Select(static path =>
         {
@@ -357,7 +362,7 @@ public class BlobStorageFileProvider : IFileProvider
         foreach (var group in groupList)
         {
             var path = group.Key;
-            var (deletedList, blobClient) = await GetDeletedItems(path);
+            var (deletedList, blobClient) = await GetDeletedItems(path, container);
 
             foreach (var item in group)
             {
@@ -388,6 +393,7 @@ public class BlobStorageFileProvider : IFileProvider
 
         if (isDir)
         {
+            var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
             var pages = container.GetBlobsAsync(prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
 
             Page<BlobItem>? workingPage = null;
@@ -410,7 +416,7 @@ public class BlobStorageFileProvider : IFileProvider
             try
             {
                 if (!canViewDeletedFiles || !data.IncludeDeleted)
-                    await EnsurePathNotDeletedAsync(path);
+                    await EnsurePathNotDeletedAsync(path, container);
             }
             catch (DirectoryNotFoundException)
             {
@@ -426,7 +432,7 @@ public class BlobStorageFileProvider : IFileProvider
                 .Select(async blob =>
                 {
                     await semaphore.WaitAsync();
-                    try { return await GetDeletedItems(blob.Name); }
+                    try { return await GetDeletedItems(blob.Name, container); }
                     finally { semaphore.Release(); }
                 });
             var deletedResult = await Task.WhenAll(deletedTask);
@@ -473,7 +479,7 @@ public class BlobStorageFileProvider : IFileProvider
         throw new NotImplementedException();
     }
 
-    private void CreateLogItem(string path, FileExplorerAction action)
+    private void CreateLogItem(string path, FileExplorerAction action, BlobContainerClient container)
     {
         if (cosmosContainer == null)
         {
@@ -502,10 +508,5 @@ public class BlobStorageFileProvider : IFileProvider
             _ = cosmosContainer.CreateItemAsync(log, partKey);
         }
         catch (Exception) { }
-    }
-
-    public void PrepareBlobContainer(string? accountName, string? containerName)
-    {
-        this.container = azureStorageService.GetBlobContainerClient(accountName, containerName);
     }
 }
