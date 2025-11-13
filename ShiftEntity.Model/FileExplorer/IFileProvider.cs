@@ -19,8 +19,6 @@ public interface IFileProvider
     public Task<FileExplorerResponseDTO> Detail(FileExplorerDetailDTO data);
     public Task<FileExplorerResponseDTO> Search(string searchString, string path);
     public Task<FileExplorerResponseDTO> Restore(FileExplorerRestoreDTO data);
-    public void PrepareBlobContainer(string? accountName, string? containerName);
-
     //public Task Upload(string path, byte[] fileData, string fileName);
     //public Task WriteFile(string path, byte[] fileData, string fileName);
 }

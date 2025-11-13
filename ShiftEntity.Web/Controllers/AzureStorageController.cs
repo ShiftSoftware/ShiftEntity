@@ -74,7 +74,9 @@ public class AzureStorageController : ControllerBase
 
         if (this.fileExplorerAccessControl is not null)
         {
-            files = this.fileExplorerAccessControl.FilterWithWriteAccess(files);
+            var blobPaths = files.Select(x => x.Blob!);
+            var accessList = this.fileExplorerAccessControl.FilterWithWriteAccess(blobPaths);
+            files = files.Where(x => accessList.Contains(x.Blob)).ToList();
         }
 
         res.Entity = files;
