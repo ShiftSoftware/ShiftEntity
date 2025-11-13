@@ -26,9 +26,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet;
     public readonly IMapper mapper;
     public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; }
-    private readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
-    private readonly IdentityClaimProvider identityClaimProvider;
-    private readonly ICurrentUserProvider? currentUserProvider;
+    public readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
+    public readonly IdentityClaimProvider identityClaimProvider;
+    public readonly ICurrentUserProvider? currentUserProvider;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
