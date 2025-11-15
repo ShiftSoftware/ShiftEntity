@@ -20,7 +20,15 @@ public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantN
 
     public override CollectionConstantNode Visit(CollectionConstantNode nodeIn)
     {
-        var newCollection = nodeIn.Collection.Select(x => x.Accept(_hashIdQueryNodeVisitor)).ToList();
+        // Preserve the current converter state before visiting collection items
+        var converterBeforeVisit = _hashIdQueryNodeVisitor.JsonConverterAttribute;
+        
+        var newCollection = nodeIn.Collection.Select(x =>
+        {
+            // Restore the converter for each item in the collection
+            _hashIdQueryNodeVisitor.JsonConverterAttribute = converterBeforeVisit;
+            return x.Accept(_hashIdQueryNodeVisitor);
+        }).ToList();
 
         // Build the literal string representation without quotes for numeric values
         var literalText = "(" + string.Join(",", newCollection.Select(node =>
