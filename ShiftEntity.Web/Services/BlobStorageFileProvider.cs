@@ -459,22 +459,22 @@ public class BlobStorageFileProvider : IFileProvider
         return res;
     }
 
-    public Task<FileExplorerResponseDTO> Copy(string[] names, string targetPath)
+    public Task<FileExplorerResponseDTO> Copy(FileExplorerCopyDTO data)
     {
         throw new NotImplementedException();
     }
 
-    public Task<FileExplorerResponseDTO> Move(string[] names, string targetPath)
+    public Task<FileExplorerResponseDTO> Move(FileExplorerMoveDTO data)
     {
         throw new NotImplementedException();
     }
 
-    public Task<FileExplorerResponseDTO> Rename(string path, string newName)
+    public Task<FileExplorerResponseDTO> Rename(FileExplorerRenameDTO data)
     {
         throw new NotImplementedException();
     }
 
-    public Task<FileExplorerResponseDTO> Search(string searchString, string path)
+    public Task<FileExplorerResponseDTO> Search(FileExplorerSearchDTO data)
     {
         throw new NotImplementedException();
     }
