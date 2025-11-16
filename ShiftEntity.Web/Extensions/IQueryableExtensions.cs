@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System.Linq.Expressions;
@@ -21,6 +23,8 @@ public static class IQueryableExtensions
         bool applySoftDeleteFilter = true
     ) where T : ShiftEntityDTOBase
     {
+        var options = httpRequest.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
+
         if (oDataQueryOptions.Filter != null)
         {
             FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause!;
@@ -57,8 +61,15 @@ public static class IQueryableExtensions
         if (oDataQueryOptions.Skip != null)
             data = data.Skip(oDataQueryOptions.Skip.Value);
 
+        var top = options.DefaultTop;
         if (oDataQueryOptions.Top != null)
-            data = data.Take(oDataQueryOptions.Top.Value);
+            top = oDataQueryOptions.Top.Value;
+
+        if (options.MaxTop > 0 && (top == 0 || top > options.MaxTop))
+            top = options.MaxTop;
+
+        if (top > 0)
+            data = data.Take(top);
 
         return new ODataDTO<T>
         {
