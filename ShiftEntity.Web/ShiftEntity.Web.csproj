@@ -5,7 +5,7 @@
 	<Import Project="..\..\s\ShiftFrameworkGlobalSettings.props" Condition="Exists('..\..\s\ShiftFrameworkGlobalSettings.props')" />
 
 	<PropertyGroup>
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<RootNamespace>ShiftSoftware.ShiftEntity.Web</RootNamespace>
 		<Authors>Shift Software</Authors>
@@ -45,7 +45,7 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.54.1" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="9.4.1" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.11" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
 		<PackageReference Include="Microsoft.OData.Client" Version="8.4.2" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.AspNetCore" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.AspNetCore\TypeAuth.AspNetCore.csproj')" />
 		<PackageReference Include="ShiftSoftware.ShiftIdentity.Core" Version="$(ShiftFrameworkVersion)" Condition="!Exists('..\..\ShiftIdentity\ShiftIdentity.Core\ShiftIdentity.Core.csproj')" />
