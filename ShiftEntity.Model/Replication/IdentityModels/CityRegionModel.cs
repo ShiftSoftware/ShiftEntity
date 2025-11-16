@@ -12,6 +12,7 @@ public class CityRegionModel : ReplicationModel
     public string? IntegrationId { get; set; } = default!;
     public string? ShortCode { get; set; }
     public bool BuiltIn { get; set; }
+    public string? Flag { get; set; }
 
     public CountryModel Country { get; set; }
 }

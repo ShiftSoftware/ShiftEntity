@@ -12,4 +12,5 @@ public class RegionModel : ReplicationModel, IEntityHasRegion<RegionModel>, IEnt
     public string? ShortCode { get; set; }
     public bool BuiltIn { get; set; }
     public string ItemType { get; set; } = default!;
+    public string? Flag { get; set; }
 }

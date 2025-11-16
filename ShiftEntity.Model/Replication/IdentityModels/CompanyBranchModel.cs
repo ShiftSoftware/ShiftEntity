@@ -26,6 +26,7 @@ public class CompanyBranchModel : ReplicationModel,
     public Location? Location { get; set; }
 
     public string? Photos { get; set; }
+    public string? MobilePhotos { get; set; }
     public string? WorkingHours { get; set; }
     public string? WorkingDays { get; set; }
 

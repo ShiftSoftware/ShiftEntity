@@ -16,4 +16,5 @@ public class CountryModel : ReplicationModel, IEntityHasCountry<CountryModel>
     public string? ShortCode { get; set; }
     public string CallingCode { get; set; } = default!;
     public bool BuiltIn { get; set; }
+    public string? Flag { get; set; }
 }
