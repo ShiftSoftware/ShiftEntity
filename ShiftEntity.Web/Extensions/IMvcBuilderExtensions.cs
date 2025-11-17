@@ -13,7 +13,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IMvcBuilderExtensions
 {
-    static bool locked = false;
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
     {
         ShiftEntityOptions o = new();

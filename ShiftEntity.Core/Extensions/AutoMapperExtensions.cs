@@ -27,7 +27,7 @@ public static class AutoMapperExtensions
 
                     if (selectDTO is null)
                     {
-                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                        selectDTO = new ShiftEntitySelectDTO("");
                     }
 
                     if (!string.IsNullOrWhiteSpace(selectDTO.Value))
@@ -78,7 +78,7 @@ public static class AutoMapperExtensions
 
                     if (selectDTO is null)
                     {
-                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                        selectDTO = new ShiftEntitySelectDTO("");
                     }
 
                     if (!string.IsNullOrWhiteSpace(selectDTO.Value))
@@ -120,7 +120,7 @@ public static class AutoMapperExtensions
 
                     if (selectDTO is null)
                     {
-                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                        selectDTO = new ShiftEntitySelectDTO("");
                     }
 
                     if (selectDTO.Value == "" && selectDTO.Text is null)
@@ -139,7 +139,7 @@ public static class AutoMapperExtensions
                             value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
                         }
 
-                        property.SetValue(dto, new ShiftEntitySelectDTO { Text = null, Value = value });
+                        property.SetValue(dto, new ShiftEntitySelectDTO(value));
                     }
                 }
             }
@@ -160,7 +160,7 @@ public static class AutoMapperExtensions
 
                     if (selectDTO is null)
                     {
-                        selectDTO = new ShiftEntitySelectDTO() { Value = "", Text = null };
+                        selectDTO = new ShiftEntitySelectDTO("");
                     }
 
                     if (selectDTO.Value == "" && selectDTO.Text is null)
@@ -179,7 +179,7 @@ public static class AutoMapperExtensions
                             value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
                         }
 
-                        property.SetValue(dto, new ShiftEntitySelectDTO { Text = null, Value = value });
+                        property.SetValue(dto, new ShiftEntitySelectDTO(value));
                     }
                 }
             }

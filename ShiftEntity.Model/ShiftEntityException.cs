@@ -17,12 +17,12 @@ public class ShiftEntityException : Exception
     /// <summary>
     /// A generic place holder for any additional data related to the error.
     /// </summary>
-    public Dictionary<string, object> AdditionalData { get; set; }
+    public Dictionary<string, object>? AdditionalData { get; set; }
 
     public ShiftEntityException(
         Message message,
         int httpStatusCode = (int)System.Net.HttpStatusCode.BadRequest,
-        Dictionary<string, object> additionalData = null
+        Dictionary<string, object>? additionalData = null
     )
     {
         Message = message;

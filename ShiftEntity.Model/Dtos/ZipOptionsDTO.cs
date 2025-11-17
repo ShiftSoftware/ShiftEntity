@@ -8,7 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 public class ZipOptionsDTO
 {
     public string? ContainerName { get; set; }
-    public string Path { get; set; }
-    public IEnumerable<string> Names { get; set; }
+    public string? Path { get; set; }
+    public IEnumerable<string> Names { get; set; } = [];
 
 }

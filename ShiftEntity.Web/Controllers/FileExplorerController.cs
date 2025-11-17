@@ -25,7 +25,7 @@ public class FileExplorerController : ControllerBase
     private string? AzureFunctionsEndpoint;
     private IFileProvider fileProvider;
 
-    public FileExplorerController(HttpClient httpClient, IFileProvider? fileProvider, IOptions<FileExplorerConfiguration> config)
+    public FileExplorerController(HttpClient httpClient, IFileProvider fileProvider, IOptions<FileExplorerConfiguration> config)
     {
         this.httpClient = httpClient;
         this.AzureFunctionsEndpoint = config.Value?.FunctionsEndpoint;

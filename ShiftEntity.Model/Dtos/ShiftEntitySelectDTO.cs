@@ -13,4 +13,12 @@ public class ShiftEntitySelectDTO
 
     [JsonIgnore]
     public object? Data { get; set; }
+
+    public ShiftEntitySelectDTO(string value, string? text = null, List<ShiftEntitySelectDTO>? nested = null, object? data = null)
+    {
+        Value = value;
+        Text = text;
+        Nested = nested;
+        Data = data;
+    }
 }

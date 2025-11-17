@@ -79,7 +79,7 @@ public class ClaimValuesFilter<Entity> :
 
         var newBody = visitor.Visit(filterContextExpression.Body);
 
-        return new ValueTask<Expression<Func<T, bool>>>(Expression.Lambda<Func<T, bool>>(newBody, entityParam));
+        return new ValueTask<Expression<Func<T, bool>>?>(Expression.Lambda<Func<T, bool>>(newBody, entityParam));
     }
 
     public class FilterExpressionVisitor<T> : ExpressionVisitor

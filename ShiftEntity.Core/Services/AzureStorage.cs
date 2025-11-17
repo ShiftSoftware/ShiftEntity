@@ -195,7 +195,10 @@ class JsonShiftFileDTOConverter : JsonConverter<ShiftFileDTO>
             // Get the value.
             reader.Read();
 
-            var propertyInfo = typeof(ShiftFileDTO).GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? propertyInfo = null;
+
+            if (propertyName != null)
+                propertyInfo = typeof(ShiftFileDTO).GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
 
             if (propertyInfo != null)
             {
