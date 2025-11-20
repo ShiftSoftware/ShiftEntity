@@ -13,4 +13,5 @@ public class RegionModel : ReplicationModel, IEntityHasRegion<RegionModel>, IEnt
     public bool BuiltIn { get; set; }
     public string ItemType { get; set; } = default!;
     public string? Flag { get; set; }
+    public int? DisplayOrder { get; set; }
 }

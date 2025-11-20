@@ -17,4 +17,5 @@ public class CountryModel : ReplicationModel, IEntityHasCountry<CountryModel>
     public string CallingCode { get; set; } = default!;
     public bool BuiltIn { get; set; }
     public string? Flag { get; set; }
+    public int? DisplayOrder { get; set; }
 }

@@ -44,4 +44,5 @@ public class CompanyBranchModel : ReplicationModel,
     public long? CompanyID { get; set; }
     public long? CountryID { get; set; }
     public long? CompanyBranchID { get; set; }
+    public int? DisplayOrder { get; set; }
 }

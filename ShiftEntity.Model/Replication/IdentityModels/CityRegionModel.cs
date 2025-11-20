@@ -13,6 +13,7 @@ public class CityRegionModel : ReplicationModel
     public string? ShortCode { get; set; }
     public bool BuiltIn { get; set; }
     public string? Flag { get; set; }
+    public int? DisplayOrder { get; set; }
 
     public CountryModel Country { get; set; }
 }

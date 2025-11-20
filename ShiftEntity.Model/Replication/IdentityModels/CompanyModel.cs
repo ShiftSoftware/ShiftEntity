@@ -20,4 +20,5 @@ public class CompanyModel : ReplicationModel, IEntityHasCompany<CompanyModel>
     public Dictionary<string, CustomField>? CustomFields { get; set; }
     public long? ParentCompanyID { get; set; }
     public long? CompanyID { get; set; }
+    public int? DisplayOrder { get; set; }
 }

@@ -14,4 +14,5 @@ public class CityModel : ReplicationModel,
     public bool BuiltIn { get; set; }
     public string ItemType { get; set; } = default!;
     public long? CityID { get; set; }
+    public int? DisplayOrder { get; set; }
 }
