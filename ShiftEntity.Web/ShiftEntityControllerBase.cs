@@ -125,6 +125,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                     SubMessages = ModelState.Select(x => new Message
                     {
                         Title = x.Key,
+                        For = x.Key,
                         SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
                         {
                             Title = y.ErrorMessage
@@ -201,6 +202,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                     SubMessages = ModelState.Select(x => new Message
                     {
                         Title = x.Key,
+                        For = x.Key,
                         SubMessages = x.Value is null ? new List<Message>() : x.Value.Errors.Select(y => new Message
                         {
                             Title = y.ErrorMessage
