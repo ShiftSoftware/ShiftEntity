@@ -59,7 +59,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
 
-        return await data.ToOdataDTO(oDataQueryOptions, Request);
+        return await data.ToOdataDTO(oDataQueryOptions, Request, applySoftDeleteFilter: false);
     }
 
     [NonAction]
