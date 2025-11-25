@@ -81,7 +81,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         EntityType entity, ViewAndUpsertDTO dto,
         ActionTypes actionType,
         long? userId = null,
-        Guid? idempotencyKey = null
+        Guid? idempotencyKey = null,
+        bool disableDefaultDataLevelAccess = false
     )
     {
         entity = mapper.Map(dto, entity);
@@ -113,7 +114,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
         }
 
-        if (this.defaultDataLevelAccess is not null)
+        if (!disableDefaultDataLevelAccess && this.defaultDataLevelAccess is not null)
         {
             var canWrite = this.defaultDataLevelAccess.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
@@ -408,13 +409,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         if (!disableDefaultDataLevelAccess)
         {
-            var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+            var canDelete = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
                 this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
                 entity,
                 TypeAuth.Core.Access.Delete
             );
 
-            if (!canRead)
+            if (!canDelete)
                 throw new ShiftEntityException(new Message("Forbidden", "Can Not Delete Item"), (int)HttpStatusCode.Forbidden);
         }
 
