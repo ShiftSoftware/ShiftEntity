@@ -9,7 +9,7 @@ internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity> where 
     private readonly IShiftEntityFind<Entity>? shiftEntityFind;
     private readonly IMapper mapper;
 
-    public ReloadAfterSaveTrigger(IMapper mapper, IShiftEntityFind<Entity>? shiftEntityFind=null)
+    public ReloadAfterSaveTrigger(IMapper mapper, IShiftEntityFind<Entity>? shiftEntityFind = null)
     {
         this.shiftEntityFind = shiftEntityFind;
         this.mapper = mapper;
@@ -25,8 +25,8 @@ internal class ReloadAfterSaveTrigger<Entity> : IAfterSaveTrigger<Entity> where 
                 {
                     var entity = context.Entity;
 
-                    if(shiftEntityFind is not null)
-                        entity = await shiftEntityFind.FindAsync(context.Entity.ID);
+                    if (shiftEntityFind is not null)
+                        entity = await shiftEntityFind.FindAsync(context.Entity.ID, null, disableDefaultDataLevelAccess: true, disableGlobalFilters: true);
 
                     if (entity is not null)
                     {
