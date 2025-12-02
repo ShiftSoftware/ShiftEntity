@@ -6,11 +6,16 @@ using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public interface IShiftOdataList<EntityType, ListDTO> 
+public interface IShiftOdataList<EntityType, ListDTO>
     where ListDTO : ShiftEntityDTOBase
     where EntityType : class
 {
-    public ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable = null);
+    public ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable);
 
-    public ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false);
+    public ValueTask<IQueryable<EntityType>> GetIQueryable(
+        DateTimeOffset? asOf,
+        List<string>? includes,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
+    );
 }

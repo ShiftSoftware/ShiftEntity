@@ -64,10 +64,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
-    public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable = null)
+    public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable)
     {
         if (queryable is null)
-            queryable = await GetIQueryable();
+            queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
     }
@@ -80,9 +80,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public virtual ValueTask<EntityType> UpsertAsync(
         EntityType entity, ViewAndUpsertDTO dto,
         ActionTypes actionType,
-        long? userId = null,
-        Guid? idempotencyKey = null,
-        bool disableDefaultDataLevelAccess = false
+        long? userId,
+        Guid? idempotencyKey,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
     )
     {
         entity = mapper.Map(dto, entity);
@@ -136,7 +137,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public Message? ResponseMessage { get; set; }
     public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
-    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf = null, Guid? idempotencyKey = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    private async Task<EntityType?> BaseFindAsync(long id, DateTimeOffset? asOf, Guid? idempotencyKey, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         List<string>? includes = null;
 
@@ -187,17 +188,17 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return entity;
     }
 
-    public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    public virtual async Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         return await BaseFindAsync(id, asOf, null, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 
-    public virtual async Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey)
+    public virtual async Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey, DateTimeOffset? asOf,bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
-        return await BaseFindAsync(0, null, idempotencyKey);
+        return await BaseFindAsync(0, asOf: asOf, idempotencyKey: idempotencyKey, disableDefaultDataLevelAccess: disableDefaultDataLevelAccess, disableGlobalFilters: disableGlobalFilters);
     }
 
-    public virtual async ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf = null, List<string>? includes = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    public virtual async ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf, List<string>? includes, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         var query = asOf is null ? dbSet.AsQueryable() : dbSet.TemporalAsOf(asOf.Value.UtcDateTime);
 
@@ -405,7 +406,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
     }
 
-    public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete = false, long? userId = null, bool disableDefaultDataLevelAccess = false)
+    public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         if (!disableDefaultDataLevelAccess)
         {

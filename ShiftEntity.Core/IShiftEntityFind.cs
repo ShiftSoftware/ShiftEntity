@@ -8,8 +8,18 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 public interface IShiftEntityFind<EntityType> where EntityType : ShiftEntity<EntityType>
 {
-    public Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false);
+    public Task<EntityType?> FindAsync(
+        long id,
+        DateTimeOffset? asOf,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
+    );
+    public Task<EntityType?> FindByIdempotencyKeyAsync(
+        Guid idempotencyKey,
+        DateTimeOffset? asOf,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
+    );
     public IQueryable<RevisionDTO> GetRevisionsAsync(long id);
     public Task<Stream> PrintAsync(string id);
-    public Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey);
 }

@@ -51,7 +51,7 @@ public class ShiftEntityOptions
     public void SetDefaultTop(int defaultTop)
     {
         if (defaultTop <= 0)
-            throw new System.ArgumentOutOfRangeException(nameof(defaultTop),"DefaultTop must be greater than zero.");
+            throw new System.ArgumentOutOfRangeException(nameof(defaultTop), "DefaultTop must be greater than zero.");
         DefaultTop = defaultTop;
     }
 

@@ -42,7 +42,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = await repository.GetIQueryable();
+        var queryable = await repository.GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         if (where is not null)
             queryable = queryable.Where(where);
@@ -76,7 +76,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf);
+            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -148,7 +148,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                 idempotencyKey = Guid.Parse(HttpContext.Request.Headers["Idempotency-Key"].ToString());
 
             //newItem = await repository.CreateAsync(dto, this.GetUserID(), idempotencyKey);
-            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, this.GetUserID(), idempotencyKey);
+            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, this.GetUserID(), idempotencyKey, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -163,7 +163,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         }
         catch (DuplicateIdempotencyKeyException)
         {
-            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
+            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
             var existingDto = await repository.ViewAsync(existingItem!);
 
@@ -219,7 +219,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -248,7 +248,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
             }
 
             //await repository.UpdateAsync(item, dto, this.GetUserID());
-            await repository.UpsertAsync(item, dto, ActionTypes.Update, this.GetUserID());
+            await repository.UpsertAsync(item, dto, ActionTypes.Update, this.GetUserID(), idempotencyKey: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -276,7 +276,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     {
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
-        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), null);
+        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         if (item == null)
             return new(NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -291,7 +291,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, this.GetUserID());
+            await repository.DeleteAsync(item, isHardDelete, this.GetUserID(), disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -308,7 +308,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         }
 
         if (item.ReloadAfterSave)
-            item = await repository.FindAsync(item.ID);
+            item = await repository.FindAsync(item.ID, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         return new(Ok(new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item))
         {
@@ -344,6 +344,8 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         var repository = HttpContext.RequestServices.GetRequiredService<Repository>();
 
         var query = await repository.GetIQueryable(
+            asOf: null,
+            includes: null,
             disableDefaultDataLevelAccess: disableDefaultDataLevelAccess,
             disableGlobalFilters: disableGlobalFilters
         );

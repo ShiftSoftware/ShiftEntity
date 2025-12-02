@@ -399,7 +399,7 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     [HttpGet("print-token/{key}")]
     public virtual async Task<ActionResult> PrintToken(string key)
     {
-        var found = await this.HttpContext.RequestServices.GetRequiredService<Repository>().FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        var found = await this.HttpContext.RequestServices.GetRequiredService<Repository>().FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         if (found is null)
             return NotFound();
