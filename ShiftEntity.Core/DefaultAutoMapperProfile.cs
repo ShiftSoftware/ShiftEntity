@@ -104,7 +104,7 @@ internal class ShiftEntityToShiftEntitySelectDTO : ITypeConverter<ShiftEntityBas
                 text = source.GetType().GetProperty(attribute.Text)?.GetValue(source)?.ToString() ?? string.Empty;
             }
 
-            return new ShiftEntitySelectDTO (value, text);
+            return new ShiftEntitySelectDTO { Value = value, Text = text };
         }
         else
         {

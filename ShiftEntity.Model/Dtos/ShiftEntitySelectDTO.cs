@@ -4,7 +4,7 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
 public class ShiftEntitySelectDTO
 {
-    public string Value { get; set; }
+    public string Value { get; set; } = default!;
 
     [JsonConverter(typeof(LocalizedTextJsonConverter))]
     public string? Text { get; set; }
@@ -17,13 +17,5 @@ public class ShiftEntitySelectDTO
     public ShiftEntitySelectDTO()
     {
         
-    }
-
-    public ShiftEntitySelectDTO(string value, string? text = null, List<ShiftEntitySelectDTO>? nested = null, object? data = null)
-    {
-        Value = value;
-        Text = text;
-        Nested = nested;
-        Data = data;
     }
 }
