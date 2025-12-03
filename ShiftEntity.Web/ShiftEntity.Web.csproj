@@ -28,22 +28,22 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Compile Remove="Triggers\**" />
-	  <EmbeddedResource Remove="Triggers\**" />
-	  <None Remove="Triggers\**" />
+		<Compile Remove="Triggers\**" />
+		<EmbeddedResource Remove="Triggers\**" />
+		<None Remove="Triggers\**" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Compile Remove="DynamicActionFilterBuilder.cs" />
-	  <Compile Remove="DynamicActionFilterBy.cs" />
-	  <Compile Remove="ShiftEntityODataOptions.cs" />
-	  <Compile Remove="ShiftEntityODataSerializerProvider.cs" />
+		<Compile Remove="DynamicActionFilterBuilder.cs" />
+		<Compile Remove="DynamicActionFilterBy.cs" />
+		<Compile Remove="ShiftEntityODataOptions.cs" />
+		<Compile Remove="ShiftEntityODataSerializerProvider.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.55.0" />
+		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.56.0" />
 		<PackageReference Include="Microsoft.AspNetCore.OData" Version="9.4.1" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
 		<PackageReference Include="Microsoft.OData.Client" Version="8.4.3" />
