@@ -123,7 +123,7 @@ public static class AutoMapperExtensions
                         selectDTO = new ShiftEntitySelectDTO();
                     }
 
-                    if (selectDTO.Value == "" && selectDTO.Text is null)
+                    if (string.IsNullOrWhiteSpace(selectDTO.Value) && selectDTO.Text is null)
                     {
                         string value = "";
 
