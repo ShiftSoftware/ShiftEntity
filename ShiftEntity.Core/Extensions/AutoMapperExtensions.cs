@@ -11,14 +11,6 @@ public static class AutoMapperExtensions
     {
         mappingExpression.AfterMap((dto, entity) =>
         {
-            //foreach (var property in entity.GetType().GetProperties())
-            //{
-            //    if (property.PropertyType.IsAssignableTo(typeof(ShiftEntityBase)))
-            //    {
-            //        property.SetValue(dto, null);
-            //    }
-            //}
-
             foreach (var property in dto.GetType().GetProperties())
             {
                 if (property.PropertyType == typeof(ShiftEntitySelectDTO))
@@ -62,14 +54,6 @@ public static class AutoMapperExtensions
     {
         mappingExpression.AfterMap((dto, entity) =>
         {
-            //foreach (var property in entity.GetType().GetProperties())
-            //{
-            //    if (property.PropertyType.IsAssignableTo(typeof(ShiftEntityBase)))
-            //    {
-            //        property.SetValue(dto, null);
-            //    }
-            //}
-
             foreach (var property in dto.GetType().GetProperties())
             {
                 if (property.PropertyType == typeof(ShiftEntitySelectDTO))
@@ -108,82 +92,51 @@ public static class AutoMapperExtensions
         return mappingExpression;
     }
 
-    public static IMappingExpression DefaultEntityToDtoAfterMap(this IMappingExpression mappingExpression)
+    private static void DefaultEntityToDtoAfterMapAction(object entity, object dto)
     {
-        mappingExpression.AfterMap((entity, dto) =>
+        foreach (var property in dto.GetType().GetProperties())
         {
-            foreach (var property in dto.GetType().GetProperties())
+            if (property.PropertyType == typeof(ShiftEntitySelectDTO))
             {
-                if (property.PropertyType == typeof(ShiftEntitySelectDTO))
+                var selectDTO = (ShiftEntitySelectDTO?)property.GetValue(dto);
+
+                if (selectDTO is null)
                 {
-                    var selectDTO = (ShiftEntitySelectDTO?)property.GetValue(dto);
+                    selectDTO = new ShiftEntitySelectDTO();
+                }
 
-                    if (selectDTO is null)
+                if (string.IsNullOrWhiteSpace(selectDTO.Value) && selectDTO.Text is null)
+                {
+                    string value = "";
+
+                    var foriegnKeyNameByConvention = $"{property.Name}ID";
+
+                    var foregnKeyPropertyByConvention = entity
+                    .GetType()
+                    .GetProperties()
+                    .FirstOrDefault(x => x.Name.Equals(foriegnKeyNameByConvention, StringComparison.InvariantCultureIgnoreCase));
+
+                    if (foregnKeyPropertyByConvention is not null)
                     {
-                        selectDTO = new ShiftEntitySelectDTO();
+                        value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
                     }
 
-                    if (string.IsNullOrWhiteSpace(selectDTO.Value) && selectDTO.Text is null)
-                    {
-                        string value = "";
-
-                        var foriegnKeyNameByConvention = $"{property.Name}ID";
-
-                        var foregnKeyPropertyByConvention = entity
-                        .GetType()
-                        .GetProperties()
-                        .FirstOrDefault(x => x.Name.Equals(foriegnKeyNameByConvention, StringComparison.InvariantCultureIgnoreCase));
-
-                        if (foregnKeyPropertyByConvention is not null)
-                        {
-                            value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
-                        }
-
-                        property.SetValue(dto, new ShiftEntitySelectDTO() { Value = value });
-                    }
+                    property.SetValue(dto, new ShiftEntitySelectDTO() { Value = value });
                 }
             }
-        });
+        }
+    }
+
+    public static IMappingExpression DefaultEntityToDtoAfterMap(this IMappingExpression mappingExpression)
+    {
+        mappingExpression.AfterMap((entity, dto, context) => DefaultEntityToDtoAfterMapAction(entity, dto));
 
         return mappingExpression;
     }
 
     public static IMappingExpression<T1, T2> DefaultEntityToDtoAfterMap<T1, T2>(this IMappingExpression<T1, T2> mappingExpression)
     {
-        mappingExpression.AfterMap((entity, dto) =>
-        {
-            foreach (var property in dto.GetType().GetProperties())
-            {
-                if (property.PropertyType == typeof(ShiftEntitySelectDTO))
-                {
-                    var selectDTO = (ShiftEntitySelectDTO?)property.GetValue(dto);
-
-                    if (selectDTO is null)
-                    {
-                        selectDTO = new ShiftEntitySelectDTO();
-                    }
-
-                    if (string.IsNullOrWhiteSpace(selectDTO.Value) && selectDTO.Text is null)
-                    {
-                        string value = "";
-
-                        var foriegnKeyNameByConvention = $"{property.Name}ID";
-
-                        var foregnKeyPropertyByConvention = entity
-                        .GetType()
-                        .GetProperties()
-                        .FirstOrDefault(x => x.Name.Equals(foriegnKeyNameByConvention, StringComparison.InvariantCultureIgnoreCase));
-
-                        if (foregnKeyPropertyByConvention is not null)
-                        {
-                            value = foregnKeyPropertyByConvention.GetValue(entity)?.ToString() ?? "";
-                        }
-
-                        property.SetValue(dto, new ShiftEntitySelectDTO() { Value = value });
-                    }
-                }
-            }
-        });
+        mappingExpression.AfterMap((entity, dto) => DefaultEntityToDtoAfterMapAction(entity, dto));
 
         return mappingExpression;
     }
