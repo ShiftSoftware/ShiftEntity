@@ -2,8 +2,11 @@
 using Google.Apis.Firebaseappcheck.v1beta;
 using Google.Apis.Firebaseappcheck.v1beta.Data;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
 namespace ShiftSoftware.ShiftEntity.Functions.AppCheck;
@@ -12,11 +15,13 @@ public class AntiBotService
 {
     private readonly AntiBotOptions antiBotOptions;
     private readonly ILogger<AntiBotService> logger;
+    private readonly IHttpClientFactory httpClientFactory;
 
-    public AntiBotService(AntiBotOptions antiBotOptions, ILogger<AntiBotService> logger)
+    public AntiBotService(AntiBotOptions antiBotOptions, ILogger<AntiBotService> logger, IHttpClientFactory httpClientFactory)
     {
         this.antiBotOptions = antiBotOptions;
         this.logger = logger;
+        this.httpClientFactory = httpClientFactory;
     }
 
     public async ValueTask<bool> IsItBot(string token, Platforms? platform = null)
@@ -52,50 +57,67 @@ public class AntiBotService
         }
         else if (platform == Platforms.Huawei)
         {
-            var accessToken = await GetHMSAccessToken();
-            var client = new HttpClient();
-
-            var response = await client.PostAsJsonAsync(
-                $"https://hirms.cloud.huawei.asia//rms/v1/userRisks/verify?appId={antiBotOptions.HMSAppId}",
-                new
-                {
-                    accessToken = accessToken["access_token"]!.ToString(),
-                    response = token
-                });
-            if (response.StatusCode == HttpStatusCode.OK)
+            var accessToken = GetHMSAccessToken();
+            var client = httpClientFactory.CreateClient();
+            try
             {
-                var responseBody = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-                if ((bool)responseBody["success"]! == true)
+                var response = await client.PostAsJsonAsync(
+                    $"https://hirms.cloud.huawei.eu/rms/v1/userRisks/verify?appId={antiBotOptions.HMSAppId}",
+                    new HMSUserDetectRequestBody
+                    {
+                        AccessToken = accessToken,
+                        Response = token
+                    }
+                );
+
+                if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    return false;
+                    var userDetectResult = await response.Content.ReadFromJsonAsync<HMSUserDetectResponseBody>();
+                    if (userDetectResult is not null && userDetectResult.Success)
+                    {
+                        return false;
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "HMS Bot Detection Failed");
                 return true;
             }
+
         }
         return true;
     }
 
-    private async Task<JsonNode> GetHMSAccessToken()
+    private string GetHMSAccessToken()
     {
-        using var client = new HttpClient();
 
-        var authPayload = new List<KeyValuePair<string, string>>()
+        using var rsa = RSA.Create();
+        var keyBytes = Convert.FromBase64String(antiBotOptions.HMSPrivateKey);
+        rsa.ImportPkcs8PrivateKey(keyBytes, out _);
+
+        var signingCredentials = new SigningCredentials(
+            new RsaSecurityKey(rsa)
             {
-                KeyValuePair.Create("grant_type", "client_credentials"),
-                KeyValuePair.Create("client_id", antiBotOptions.HMSClientID),
-                KeyValuePair.Create("client_secret", antiBotOptions.HMSClientSecret),
-            };
-        var encodedPaylod = new FormUrlEncodedContent(authPayload);
-        encodedPaylod.Headers.ContentType = new("application/x-www-form-urlencoded");
+                KeyId = antiBotOptions.HMSKeyId
+            },
+            SecurityAlgorithms.RsaSha256);
 
-        var authResponse = await client.PostAsync(
-            "https://oauth-login.cloud.huawei.com/oauth2/v3/token",
-           encodedPaylod
-        );
-        if (authResponse.StatusCode == HttpStatusCode.OK)
+        var iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var exp = iat + 3600;
+
+        var header = new JwtHeader(signingCredentials);
+        header["kid"] = antiBotOptions.HMSKeyId; // ensure kid is in header
+
+        var payload = new JwtPayload
         {
-            return JsonNode.Parse(await authResponse.Content.ReadAsStringAsync());
-        }
-        return null;
+            { "iss", antiBotOptions.HMSIssuer },
+            { "aud", "https://oauth-login.cloud.huawei.com/oauth2/v3/token" },
+            { "iat", iat },
+            { "exp", exp }
+        };
+
+        var token = new JwtSecurityToken(header, payload);
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

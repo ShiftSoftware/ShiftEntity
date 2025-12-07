@@ -35,7 +35,7 @@ public static class IFunctionsWorkerApplicationBuilderExtension
     /// <param name="appCheckProjectNumber">Firebase Project Number</param>
     /// <param name="appCheckServiceAccount">a Google Cloud Service Account's Json Key as String with proper permssion for Firebase AppCheck API</param>
     public static IFunctionsWorkerApplicationBuilder AddFirebaseAppCheck(this IFunctionsWorkerApplicationBuilder builder, string appCheckProjectNumber,
-        string appCheckServiceAccount, string hmsClientID, string hmsClientSecret, string hmsAppId, string headerKey = "Verification-Token")
+        string appCheckServiceAccount, string hmsAppId, string hmsIssuer, string hmsKeyId, string hmsPrivateKey, string headerKey = "Verification-Token")
     {
         builder.Services.AddTransient<AntiBotService>();
         builder.Services.AddScoped(x => new AntiBotOptions
@@ -43,9 +43,10 @@ public static class IFunctionsWorkerApplicationBuilderExtension
             HeaderKey = headerKey,
             AppCheckProjectNumber = appCheckProjectNumber,
             AppCheckServiceAccount = appCheckServiceAccount,
-            HMSClientID = hmsClientID,
-            HMSClientSecret = hmsClientSecret,
             HMSAppId = hmsAppId,
+            HMSIssuer = hmsIssuer,
+            HMSKeyId = hmsKeyId,
+            HMSPrivateKey = hmsPrivateKey
         });
 
         builder.UseWhen<AppCheckMiddleware>(context =>
