@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Enums;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 
 
@@ -45,4 +46,6 @@ public class CompanyBranchModel : ReplicationModel,
     public long? CountryID { get; set; }
     public long? CompanyBranchID { get; set; }
     public int? DisplayOrder { get; set; }
+    public string? DisplayName { get; set; }
+    public List<PublishTarget>? PublishTargets { get; set; }
 }
