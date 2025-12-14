@@ -7,8 +7,8 @@ using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using System.Collections.Generic;
 using System.Linq.Expressions;
-using System.Reflection;
 using System.Threading.Tasks;
 
 namespace System.Linq;
@@ -89,100 +89,145 @@ public static class IQueryableExtensions
         this IQueryable<EntityType> query
     ) where EntityType : ShiftEntityDTOBase
     {
-        var finder = new WhereSoftDeletePropertyFinder();
-
-        finder.Visit(query.Expression);
-
-        if (!finder.FoundWhereOnProperty)
-        {
+        if (!query.HasWhereOnProperty(x=> x.IsDeleted))
             query = query.Where(x => !x.IsDeleted);
-        }
 
         return query;
     }
+
+    public static bool HasWhereOnProperty<T>(this IQueryable<T> query, Expression<Func<T, object>> propertyExpression)
+    {
+        if (propertyExpression == null)
+            throw new ArgumentNullException(nameof(propertyExpression));
+
+        var expression = query.Expression;
+        var finder = new WherePropertyFinder(propertyExpression);
+        finder.Visit(expression);
+        return finder.FoundWhereOnProperty;
+    }
 }
 
-internal class WhereSoftDeletePropertyFinder : ExpressionVisitor
+internal class WherePropertyFinder : ExpressionVisitor
 {
+    private readonly List<string> propertyPath;
+
     public bool FoundWhereOnProperty { get; private set; } = false;
 
-    public WhereSoftDeletePropertyFinder()
+    public WherePropertyFinder(LambdaExpression propertyExpression)
     {
+        propertyPath = GetPropertyPath(propertyExpression.Body);
     }
 
     protected override Expression VisitMethodCall(MethodCallExpression node)
     {
-        // 1. Check if it's a Queryable.Where method
+        // Early exit if already found
+        if (FoundWhereOnProperty)
+            return node;
+
         if (node.Method.DeclaringType == typeof(Queryable) && node.Method.Name == "Where")
         {
-            // 2. Get the predicate (the second argument of the Where method)
             if (node.Arguments.Count > 1)
             {
-                // The predicate is an Expression<Func<T, bool>>, often wrapped in a UnaryExpression
-                // if it's quoted (Expression.Quote). We want the Operand.
                 var lambdaExpression = node.Arguments[1];
 
                 if (lambdaExpression is UnaryExpression unaryExpression && unaryExpression.Operand is LambdaExpression lambda)
                 {
-                    // 3. Inspect the body of the lambda expression
-                    if (CheckExpressionForProperty(lambda.Body))
+                    var propertyFinder = new PropertyAccessFinder(propertyPath);
+                    propertyFinder.Visit(lambda.Body);
+
+                    if (propertyFinder.Found)
                     {
                         FoundWhereOnProperty = true;
-                        // Once found, you can stop visiting
                         return node;
                     }
                 }
             }
         }
-
-        // Continue visiting the rest of the expression tree
         return base.VisitMethodCall(node);
     }
 
-    private bool CheckExpressionForProperty(Expression expression)
+    private static List<string> GetPropertyPath(Expression expression)
     {
-        // This is simplified to check for a direct property access comparison,
-        // e.g., 'x.IsDeleted == true' or '!x.IsDeleted'
-
-        if (expression is BinaryExpression binaryExpression)
+        var path = new List<string>();
+        while (true)
         {
-            // Check both sides for a property access expression
-            return IsPropertyAccess(binaryExpression.Left) || IsPropertyAccess(binaryExpression.Right);
+            if (expression is MemberExpression member)
+            {
+                path.Insert(0, member.Member.Name);
+                expression = member.Expression!;
+            }
+            else if (expression is UnaryExpression unary && unary.NodeType == ExpressionType.Convert)
+            {
+                expression = unary.Operand;
+            }
+            else
+            {
+                break;
+            }
         }
-        else if (expression is UnaryExpression unaryExpression && unaryExpression.NodeType == ExpressionType.Not)
-        {
-            // Check for negation, e.g., !x.IsDeleted
-            return IsPropertyAccess(unaryExpression.Operand);
-        }
-        else if (expression is MemberExpression memberExpression)
-        {
-            // Check for direct property access as the body, e.g., query.Where(x => x.IsDeleted)
-            return IsPropertyAccess(memberExpression);
-        }
-        else if (expression is MethodCallExpression methodCall)
-        {
-            // For complex clauses like (x.IsDeleted && x.Name == "Test")
-            // you would recursively call CheckExpressionForProperty on the arguments.
-            // This simple version skips complex AND/OR/NOT logic for brevity.
-        }
-
-        return false;
+        return path;
     }
 
-    private bool IsPropertyAccess(Expression expression)
+    /// <summary>
+    /// Inner visitor that traverses the lambda body to find property access.
+    /// Stops as soon as the property is found.
+    /// </summary>
+    private class PropertyAccessFinder : ExpressionVisitor
     {
-        if (expression is MemberExpression memberExpression)
+        private readonly List<string> _targetPath;
+        public bool Found { get; private set; }
+
+        public PropertyAccessFinder(List<string> targetPath)
         {
-            // Check if the member is a Property of the correct name
-            return memberExpression.Member is PropertyInfo propertyInfo && propertyInfo.Name == nameof(ShiftEntityDTOBase.IsDeleted);
+            _targetPath = targetPath;
         }
 
-        // Handle cases like 'true == x.IsDeleted' where the property is nested in a binary expression
-        if (expression is BinaryExpression binaryExpression)
+        public override Expression? Visit(Expression? node)
         {
-            return IsPropertyAccess(binaryExpression.Left) || IsPropertyAccess(binaryExpression.Right);
+            // Early exit - stop traversal once found
+            if (Found || node == null)
+                return node;
+
+            return base.Visit(node);
         }
 
-        return false;
+        protected override Expression VisitMember(MemberExpression node)
+        {
+            if (Found)
+                return node;
+
+            var path = GetMemberPath(node);
+            if (path.SequenceEqual(_targetPath))
+            {
+                Found = true;
+                return node;
+            }
+
+            return base.VisitMember(node);
+        }
+
+        private static List<string> GetMemberPath(MemberExpression expression)
+        {
+            var path = new List<string>();
+            Expression? current = expression;
+
+            while (current != null)
+            {
+                if (current is MemberExpression member)
+                {
+                    path.Insert(0, member.Member.Name);
+                    current = member.Expression;
+                }
+                else if (current is UnaryExpression unary && unary.NodeType == ExpressionType.Convert)
+                {
+                    current = unary.Operand;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return path;
+        }
     }
 }
