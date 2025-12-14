@@ -20,7 +20,8 @@ public static class IQueryableExtensions
         ODataQueryOptions<T> oDataQueryOptions,
         HttpRequest httpRequest,
         bool isAsync = true,
-        bool applySoftDeleteFilter = true
+        bool applySoftDeleteFilter = true,
+        Func<IQueryable<T>, ValueTask<IQueryable<T>>>? applyPostODataProcessing = null
     ) where T : ShiftEntityDTOBase
     {
         var options = httpRequest.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
@@ -52,6 +53,9 @@ public static class IQueryableExtensions
 
         if (applySoftDeleteFilter)
             data = data.ApplyDefaultSoftDeleteFilter();
+
+        if (applyPostODataProcessing is not null)
+            data = isAsync? await applyPostODataProcessing(data) : applyPostODataProcessing(data).Result;
 
         if (oDataQueryOptions.OrderBy != null)
             data = oDataQueryOptions.OrderBy.ApplyTo(data, new ODataQuerySettings() { EnsureStableOrdering = true }) as IQueryable<T>;

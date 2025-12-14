@@ -18,4 +18,6 @@ public interface IShiftOdataList<EntityType, ListDTO>
         bool disableDefaultDataLevelAccess,
         bool disableGlobalFilters
     );
+
+    public ValueTask<IQueryable<ListDTO>> ApplyPostODataProcessing(IQueryable<ListDTO> queryable);
 }

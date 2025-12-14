@@ -49,7 +49,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
 
         var data = await repository.OdataList(queryable);
 
-        return await data.ToOdataDTO(oDataQueryOptions, Request);
+        return await data.ToOdataDTO(oDataQueryOptions, Request, applyPostODataProcessing: repository.ApplyPostODataProcessing);
     }
 
     [NonAction]
