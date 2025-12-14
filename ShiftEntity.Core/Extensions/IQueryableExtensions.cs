@@ -2,6 +2,7 @@
 using ShiftSoftware.ShiftEntity.Core.GlobalRepositoryFilter;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Threading.Tasks;
 
 namespace System.Linq;
@@ -93,5 +94,16 @@ public static class IQueryableExtensions
         }
 
         return query;
+    }
+
+    public static bool HasWhereOnProperty<T>(this IQueryable<T> query, Expression<Func<T, object?>> propertyExpression)
+    {
+        if (propertyExpression == null)
+            throw new ArgumentNullException(nameof(propertyExpression));
+
+        var expression = query.Expression;
+        var finder = new WherePropertyFinder(propertyExpression);
+        finder.Visit(expression);
+        return finder.FoundWhereOnProperty;
     }
 }
