@@ -1,5 +1,6 @@
 ﻿using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Azure.Functions.Worker;
+using ShiftSoftware.ShiftEntity.Model;
 using System.Globalization;
 
 
@@ -26,6 +27,8 @@ namespace ShiftSoftware.ShiftEntity.Functions.Localization
                 var culture = new CultureInfo(cultureCode);
                 CultureInfo.CurrentCulture = culture;
                 CultureInfo.CurrentUICulture = culture;
+
+                LocalizedTextJsonConverter.UserLanguage = culture.TwoLetterISOLanguageName;
             }
 
             await next(context);
