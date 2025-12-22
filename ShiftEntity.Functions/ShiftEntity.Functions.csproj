@@ -35,7 +35,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FluentValidation" Version="12.1.0" />
+		<PackageReference Include="FluentValidation" Version="12.1.1" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.OpenApi" Version="1.6.0" />
@@ -47,7 +47,8 @@
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+		<!--<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />-->
 	</ItemGroup>
 
 	<ItemGroup>
