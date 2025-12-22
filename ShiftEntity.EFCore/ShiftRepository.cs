@@ -431,4 +431,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         throw new NotImplementedException();
     }
+
+    public virtual ValueTask<IQueryable<ListDTO>> ApplyPostODataProcessing(IQueryable<ListDTO> queryable)
+    {
+        return new ValueTask<IQueryable<ListDTO>>(queryable);
+    }
 }
