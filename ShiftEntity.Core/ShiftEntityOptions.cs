@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Core.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -13,6 +14,7 @@ public class ShiftEntityOptions
     internal List<Assembly> DataAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
     internal int MaxTop;
+    internal Func<IServiceProvider, int?>? MaxTopResolver;
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
@@ -44,7 +46,13 @@ public class ShiftEntityOptions
     {
         if (maxTop <= 0)
             throw new System.ArgumentOutOfRangeException(nameof(maxTop), "MaxTop must be greater than zero.");
+
         MaxTop = maxTop;
+    }
+
+    public void SetMaxTopResolver(Func<IServiceProvider, int?> maxTopResolver)
+    {
+        MaxTopResolver = maxTopResolver;
     }
 
     public HashIdOptions HashId { get; set; }

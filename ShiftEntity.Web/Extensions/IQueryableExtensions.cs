@@ -69,12 +69,22 @@ public static class IQueryableExtensions
         if (oDataQueryOptions.Top != null)
             top = oDataQueryOptions.Top.Value;
 
+        var maxTop = options.MaxTop;
+
+        if (options.MaxTopResolver is not null)
+        {
+            var resolvedMaxTop = options.MaxTopResolver(httpRequest.HttpContext.RequestServices);
+
+            if (resolvedMaxTop is not null)
+                maxTop = resolvedMaxTop.Value;
+        }
+
         // Validate against maximum
-        if (options.MaxTop > 0 && top > options.MaxTop)
+        if (maxTop > 0 && top > maxTop)
         {
             throw new ShiftEntityException(new Message(
                 "Query Limit Exceeded",
-                $"The requested number of records ({top}) exceeds the maximum allowed limit of {options.MaxTop}. Please reduce the page size."
+                $"The requested number of records ({top}) exceeds the maximum allowed limit of {maxTop}. Please reduce the page size."
             ), (int)HttpStatusCode.BadRequest);
         }
 
