@@ -27,7 +27,18 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     [HttpGet]
     public virtual async Task<ActionResult<ODataDTO<ListDTO>>> Get(ODataQueryOptions<ListDTO> oDataQueryOptions)
     {
-        return Ok(await base.GetOdataListingNonAction(oDataQueryOptions));
+        try
+        {
+            return Ok(await base.GetOdataListingNonAction(oDataQueryOptions));
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new
+            {
+                ex.Message,
+                ex.AdditionalData
+            });
+        }
     }
 
     [HttpGet("{key}")]

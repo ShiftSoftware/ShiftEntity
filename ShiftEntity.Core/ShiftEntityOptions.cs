@@ -13,7 +13,6 @@ public class ShiftEntityOptions
     internal List<Assembly> DataAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
     internal int MaxTop;
-    internal int DefaultTop;
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
@@ -46,13 +45,6 @@ public class ShiftEntityOptions
         if (maxTop <= 0)
             throw new System.ArgumentOutOfRangeException(nameof(maxTop), "MaxTop must be greater than zero.");
         MaxTop = maxTop;
-    }
-
-    public void SetDefaultTop(int defaultTop)
-    {
-        if (defaultTop <= 0)
-            throw new System.ArgumentOutOfRangeException(nameof(defaultTop), "DefaultTop must be greater than zero.");
-        DefaultTop = defaultTop;
     }
 
     public HashIdOptions HashId { get; set; }

@@ -5,10 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Services;
-using System.Collections.Generic;
-using System.Linq.Expressions;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace System.Linq;
@@ -65,14 +65,20 @@ public static class IQueryableExtensions
         if (oDataQueryOptions.Skip != null)
             data = data.Skip(oDataQueryOptions.Skip.Value);
 
-        var top = options.DefaultTop;
+        var top = count;
         if (oDataQueryOptions.Top != null)
             top = oDataQueryOptions.Top.Value;
 
-        if (options.MaxTop > 0 && (top == 0 || top > options.MaxTop))
-            top = options.MaxTop;
+        // Validate against maximum
+        if (options.MaxTop > 0 && top > options.MaxTop)
+        {
+            throw new ShiftEntityException(new Message(
+                "Query Limit Exceeded",
+                $"The requested number of records ({top}) exceeds the maximum allowed limit of {options.MaxTop}. Please reduce the page size."
+            ), (int)HttpStatusCode.BadRequest);
+        }
 
-        if (top > 0)
+        if (top != count)
             data = data.Take(top);
 
         return new ODataDTO<T>

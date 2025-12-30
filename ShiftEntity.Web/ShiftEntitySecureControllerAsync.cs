@@ -40,12 +40,23 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
-        //if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
+        try
+        {
+            //if (this.HttpContext.RequestServices.GetRequiredService<Repository>().ShiftRepositoryOptions.UseDefaultDataLevelAccess)
             return Ok(await base.GetOdataListingNonAction(oDataQueryOptions));
 
-        //var finalWhere = GetDefaultFilterExpression(typeAuthService);
+            //var finalWhere = GetDefaultFilterExpression(typeAuthService);
 
-        //return Ok(await base.GetOdataListingNew(oDataQueryOptions, finalWhere));
+            //return Ok(await base.GetOdataListingNew(oDataQueryOptions, finalWhere));
+        }
+        catch (ShiftEntityException ex)
+        {
+            return StatusCode(ex.HttpStatusCode, new
+            {
+                ex.Message,
+                ex.AdditionalData
+            });
+        }
     }
 
     //private bool HasDefaultDataLevelAccess(ITypeAuthService typeAuthService, Entity? entity, TypeAuth.Core.Access access)
