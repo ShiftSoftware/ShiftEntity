@@ -8,6 +8,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Threading.Tasks;
 
@@ -25,6 +26,19 @@ public static class IQueryableExtensions
     ) where T : ShiftEntityDTOBase
     {
         var options = httpRequest.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
+
+        var typeAuth = httpRequest.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+        if (oDataQueryOptions.Top is null && typeAuth is not null)
+        {
+            if (!typeAuth.CanAccess(ShiftSoftware.ShiftEntity.Core.GeneralActionTree.DataGridExport))
+            {
+                throw new ShiftEntityException(new Message(
+                    "Unrestricted Data Access Not Allowed",
+                    "Please specify a page size using the $top query parameter. You do not have permission to load unrestricted data sets."
+                ), (int)HttpStatusCode.BadRequest);
+            }
+        }
 
         if (oDataQueryOptions.Filter != null)
         {
@@ -69,14 +83,14 @@ public static class IQueryableExtensions
         if (oDataQueryOptions.Top != null)
             top = oDataQueryOptions.Top.Value;
 
-        var maxTop = options.MaxTop;
+        int? maxTop = null;
 
-        if (options.MaxTopResolver is not null)
+        if (typeAuth is not null)
         {
-            var resolvedMaxTop = options.MaxTopResolver(httpRequest.HttpContext.RequestServices);
+            var userMaxTop = typeAuth.AccessValue(ShiftSoftware.ShiftEntity.Core.GeneralActionTree.DataGridMaxTop);
 
-            if (resolvedMaxTop is not null)
-                maxTop = resolvedMaxTop.Value;
+            if (userMaxTop is not null)
+                maxTop = (int)userMaxTop.Value;
         }
 
         // Validate against maximum
