@@ -47,5 +47,7 @@ public class CompanyBranchModel : ReplicationModel,
     public long? CompanyBranchID { get; set; }
     public int? DisplayOrder { get; set; }
     public string? DisplayName { get; set; }
+    public string? Description { get; set; }
+    public string? WebsiteURL { get; set; }
     public List<PublishTarget>? PublishTargets { get; set; }
 }
