@@ -142,7 +142,7 @@ public class BlobStorageFileProvider : IFileProvider
         // otherwise we start checking previous dirs to make sure
         // that this current dir is not deleted or is in a deleted dir
         // then we will process the list of items in the Page
-        var pages = container.GetBlobsByHierarchyAsync(BlobTraits.Metadata, delimiter: Delimiter.ToString(), prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
+        var pages = container.GetBlobsByHierarchyAsync(options: new GetBlobsByHierarchyOptions { Traits = BlobTraits.Metadata, Delimiter = Delimiter.ToString(), Prefix = path }).AsPages(data.ContinuationToken, config.PageSizeHint);
 
         Page<BlobHierarchyItem>? workingPage = null;
 
@@ -394,7 +394,7 @@ public class BlobStorageFileProvider : IFileProvider
         if (isDir)
         {
             var container = azureStorageService.GetBlobContainerClient(data.AccountName, data.ContainerName);
-            var pages = container.GetBlobsAsync(prefix: path).AsPages(data.ContinuationToken, config.PageSizeHint);
+            var pages = container.GetBlobsAsync(options: new GetBlobsOptions { Prefix = path }).AsPages(data.ContinuationToken, config.PageSizeHint);
 
             Page<BlobItem>? workingPage = null;
 

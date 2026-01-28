@@ -50,7 +50,7 @@
 		<PackageReference Include="Hashids.net" Version="1.7.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-		<PackageReference Include="System.Text.Encodings.Web" Version="10.0.1" />
-		<PackageReference Include="System.Text.Json" Version="10.0.1" />
+		<PackageReference Include="System.Text.Encodings.Web" Version="10.0.2" />
+		<PackageReference Include="System.Text.Json" Version="10.0.2" />
 	</ItemGroup>
 </Project>
