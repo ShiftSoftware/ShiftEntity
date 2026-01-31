@@ -23,6 +23,7 @@ public class AzureStorageOption
     public string? ThumbnailContainerName { get; set; }
     public bool IsDefaultAccount { get; set; }
     public bool SupportsFileExplorer { get; set; }
+    public int SASTokenExpiryInSeconds { get; set; } = 3600;
 }
 
 public class AzureStorageService
@@ -108,7 +109,7 @@ public class AzureStorageService
         return sasBuilder.ToSasQueryParameters(sharedKeyCredential).ToString();
     }
 
-    public string GetSignedURL(string blobName, BlobSasPermissions blobSasPermissions, string? containerName = null, string? accountName = null, int expireAfter_Seconds = 3600)
+    public string GetSignedURL(string blobName, BlobSasPermissions blobSasPermissions, string? containerName = null, string? accountName = null, int? expireAfter_Seconds = null)
     {
         accountName = accountName ?? defaultAccountName;
 
@@ -117,7 +118,9 @@ public class AzureStorageService
         if (containerName == null)
             containerName = account.DefaultContainerName;
 
-        return $"{account.EndPoint.AddUrlPath(containerName, blobName)}?{GetServiceSasUriForBlob(blobName, blobSasPermissions, containerName!, account.AccountName!, account.AccountKey!, expireAfter_Seconds)}";
+        var expiryInSeconds = expireAfter_Seconds ?? account.SASTokenExpiryInSeconds;
+
+        return $"{account.EndPoint.AddUrlPath(containerName, blobName)}?{GetServiceSasUriForBlob(blobName, blobSasPermissions, containerName!, account.AccountName!, account.AccountKey!, expiryInSeconds)}";
     }
 
     public string GetDefaultAccountName()
