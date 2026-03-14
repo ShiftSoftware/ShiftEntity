@@ -57,6 +57,7 @@ public class ShiftEntityOptions
 
     public HashIdOptions HashId { get; set; }
     public JsonNamingPolicy? JsonNamingPolicy { get; set; } = null;
+    public string? AutoMapperLicenseKey { get; set; }
 
     public ShiftEntityOptions()
     {

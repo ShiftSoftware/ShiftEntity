@@ -29,6 +29,7 @@ public static class IServiceCollectionExtensions
         services.AddAutoMapper(x =>
         {
             x.AddProfile(new DefaultAutoMapperProfile(shiftEntityOptions.DataAssemblies.ToArray()));
+            x.LicenseKey = shiftEntityOptions.AutoMapperLicenseKey;
         }, shiftEntityOptions.AutoMapperAssemblies);
 
         return services;
