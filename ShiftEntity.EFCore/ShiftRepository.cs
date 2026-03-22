@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -22,23 +22,42 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     where EntityType : ShiftEntity<EntityType>, new()
     where ListDTO : ShiftEntityDTOBase
 {
-    public readonly DB db;
-    internal DbSet<EntityType> dbSet;
-    public readonly IMapper mapper;
-    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; }
-    public readonly IDefaultDataLevelAccess? defaultDataLevelAccess;
-    public readonly IdentityClaimProvider identityClaimProvider;
-    public readonly ICurrentUserProvider? currentUserProvider;
-    private readonly bool _hasUniqueHashInterface;
+    public DB db { get; private set; } = default!;
+    internal DbSet<EntityType> dbSet = default!;
 
-    private readonly IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
-    private readonly IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
+    [Obsolete("Use entityMapper instead. This property is kept for backwards compatibility.")]
+    public IMapper? mapper => (entityMapper as AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)?.Mapper;
+
+    protected IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? entityMapper { get; private set; }
+    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; } = default!;
+    public IDefaultDataLevelAccess? defaultDataLevelAccess { get; private set; }
+    public IdentityClaimProvider identityClaimProvider { get; private set; } = default!;
+    public ICurrentUserProvider? currentUserProvider { get; private set; }
+    private bool _hasUniqueHashInterface;
+
+    private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
+    private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
 
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
     {
+        var autoMapper = db.GetService<IMapper>();
+        if (autoMapper is not null)
+            this.entityMapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
+        InitCommon(db, shiftRepositoryBuilder);
+    }
+
+    public ShiftRepository(DB db,
+        IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO> entityMapper,
+        Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
+    {
+        this.entityMapper = entityMapper;
+        InitCommon(db, shiftRepositoryBuilder);
+    }
+
+    private void InitCommon(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder)
+    {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
-        this.mapper = db.GetService<IMapper>();
         this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
         this.currentUserProvider = db.GetService<ICurrentUserProvider>();
         this.ShiftRepositoryOptions = new();
@@ -64,17 +83,45 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
+    #region Mapping Methods (virtual, delegates to entityMapper)
+
+    protected virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable)
+    {
+        if (entityMapper is null)
+            throw new InvalidOperationException(
+                "No mapper configured. Override MapToList() or provide an IShiftEntityMapper.");
+        return entityMapper.MapToList(queryable);
+    }
+
+    protected virtual ViewAndUpsertDTO MapToView(EntityType entity)
+    {
+        if (entityMapper is null)
+            throw new InvalidOperationException(
+                "No mapper configured. Override MapToView() or provide an IShiftEntityMapper.");
+        return entityMapper.MapToView(entity);
+    }
+
+    protected virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing)
+    {
+        if (entityMapper is null)
+            throw new InvalidOperationException(
+                "No mapper configured. Override MapToEntity() or provide an IShiftEntityMapper.");
+        return entityMapper.MapToEntity(dto, existing);
+    }
+
+    #endregion
+
     public virtual async ValueTask<IQueryable<ListDTO>> OdataList(IQueryable<EntityType>? queryable)
     {
         if (queryable is null)
             queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
-        return mapper.ProjectTo<ListDTO>(queryable.AsNoTracking());
+        return MapToList(queryable);
     }
 
     public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
     {
-        return new ValueTask<ViewAndUpsertDTO>(mapper.Map<ViewAndUpsertDTO>(entity));
+        return new ValueTask<ViewAndUpsertDTO>(MapToView(entity));
     }
 
     public virtual ValueTask<EntityType> UpsertAsync(
@@ -86,7 +133,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         bool disableGlobalFilters
     )
     {
-        entity = mapper.Map(dto, entity);
+        entity = MapToEntity(dto, entity);
 
         var now = DateTimeOffset.UtcNow;
 
@@ -292,7 +339,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
-        
+
         try
         {
             var result = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
@@ -319,7 +366,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
         return await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
-        
+
         // No AfterSave to execute since it's not overridden
     }
 
@@ -329,6 +376,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         List<ValueTask> beforeSaveTasks,
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
+        var entitiesToReload = new List<EntityType>();
+
         foreach (var entry in db.ChangeTracker.Entries())
         {
             var added = entry.State == EntityState.Added;
@@ -359,17 +408,23 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 continue;
 
             var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
-            
+
             // Only call BeforeSave if it's overridden
             if (this.beforeSaveHook is not null)
             {
                 beforeSaveTasks.Add(this.beforeSaveHook.BeforeSaveAsync(entityType, actionType));
             }
-            
+
             // Only track entities for AfterSave if it's overridden
             if (this.afterSaveHook is not null)
             {
                 afterSaveEntities.Add((entityType, actionType));
+            }
+
+            // Track entities that need reload after save
+            if (entityType.ReloadAfterSave)
+            {
+                entitiesToReload.Add(entityType);
             }
         }
 
@@ -380,9 +435,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         // Proceed with database save
+        int result;
         try
         {
-            return await db.SaveChangesAsync();
+            result = await db.SaveChangesAsync();
         }
         catch (DbUpdateException dbUpdateException)
         {
@@ -404,6 +460,19 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             throw;
         }
+
+        // Reload entities that have navigation properties (Includes)
+        if (entitiesToReload.Count > 0 && entityMapper is not null)
+        {
+            foreach (var trackedEntity in entitiesToReload)
+            {
+                var freshEntity = await FindAsync(trackedEntity.ID, null, disableDefaultDataLevelAccess: true, disableGlobalFilters: true);
+                if (freshEntity is not null)
+                    entityMapper.CopyEntity(freshEntity, trackedEntity);
+            }
+        }
+
+        return result;
     }
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)

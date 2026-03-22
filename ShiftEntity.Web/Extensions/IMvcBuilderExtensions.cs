@@ -31,7 +31,7 @@ public static class IMvcBuilderExtensions
 
         //builder.Services.TryAddSingleton<TimeZoneService>();
 
-        builder.Services.RegisterShiftEntityEfCoreTriggers();
+        //builder.Services.RegisterShiftEntityEfCoreTriggers();
         //builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
 
         //Register timezone service to json options
