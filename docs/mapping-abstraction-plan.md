@@ -22,15 +22,15 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
   - `MapToList(IQueryable<TEntity> query)` — IQueryable projection for OData lists
   - `CopyEntity(TEntity source, TEntity target)` — entity-to-entity copy (used by ReloadAfterSave)
 - [x] `IShiftEntityCopier<T>` removed — no longer needed.
-- [x] `MappingHelpers.cs` — static helpers to reduce manual mapping boilerplate:
-  - `MapBaseFieldsToView(entity, dto)` — maps ID, IsDeleted, audit fields (CreateDate, LastSaveDate, CreatedByUserID, LastSavedByUserID) from entity to view DTO
-  - `MapBaseFieldsToList(entity, dto)` — maps ID, IsDeleted from entity to list DTO (in-memory only, not for IQueryable)
-  - `CopyBaseFields(source, target)` — copies audit fields between entities, skips ReloadAfterSave
-  - `ShallowCopyTo(source, target)` — reflection-based shallow copy of all settable properties, skips ID/ReloadAfterSave/AuditFieldsAreSet (cached per type, one-time cost)
-  - `ToSelectDTO(long id, string? text)` / `ToSelectDTO(long? id, string? text)` — FK to ShiftEntitySelectDTO (overloaded for required/nullable)
-  - `ToForeignKey(this ShiftEntitySelectDTO)` / `ToNullableForeignKey(this ShiftEntitySelectDTO?)` — ShiftEntitySelectDTO to FK
-  - `ToShiftFiles(this string? json)` — deserializes JSON string to `List<ShiftFileDTO>?` (returns empty list for null/empty)
-  - `ToJsonString(this List<ShiftFileDTO>? files)` — serializes `List<ShiftFileDTO>?` to JSON string (returns null for null)
+- [x] `MappingHelpers.cs` — extension method helpers to reduce manual mapping boilerplate. All follow a consistent `source.ToTarget()` pattern:
+  - `dto.MapBaseFields(entity)` — maps ID, IsDeleted, audit fields from entity to view/upsert DTO. Returns dto for fluent chaining with object initializer: `new ProductDTO { ... }.MapBaseFields(entity)`
+  - `dto.MapBaseListFields(entity)` — maps ID, IsDeleted from entity to list DTO (in-memory only, not for IQueryable)
+  - `source.CopyBaseFields(target)` — copies audit fields between entities, skips ReloadAfterSave
+  - `source.ShallowCopyTo(target)` — reflection-based shallow copy of all settable properties, skips ID/ReloadAfterSave/AuditFieldsAreSet (cached per type, one-time cost)
+  - `id.ToSelectDTO(text?)` — FK (`long` or `long?`) to ShiftEntitySelectDTO. Returns null for nullable when FK is null
+  - `selectDTO.ToForeignKey()` / `selectDTO.ToNullableForeignKey()` — ShiftEntitySelectDTO to FK (`long` or `long?`)
+  - `json.ToShiftFiles()` — deserializes JSON string to `List<ShiftFileDTO>?` (returns empty list for null/empty)
+  - `files.ToJsonString()` — serializes `List<ShiftFileDTO>?` to JSON string (returns null for null)
 
 ### ShiftEntity.EFCore
 

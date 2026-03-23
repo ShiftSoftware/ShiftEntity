@@ -38,12 +38,12 @@ public static class MappingHelpers
     }
 
     /// <summary>
-    /// Maps the common audit fields from a ShiftEntity to a view/upsert DTO.
-    /// Call this in MapToView after creating the DTO, to avoid repeating audit field assignments.
+    /// Maps the common audit fields from a ShiftEntity to this view/upsert DTO.
+    /// Usage: new ProductDTO { ... }.MapBaseFields(entity)
     /// </summary>
-    public static TViewDTO MapBaseFieldsToView<TEntity, TViewDTO>(this TEntity entity, TViewDTO dto)
-        where TEntity : ShiftEntity<TEntity>
+    public static TViewDTO MapBaseFields<TViewDTO, TEntity>(this TViewDTO dto, TEntity entity)
         where TViewDTO : ShiftEntityViewAndUpsertDTO
+        where TEntity : ShiftEntity<TEntity>
     {
         dto.ID = entity.ID.ToString();
         dto.IsDeleted = entity.IsDeleted;
@@ -55,13 +55,13 @@ public static class MappingHelpers
     }
 
     /// <summary>
-    /// Maps the common base fields from a ShiftEntity to a list DTO.
+    /// Maps the common base fields from a ShiftEntity to this list DTO.
     /// Not usable inside IQueryable projections (LINQ-to-SQL) — only for in-memory mapping.
-    /// For IQueryable, assign these fields directly in the Select expression.
+    /// Usage: new ProductListDTO { ... }.MapBaseListFields(entity)
     /// </summary>
-    public static TListDTO MapBaseFieldsToList<TEntity, TListDTO>(this TEntity entity, TListDTO dto)
-        where TEntity : ShiftEntity<TEntity>
+    public static TListDTO MapBaseListFields<TListDTO, TEntity>(this TListDTO dto, TEntity entity)
         where TListDTO : ShiftEntityListDTO
+        where TEntity : ShiftEntity<TEntity>
     {
         dto.ID = entity.ID.ToString();
         dto.IsDeleted = entity.IsDeleted;
@@ -84,10 +84,10 @@ public static class MappingHelpers
     }
 
     /// <summary>
-    /// Creates a ShiftEntitySelectDTO from a required (non-nullable) FK and optional navigation name.
-    /// Usage: entity.ToSelectDTO(e.ProductBrandID, e.ProductBrand?.Name)
+    /// Creates a ShiftEntitySelectDTO from a required (non-nullable) FK.
+    /// Usage: entity.ProductBrandID.ToSelectDTO(entity.ProductBrand?.Name)
     /// </summary>
-    public static ShiftEntitySelectDTO ToSelectDTO(long id, string? text = null)
+    public static ShiftEntitySelectDTO ToSelectDTO(this long id, string? text = null)
     {
         return new ShiftEntitySelectDTO
         {
@@ -97,11 +97,11 @@ public static class MappingHelpers
     }
 
     /// <summary>
-    /// Creates a ShiftEntitySelectDTO from a nullable FK and optional navigation name.
+    /// Creates a ShiftEntitySelectDTO from a nullable FK.
     /// Returns null when the FK is null.
-    /// Usage: entity.ToSelectDTO(e.CountryOfOriginID, e.CountryOfOrigin?.Name)
+    /// Usage: entity.CountryOfOriginID.ToSelectDTO(entity.CountryOfOrigin?.Name)
     /// </summary>
-    public static ShiftEntitySelectDTO? ToSelectDTO(long? id, string? text = null)
+    public static ShiftEntitySelectDTO? ToSelectDTO(this long? id, string? text = null)
     {
         if (!id.HasValue)
             return null;
