@@ -66,8 +66,13 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
   - `ShiftFileDTO` type conversion via `ToShiftFiles()` / `ToJsonString()` helpers (JSON string ↔ `List<ShiftFileDTO>`)
   - FK mapping via `ToSelectDTO()` / `ToNullableForeignKey()`
   - Nullable enum (TrackingMethod?)
-- [x] `ProductRepository` and `ProductCategoryRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper.
-- [x] `Program.cs` — DI registration lines for both Product and ProductCategory manual mappers (currently uncommented/active).
+- [x] `InvoiceMapper` (`StockPlusPlus.Data/Mappers/InvoiceMapper.cs`) — manual mapper for Invoice. Demonstrates:
+  - **Collection mapping**: parent-child `Invoice.InvoiceLines` ↔ `InvoiceDTO.InvoiceLines` (entity children → DTO children and back)
+  - Child entity FK mapping: `InvoiceLine.ProductID` ↔ `InvoiceLineDTO.Product` (ShiftEntitySelectDTO)
+  - Child DTO audit fields (InvoiceLineDTO extends ShiftEntityViewAndUpsertDTO)
+  - Works with InvoiceRepository's delete-and-recreate pattern for lines on update
+- [x] `ProductRepository`, `ProductCategoryRepository`, and `InvoiceRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper.
+- [x] `Program.cs` — DI registration lines for Product, ProductCategory, and Invoice manual mappers (currently uncommented/active).
 - [x] Mapping POC files at `StockPlusPlus.Test/Tests/MappingPOC/` — reference implementations comparing Manual, Mapperly, and Mapster (not production code).
 
 ### Backwards Compatibility
@@ -89,8 +94,7 @@ Each POC covers 9 test scenarios: simple mapping, FK conventions (`ShiftEntitySe
 
 ## Future Iterations
 
-### Next — Expand Manual Mapping Examples
-- [ ] Add manual mapper for an entity with collection mapping (e.g., CompanyBranch with junction table services)
+### Next
 - [ ] Validate end-to-end with integration tests
 
 ### Evaluate Mapperly/Mapster Integration
