@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Core;
@@ -132,5 +133,31 @@ public static class MappingHelpers
             return null;
 
         return long.Parse(selectDTO.Value);
+    }
+
+    /// <summary>
+    /// Deserializes a JSON string to List&lt;ShiftFileDTO&gt;.
+    /// Returns an empty list when the string is null or empty.
+    /// Usage: dto.Photos = entity.Photos.ToShiftFiles();
+    /// </summary>
+    public static List<ShiftFileDTO>? ToShiftFiles(this string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<ShiftFileDTO>();
+
+        return JsonSerializer.Deserialize<List<ShiftFileDTO>>(json) ?? new List<ShiftFileDTO>();
+    }
+
+    /// <summary>
+    /// Serializes List&lt;ShiftFileDTO&gt; to a JSON string.
+    /// Returns null when the list is null.
+    /// Usage: entity.Photos = dto.Photos.ToJsonString();
+    /// </summary>
+    public static string? ToJsonString(this List<ShiftFileDTO>? files)
+    {
+        if (files is null)
+            return null;
+
+        return JsonSerializer.Serialize(files);
     }
 }

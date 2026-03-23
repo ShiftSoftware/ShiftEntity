@@ -29,6 +29,8 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
   - `ShallowCopyTo(source, target)` — reflection-based shallow copy of all settable properties, skips ID/ReloadAfterSave/AuditFieldsAreSet (cached per type, one-time cost)
   - `ToSelectDTO(long id, string? text)` / `ToSelectDTO(long? id, string? text)` — FK to ShiftEntitySelectDTO (overloaded for required/nullable)
   - `ToForeignKey(this ShiftEntitySelectDTO)` / `ToNullableForeignKey(this ShiftEntitySelectDTO?)` — ShiftEntitySelectDTO to FK
+  - `ToShiftFiles(this string? json)` — deserializes JSON string to `List<ShiftFileDTO>?` (returns empty list for null/empty)
+  - `ToJsonString(this List<ShiftFileDTO>? files)` — serializes `List<ShiftFileDTO>?` to JSON string (returns null for null)
 
 ### ShiftEntity.EFCore
 
@@ -51,7 +53,7 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
 
 ### StockPlusPlus Sample App (ShiftTemplates)
 
-- [x] `ProductMapper` (`StockPlusPlus.Data/Mappers/ProductMapper.cs`) — manual `IShiftEntityMapper` implementation for the `Product` entity, using framework helpers. Demonstrates:
+- [x] `ProductMapper` (`StockPlusPlus.Data/Mappers/ProductMapper.cs`) — manual mapper for Product. Demonstrates:
   - `ShiftEntitySelectDTO` FK conventions via `ToSelectDTO()` / `ToForeignKey()` helpers
   - Audit field mapping via `MapBaseFieldsToView()`
   - Entity copy via `ShallowCopyTo()`
@@ -60,8 +62,12 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
   - Enum property (TrackingMethod)
   - Separate List vs View DTO shapes (ProductListDTO, ProductDTO)
   - ReloadAfterSave (triggered by Includes)
-- [x] `ProductRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper. Include options extracted to a shared static field.
-- [x] `Program.cs` — one DI registration line to swap Product to manual mapping (currently uncommented/active).
+- [x] `ProductCategoryMapper` (`StockPlusPlus.Data/Mappers/ProductCategoryMapper.cs`) — manual mapper for ProductCategory. Demonstrates:
+  - `ShiftFileDTO` type conversion via `ToShiftFiles()` / `ToJsonString()` helpers (JSON string ↔ `List<ShiftFileDTO>`)
+  - FK mapping via `ToSelectDTO()` / `ToNullableForeignKey()`
+  - Nullable enum (TrackingMethod?)
+- [x] `ProductRepository` and `ProductCategoryRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper.
+- [x] `Program.cs` — DI registration lines for both Product and ProductCategory manual mappers (currently uncommented/active).
 - [x] Mapping POC files at `StockPlusPlus.Test/Tests/MappingPOC/` — reference implementations comparing Manual, Mapperly, and Mapster (not production code).
 
 ### Backwards Compatibility
@@ -85,7 +91,6 @@ Each POC covers 9 test scenarios: simple mapping, FK conventions (`ShiftEntitySe
 
 ### Next — Expand Manual Mapping Examples
 - [ ] Add manual mapper for an entity with collection mapping (e.g., CompanyBranch with junction table services)
-- [ ] Add manual mapper for an entity with `ShiftFileDTO` type converter
 - [ ] Validate end-to-end with integration tests
 
 ### Evaluate Mapperly/Mapster Integration
