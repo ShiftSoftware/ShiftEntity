@@ -74,6 +74,10 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
 - [x] `ProductRepository`, `ProductCategoryRepository`, and `InvoiceRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper.
 - [x] `Program.cs` — DI registration lines for Product, ProductCategory, and Invoice manual mappers (currently uncommented/active).
 - [x] Mapping POC files at `StockPlusPlus.Test/Tests/MappingPOC/` — reference implementations comparing Manual, Mapperly, and Mapster (not production code).
+- [x] `ManualMappingTests` (`StockPlusPlus.Test/Tests/ManualMappingTests.cs`) — 8 integration tests validating all three manual mappers end-to-end through repository CRUD:
+  - **Product**: Insert+View (FK→SelectDTO, nullable FK, enum, audit fields), Update (merge into tracked entity), MapToList (IQueryable projection with nav property names)
+  - **ProductCategory**: Insert+View (ShiftFileDTO JSON round-trip, nullable FK, nullable enum), MapToList
+  - **Invoice**: Insert+View (parent+child collection mapping), Update (delete-and-recreate collection replacement), MapToList
 
 ### Backwards Compatibility
 
@@ -94,10 +98,7 @@ Each POC covers 9 test scenarios: simple mapping, FK conventions (`ShiftEntitySe
 
 ## Future Iterations
 
-### Next
-- [ ] Validate end-to-end with integration tests
-
-### Evaluate Mapperly/Mapster Integration
+### Next: Evaluate Mapperly/Mapster Integration
 - [ ] Based on POC findings, decide if Mapperly or Mapster deserve first-class `IShiftEntityMapper` adapters (like `AutoMapperShiftEntityMapper`)
 - [ ] If yes, create adapter classes and update documentation
 
