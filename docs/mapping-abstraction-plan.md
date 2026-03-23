@@ -72,9 +72,14 @@ Decouple ShiftRepository from AutoMapper by introducing `IShiftEntityMapper<TEnt
   - Child DTO audit fields (InvoiceLineDTO extends ShiftEntityViewAndUpsertDTO)
   - Works with InvoiceRepository's delete-and-recreate pattern for lines on update
 - [x] `ProductRepository`, `ProductCategoryRepository`, and `InvoiceRepository` — two-constructor pattern: one accepting `IShiftEntityMapper` (DI picks this when registered), one falling back to AutoMapper.
-- [x] `Program.cs` — DI registration lines for Product, ProductCategory, and Invoice manual mappers (currently uncommented/active).
+- [x] `Program.cs` — `MappingStrategy` config setting (appsettings.json) controls which mappers are registered: `AutoMapper` (default), `Manual`, or `Mapperly`. Repositories auto-select via DI constructor resolution.
+- [x] `MappingStrategy` enum (`StockPlusPlus.Shared/Enums/MappingStrategy.cs`) — `AutoMapper`, `Manual`, `Mapperly`.
+- [x] Mapperly source-generated mappers (`StockPlusPlus.Data/Mappers/`):
+  - `ProductMapperlyMapper.cs` — `[Mapper]` partial class implementing `IShiftEntityMapper`. Mapperly generates scalar property mapping; FK→SelectDTO and base fields handled manually. IQueryable projection is manual (Mapperly can't project nav properties to strings in SQL).
+  - `ProductCategoryMapperlyMapper.cs` — same pattern, plus ShiftFileDTO JSON ↔ List conversion in manual wrapper.
+  - `InvoiceMapperlyMapper.cs` — same pattern, plus manual collection mapping for InvoiceLines (parent-child).
 - [x] Mapping POC files at `StockPlusPlus.Test/Tests/MappingPOC/` — reference implementations comparing Manual, Mapperly, and Mapster (not production code).
-- [x] `ManualMappingTests` (`StockPlusPlus.Test/Tests/ManualMappingTests.cs`) — 8 integration tests validating all three manual mappers end-to-end through repository CRUD:
+- [x] `ManualMappingTests` (`StockPlusPlus.Test/Tests/ManualMappingTests.cs`) — 8 integration tests validating the `IShiftEntityMapper` path end-to-end through repository CRUD. Pass with both Manual and Mapperly strategies:
   - **Product**: Insert+View (FK→SelectDTO, nullable FK, enum, audit fields), Update (merge into tracked entity), MapToList (IQueryable projection with nav property names)
   - **ProductCategory**: Insert+View (ShiftFileDTO JSON round-trip, nullable FK, nullable enum), MapToList
   - **Invoice**: Insert+View (parent+child collection mapping), Update (delete-and-recreate collection replacement), MapToList
@@ -98,9 +103,16 @@ Each POC covers 9 test scenarios: simple mapping, FK conventions (`ShiftEntitySe
 
 ## Future Iterations
 
-### Next: Evaluate Mapperly/Mapster Integration
-- [ ] Based on POC findings, decide if Mapperly or Mapster deserve first-class `IShiftEntityMapper` adapters (like `AutoMapperShiftEntityMapper`)
-- [ ] If yes, create adapter classes and update documentation
+### Mapperly Integration — Done
+- [x] Mapperly `IShiftEntityMapper` implementations created for Product, ProductCategory, and Invoice
+- [x] `Riok.Mapperly` package added to `StockPlusPlus.Data`
+- [x] `MappingStrategy` config toggle added (appsettings.json) — supports `AutoMapper`, `Manual`, `Mapperly`
+- [x] Validated with existing integration tests (40/40 pass under both Manual and Mapperly)
+- **Pattern**: Mapperly generates scalar property mapping via `[Mapper]` partial classes. FK→SelectDTO, ShiftFileDTO JSON, collection mapping, IQueryable projections, and base audit fields are handled in manual wrapper methods. This is a deliberate hybrid — Mapperly catches unmapped scalars at compile time while framework-specific conventions remain explicit.
+
+### Next: Evaluate Mapster Integration
+- [ ] Based on POC findings, decide if Mapster deserves a first-class `IShiftEntityMapper` adapter
+- [ ] If yes, create adapter classes and add `Mapster` to `MappingStrategy`
 
 ### Template Integration
 - [ ] Add mapping strategy as a template parameter in `template.json` (e.g., `mappingStrategy`: AutoMapper | Manual | Mapperly)
