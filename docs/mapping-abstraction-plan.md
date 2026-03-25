@@ -110,9 +110,12 @@ Each POC covers 9 test scenarios: simple mapping, FK conventions (`ShiftEntitySe
 - [x] Validated with existing integration tests (40/40 pass under both Manual and Mapperly)
 - **Pattern**: Mapperly generates scalar property mapping via `[Mapper]` partial classes. FK→SelectDTO, ShiftFileDTO JSON, collection mapping, IQueryable projections, and base audit fields are handled in manual wrapper methods. This is a deliberate hybrid — Mapperly catches unmapped scalars at compile time while framework-specific conventions remain explicit.
 
-### Next: Evaluate Mapster Integration
-- [ ] Based on POC findings, decide if Mapster deserves a first-class `IShiftEntityMapper` adapter
-- [ ] If yes, create adapter classes and add `Mapster` to `MappingStrategy`
+### Mapster Integration — Done
+- [x] Mapster `IShiftEntityMapper` implementations created for Product, ProductCategory, and Invoice
+- [x] `Mapster` package added to `StockPlusPlus.Data`
+- [x] `MappingStrategy` config toggle now supports `AutoMapper`, `Manual`, `Mapperly`, `Mapster`
+- [x] Validated with existing integration tests (40/40 pass under Mapster)
+- **Pattern**: Fluent `TypeAdapterConfig` per mapper class. `BuildConfig()` sets up Entity↔DTO rules (FK→SelectDTO via `.Map()`, nav property ignores to prevent circular refs, audit field ignores). Method bodies are one-liners: `entity.Adapt<DTO>(config)`, `dto.Adapt(existing, config)`. MapToList stays manual (same as all approaches — `ProjectToType` can't translate complex nav-property projections to SQL). Much more concise than Mapperly — no attribute noise — but still requires explicit ignore lists for base class properties and nav properties to prevent stack overflow from circular references.
 
 ### Template Integration
 - [ ] Add mapping strategy as a template parameter in `template.json` (e.g., `mappingStrategy`: AutoMapper | Manual | Mapperly)
