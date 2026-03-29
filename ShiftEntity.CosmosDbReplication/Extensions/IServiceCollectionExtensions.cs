@@ -1,20 +1,18 @@
 ﻿using EntityFrameworkCore.Triggered;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
-using ShiftSoftware.ShiftEntity.Core;
+using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
-using ShiftSoftware.ShiftEntity.Model;
-using System.Reflection;
+using ShiftSoftware.ShiftEntity.EFCore;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {
-    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
+    public static IServiceCollection AddShiftEntityCosmosDbReplicationTrigger<TDbContext>(this IServiceCollection services, Action<ShiftEntityCosmosDbOptions> optionBuilder)
+        where TDbContext : ShiftDbContext
     {
-        
+        services.AddDbContext<TDbContext>((sp, options) => options.UseTriggers());
 
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
