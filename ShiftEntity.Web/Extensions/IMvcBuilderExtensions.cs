@@ -13,34 +13,36 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IMvcBuilderExtensions
 {
-    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> shiftEntityOptionsBuilder)
+    /// <summary>
+    /// Registers ShiftEntity Web services with the given configuration.
+    /// Multiple calls to <c>services.Configure&lt;ShiftEntityOptions&gt;(...)</c> are additive.
+    /// </summary>
+    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> configure)
     {
-        ShiftEntityOptions o = new();
+        builder.Services.Configure(configure);
 
-        shiftEntityOptionsBuilder.Invoke(o);
-
-        return AddShiftEntityWeb(builder, o);
+        return AddShiftEntityWeb(builder);
     }
 
-    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, ShiftEntityOptions shiftEntityOptions)
+    /// <summary>
+    /// Registers ShiftEntity Web infrastructure without configuring options.
+    /// Options can be registered separately via <c>services.Configure&lt;ShiftEntityOptions&gt;(o => { ... })</c>.
+    /// </summary>
+    public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder)
     {
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization()
-            .AddShiftEntity(shiftEntityOptions);
+            .AddShiftEntity();
 
-        //builder.Services.TryAddSingleton<TimeZoneService>();
-
-        //builder.Services.RegisterShiftEntityEfCoreTriggers();
-        //builder.Services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(SetUserAndCompanyInfoTrigger<>));
-
-        //Register timezone service to json options
+        // Configure JSON options from resolved ShiftEntityOptions
         builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
         {
+            var shiftEntityOptions = p.GetRequiredService<ShiftEntityOptions>();
+
             Action<JsonOptions> options = (o) =>
             {
                 o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
-                //o.RegisterTimeZoneConverters(p.GetRequiredService<TimeZoneService>());
 
                 if (shiftEntityOptions.azureStorageOptions.Count > 0)
                     o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
@@ -49,21 +51,28 @@ public static class IMvcBuilderExtensions
             return new ConfigureNamedOptions<JsonOptions>(Options.Options.DefaultName, options);
         });
 
+        // Configure validation error wrapping from resolved ShiftEntityOptions
+        builder.Services.AddSingleton<IConfigureOptions<ApiBehaviorOptions>>(sp =>
+        {
+            var shiftEntityOptions = sp.GetRequiredService<ShiftEntityOptions>();
 
-        if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
-            builder.ConfigureApiBehaviorOptions(options =>
+            return new ConfigureNamedOptions<ApiBehaviorOptions>(Options.Options.DefaultName, options =>
             {
-                options.InvalidModelStateResponseFactory = context =>
+                if (shiftEntityOptions._WrapValidationErrorResponseWithShiftEntityResponse)
                 {
-                    var errors = context.ModelState.Select(x => new { x.Key, x.Value?.Errors }).ToDictionary(x => x.Key, x => x.Errors);
-
-                    var response = new ShiftEntityResponse<object>
+                    options.InvalidModelStateResponseFactory = context =>
                     {
-                        Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                        var errors = context.ModelState.Select(x => new { x.Key, x.Value?.Errors }).ToDictionary(x => x.Key, x => x.Errors);
+
+                        var response = new ShiftEntityResponse<object>
+                        {
+                            Additional = errors.ToDictionary(x => x.Key, x => (object)x.Value?.Select(s => s.ErrorMessage)!)
+                        };
+                        return new BadRequestObjectResult(response);
                     };
-                    return new BadRequestObjectResult(response);
-                };
+                }
             });
+        });
 
         builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
         builder.Services.AddScoped<IdentityClaimProvider>();
