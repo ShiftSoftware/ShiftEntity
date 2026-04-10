@@ -15,11 +15,18 @@ public abstract class ShiftDbContext : DbContext
     {
     }
 
+    private readonly IServiceProvider? _applicationServiceProvider;
+
     public ShiftDbContext(DbContextOptions options) : base(options)
     {
         ShiftDbContextOptions = options.Extensions
             .OfType<ShiftDbContextExtensionOptions>()
             .FirstOrDefault();
+
+        _applicationServiceProvider = options.Extensions
+            .OfType<CoreOptionsExtension>()
+            .FirstOrDefault()
+            ?.ApplicationServiceProvider;
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -28,8 +35,8 @@ public abstract class ShiftDbContext : DbContext
 
         modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false);
 
-        // Invoke all registered IModelBuildingContributor instances
-        var contributors = this.GetService<IEnumerable<IModelBuildingContributor>>();
+        // Invoke all registered IModelBuildingContributor instances from the application service provider
+        var contributors = _applicationServiceProvider?.GetService<IEnumerable<IModelBuildingContributor>>();
         if (contributors is not null)
         {
             foreach (var contributor in contributors)
