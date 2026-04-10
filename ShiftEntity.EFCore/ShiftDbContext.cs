@@ -33,9 +33,9 @@ public abstract class ShiftDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false);
-
-        // Invoke all registered IModelBuildingContributor instances from the application service provider
+        // Invoke contributors before ConfigureShiftEntity so that ConfigureShiftEntity
+        // can apply conventions (e.g. DeleteBehavior.Restrict) to all relationships,
+        // including those added by contributors.
         var contributors = _applicationServiceProvider?.GetService<IEnumerable<IModelBuildingContributor>>();
         if (contributors is not null)
         {
@@ -44,6 +44,8 @@ public abstract class ShiftDbContext : DbContext
                 contributor.Configure(modelBuilder);
             }
         }
+
+        modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false);
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
