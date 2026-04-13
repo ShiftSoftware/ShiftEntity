@@ -37,7 +37,7 @@ public class ShiftEntityOptions
 
     public ShiftEntityOptions AddAzureStorage(params AzureStorageOption[] azureStorageOptions)
     {
-        this.azureStorageOptions = azureStorageOptions.ToList();
+        this.azureStorageOptions.AddRange(azureStorageOptions);
 
         return this;
     }
