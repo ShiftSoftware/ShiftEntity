@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core.Services.Attestation
+namespace ShiftSoftware.ShiftEntity.Functions.Services.Attestation
 {
     public interface IUnifiedAttestationService
     {

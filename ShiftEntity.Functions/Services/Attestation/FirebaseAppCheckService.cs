@@ -14,7 +14,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 
-namespace ShiftSoftware.ShiftEntity.Core.Services.Attestation
+namespace ShiftSoftware.ShiftEntity.Functions.Services.Attestation
 {
     public class FirebaseAppCheckService
     {

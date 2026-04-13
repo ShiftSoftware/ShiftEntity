@@ -3,9 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.DependencyInjection;
-using ShiftSoftware.ShiftEntity.Core.Services.Attestation;
-using ShiftSoftware.ShiftEntity.Functions.AppCheck;
 using ShiftSoftware.ShiftEntity.Functions.Extensions;
+using ShiftSoftware.ShiftEntity.Functions.Services.Attestation;
 using ShiftSoftware.ShiftEntity.Functions.Utilities;
 
 namespace ShiftSoftware.ShiftEntity.Functions.AttestationVerification

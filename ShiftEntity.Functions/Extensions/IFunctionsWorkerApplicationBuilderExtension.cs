@@ -3,12 +3,12 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ShiftSoftware.ShiftEntity.Core.Services.Attestation;
 using ShiftSoftware.ShiftEntity.Functions.AppCheck;
 using ShiftSoftware.ShiftEntity.Functions.AttestationVerification;
 using ShiftSoftware.ShiftEntity.Functions.Localization;
 using ShiftSoftware.ShiftEntity.Functions.ModelValidation;
 using ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
+using ShiftSoftware.ShiftEntity.Functions.Services.Attestation;
 
 namespace ShiftSoftware.ShiftEntity.Functions.Extensions;
 
