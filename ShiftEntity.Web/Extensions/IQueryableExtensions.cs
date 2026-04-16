@@ -93,14 +93,14 @@ public static class IQueryableExtensions
                 maxTop = (int)userMaxTop.Value;
         }
 
-        // Validate against maximum
-        if (maxTop > 0 && top > maxTop)
-        {
-            throw new ShiftEntityException(new Message(
-                "Query Limit Exceeded",
-                $"The requested number of records ({top}) exceeds the maximum allowed limit of {maxTop}. Please reduce the page size."
-            ), (int)HttpStatusCode.BadRequest);
-        }
+        //// Validate against maximum
+        //if (maxTop > 0 && top > maxTop)
+        //{
+        //    throw new ShiftEntityException(new Message(
+        //        "Query Limit Exceeded",
+        //        $"The requested number of records ({top}) exceeds the maximum allowed limit of {maxTop}. Please reduce the page size."
+        //    ), (int)HttpStatusCode.BadRequest);
+        //}
 
         if (top != count)
             data = data.Take(top);
