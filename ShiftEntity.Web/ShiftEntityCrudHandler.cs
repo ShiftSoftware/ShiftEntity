@@ -62,8 +62,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        var data = repository.GetRevisionsAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         return await data.ToOdataDTO(oDataQueryOptions, httpContext.Request, applySoftDeleteFilter: false);
     }
@@ -74,12 +75,13 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         DateTimeOffset? asOf)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
         Entity? item;
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -174,7 +176,8 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             Additional = repository.AdditionalResponseData
         };
 
-        var createdKey = ShiftEntityHashIdService.Encode<ViewAndUpsertDTO>(newItem.ID);
+        var hashIdServiceForKey = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var createdKey = hashIdServiceForKey.Encode<ViewAndUpsertDTO>(newItem.ID);
 
         return (CrudResult.Created(createdBody, createdKey), newItem);
     }
@@ -186,6 +189,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         IReadOnlyDictionary<string, string[]>? validationErrors = null)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
         if (validationErrors is not null && validationErrors.Count > 0)
         {
@@ -196,7 +200,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         }
         catch (ShiftEntityException ex)
         {
@@ -255,8 +259,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         bool isHardDelete)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         if (item == null)
             return (CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -369,8 +374,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     {
         if (oDataQueryOptions?.Filter is not null)
         {
+            var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+
             var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression
-                .Accept(new HashIdQueryNodeVisitor<ListDTO>());
+                .Accept(new HashIdQueryNodeVisitor<ListDTO>(hashIdService));
 
             // Build a throwaway ODataQueryOptions carrying the rewritten filter,
             // without mutating the live request (the controller base used to mutate

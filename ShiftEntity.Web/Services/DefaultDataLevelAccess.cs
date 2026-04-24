@@ -22,11 +22,13 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     private readonly ITypeAuthService typeAuthService;
     private readonly IdentityClaimProvider identityClaimProvider;
+    private readonly IHashIdService hashIdService;
 
-    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider)
+    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider, IHashIdService hashIdService)
     {
         this.typeAuthService = typeAuthService;
         this.identityClaimProvider = identityClaimProvider;
+        this.hashIdService = hashIdService;
     }
 
     private List<long?>? GetAccessibleItems<TDto>(DynamicReadWriteDeleteAction claim, params string[]? selfId)
@@ -36,7 +38,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         List<long?>? accessibleItems = accessibleItemsTypeAuth.WildCard ? null :
             accessibleItemsTypeAuth
             .AccessibleIds
-            .Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TDto>(x))
+            .Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)hashIdService.Decode<TDto>(x))
             .ToList();
 
         return accessibleItems;
@@ -115,7 +117,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Countries,
                     access,
-                    entityWithCountry?.CountryID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CountryDTO>(entityWithCountry.CountryID.Value),
+                    entityWithCountry?.CountryID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<CountryDTO>(entityWithCountry.CountryID.Value),
                     this.identityClaimProvider.GetHashedCountryID()!
                 ))
                 {
@@ -131,7 +133,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Regions,
                     access,
-                    entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
+                    entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
                     this.identityClaimProvider.GetHashedRegionID()!
                 ))
                 {
@@ -147,7 +149,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Companies,
                     access,
-                    entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
+                    entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
                     this.identityClaimProvider.GetHashedCompanyID()!
                 ))
                 {
@@ -163,7 +165,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Branches,
                     access,
-                    entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
+                    entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
                     this.identityClaimProvider.GetHashedCompanyBranchID()!
                 ))
                 {
@@ -179,7 +181,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Brands,
                     access,
-                    entityWithBrand?.BrandID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<BrandDTO>(entityWithBrand.BrandID.Value)
+                    entityWithBrand?.BrandID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<BrandDTO>(entityWithBrand.BrandID.Value)
                 ))
                 {
                     return false;
@@ -194,7 +196,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Cities,
                     access,
-                    entityWithCity?.CityID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CityDTO>(entityWithCity.CityID.Value),
+                    entityWithCity?.CityID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<CityDTO>(entityWithCity.CityID.Value),
                     this.identityClaimProvider.GetHashedCityID()!
                 ))
                 {
@@ -210,7 +212,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Teams,
                     access,
-                    entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
+                    entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : hashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
                     this.identityClaimProvider.GetHashedTeamIDs()?.ToArray()
                 ))
                 {

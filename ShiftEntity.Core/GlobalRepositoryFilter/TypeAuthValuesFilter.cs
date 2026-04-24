@@ -23,17 +23,20 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
 
     private readonly ICurrentUserProvider? CurrentUserProvider;
     private readonly ITypeAuthService? TypeAuthService;
+    private readonly IHashIdService? HashIdService;
 
     public TypeAuthValuesFilter(
             Expression<Func<TypeAuthValuesFilterContext<Entity>, bool>> keySelector,
             ICurrentUserProvider? currentUserProvider,
             ITypeAuthService? TypeAuthService,
+            IHashIdService? hashIdService,
             Guid id
     )
     {
         this.KeySelector = keySelector;
         this.CurrentUserProvider = currentUserProvider;
         this.TypeAuthService = TypeAuthService;
+        this.HashIdService = hashIdService;
         this.ID = id;
     }
 
@@ -66,7 +69,12 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
             {
                 accessibleItems.AccessibleIds = accessibleItems
                     .AccessibleIds
-                    .Select(x => ShiftEntityHashIdService.Decode(x, dtoTypeForHashId).ToString())
+                    .Select(x => (this.HashIdService is not null
+                        ? this.HashIdService.Decode(x, dtoTypeForHashId)
+#pragma warning disable CS0618
+                        : ShiftEntityHashIdService.Decode(x, dtoTypeForHashId)
+#pragma warning restore CS0618
+                    ).ToString())
                     .ToList();
             }
 

@@ -7,6 +7,7 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
+using System.Text.Json.Serialization.Metadata;
 
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -35,21 +36,24 @@ public static class IMvcBuilderExtensions
             .AddLocalization()
             .AddShiftEntity();
 
-        // Configure JSON options from resolved ShiftEntityOptions
-        builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
-        {
-            var shiftEntityOptions = p.GetRequiredService<ShiftEntityOptions>();
+        // Configure JSON options from resolved ShiftEntityOptions.
+        // The TypeInfoResolver modifier installed here swaps HashId JsonConverters for DI-aware
+        // ones holding a live IHashIdService reference at JsonTypeInfo build time (after DI is
+        // configured), fixing the attribute-construction-time timing race in the legacy static path.
+        builder.Services
+            .AddOptions<JsonOptions>()
+            .Configure<ShiftEntityOptions, IHashIdService, AzureStorageService>(
+                (o, shiftEntityOptions, hashIdService, azureStorageService) =>
+                {
+                    o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
 
-            Action<JsonOptions> options = (o) =>
-            {
-                o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
+                    if (shiftEntityOptions.azureStorageOptions.Count > 0)
+                        o.RegisterAzureStorageServiceConverters(azureStorageService);
 
-                if (shiftEntityOptions.azureStorageOptions.Count > 0)
-                    o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
-            };
-
-            return new ConfigureNamedOptions<JsonOptions>(Options.Options.DefaultName, options);
-        });
+                    var baseResolver = o.JsonSerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver();
+                    o.JsonSerializerOptions.TypeInfoResolver = baseResolver
+                        .WithAddedModifier(HashIdJsonTypeInfoResolverModifier.Create(hashIdService));
+                });
 
         // Configure validation error wrapping from resolved ShiftEntityOptions
         builder.Services.AddSingleton<IConfigureOptions<ApiBehaviorOptions>>(sp =>
