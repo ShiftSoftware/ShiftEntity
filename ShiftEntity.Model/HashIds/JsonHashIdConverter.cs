@@ -8,19 +8,16 @@ public class StringJsonHashIdConverter : JsonConverter<string>
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public StringJsonHashIdConverter(ShiftEntityHashId hashids)
+    public StringJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public StringJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -52,19 +49,16 @@ public class NullableLongJsonHashIdConverter : JsonConverter<long?>
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public NullableLongJsonHashIdConverter(ShiftEntityHashId hashids)
+    public NullableLongJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public NullableLongJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override long? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -96,19 +90,16 @@ public class LongJsonHashIdConverter : JsonConverter<long>
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public LongJsonHashIdConverter(ShiftEntityHashId hashids)
+    public LongJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public LongJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -140,19 +131,16 @@ public class ShiftEntitySelectDTOJsonHashIdConverter : JsonConverter<ShiftEntity
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public ShiftEntitySelectDTOJsonHashIdConverter(ShiftEntityHashId hashids)
+    public ShiftEntitySelectDTOJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public ShiftEntitySelectDTOJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override ShiftEntitySelectDTO Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -197,19 +185,16 @@ public class ShiftEntitySelectDTOEnumerableJsonHashIdConverter : JsonConverter<I
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public ShiftEntitySelectDTOEnumerableJsonHashIdConverter(ShiftEntityHashId hashids)
+    public ShiftEntitySelectDTOEnumerableJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public ShiftEntitySelectDTOEnumerableJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override IEnumerable<ShiftEntitySelectDTO> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -265,19 +250,16 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
 {
     private readonly ShiftEntityHashId? hashids;
     private readonly IHashIdServiceReader? hashIdService;
+    private readonly string? configurationName;
 
-    public ShiftEntitySelectDTOListJsonHashIdConverter(ShiftEntityHashId hashids)
+    public ShiftEntitySelectDTOListJsonHashIdConverter(ShiftEntityHashId? hashids, string? configurationName = null, IHashIdServiceReader? hashIdService = null)
     {
         this.hashids = hashids;
-    }
-
-    public ShiftEntitySelectDTOListJsonHashIdConverter(ShiftEntityHashId? hashids, IHashIdServiceReader hashIdService)
-    {
-        this.hashids = hashids;
+        this.configurationName = configurationName;
         this.hashIdService = hashIdService;
     }
 
-    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.hashids, this.hashIdService);
+    private bool IsEnabled() => HashIdConverterRuntime.IsEnabled(this.configurationName, this.hashIdService);
 
     public override List<ShiftEntitySelectDTO> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -336,90 +318,100 @@ public class ShiftEntitySelectDTOListJsonHashIdConverter : JsonConverter<List<Sh
 /// </summary>
 public interface IHashIdServiceReader
 {
-    bool Enabled { get; }
-    bool IdentityHashIdEnabled { get; }
+    bool IsConfigurationRegistered(string configurationName);
 }
 
 internal static class HashIdConverterRuntime
 {
-    internal static bool IsEnabled(ShiftEntityHashId? hashids, IHashIdServiceReader? service)
+    internal static bool IsEnabled(string? configurationName, IHashIdServiceReader? service)
     {
-        var isIdentity = hashids?.IsIdentityHasher ?? false;
+        var name = configurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
 
         if (service is not null)
-            return (service.Enabled && !isIdentity) || (service.IdentityHashIdEnabled && isIdentity);
+            return service.IsConfigurationRegistered(name);
 
 #pragma warning disable CS0618
-        return (HashId.Enabled && !isIdentity) || (HashId.IdentityHashIdEnabled && isIdentity);
+        return name == JsonHashIdConverterAttribute.IdentityConfigurationName
+            ? HashId.IdentityHashIdEnabled
+            : HashId.Enabled;
 #pragma warning restore CS0618
     }
 }
-
 public class JsonHashIdConverterAttribute : JsonConverterAttribute
 {
+    public const string IdentityConfigurationName = "Identity";
+    public const string DefaultConfigurationName  = "Default";
+
     internal ShiftEntityHashId? Hashids;
-    internal bool IsIdentityHasher = false;
 
-    // Raw construction arguments preserved so HashIdService can (re)build a hasher on demand
-    // without depending on the static HashId.Enabled flag that was read at attribute-construction time.
-    internal readonly string? RawSalt;
-    internal readonly int RawMinHashLength;
-    internal readonly string? RawAlphabet;
-    internal readonly Type? RawDtoType;
-    internal readonly bool RawUsedTypedCtor;
+    public string? Salt { get; set; }
+    public int MinHashLength { get; set; }
+    public string? Alphabet { get; set; }
+    public Type? DtoType { get; set; }
 
-    public JsonHashIdConverterAttribute(string salt, int minHashLength = 0, string? alphabet = null)
+    // When set, the attribute resolves its hasher from the named entry in HashIdOptions.Configurations
+    // at type-info build time. Wins over the literal Salt/MinHashLength/Alphabet properties.
+    public string? ConfigurationName { get; set; }
+
+    public JsonHashIdConverterAttribute(
+        string? salt = null,
+        int minHashLength = 0,
+        string? alphabet = null,
+        Type? dtoType = null,
+        string? configurationName = null)
     {
-        this.RawSalt = salt;
-        this.RawMinHashLength = minHashLength;
-        this.RawAlphabet = alphabet;
-        this.RawUsedTypedCtor = false;
-
-#pragma warning disable CS0618
-        if (HashId.Enabled && !this.IsIdentityHasher)
-            Hashids = new ShiftEntityHashId(salt, minHashLength, alphabet);
-#pragma warning restore CS0618
-    }
-
-    public JsonHashIdConverterAttribute(Type dtoType, string? salt = null, int minHashLength = 0, string? alphabet = null, bool isIdentityHasher = false)
-    {
-        this.RawSalt = salt;
-        this.RawMinHashLength = minHashLength;
-        this.RawAlphabet = alphabet;
-        this.RawDtoType = dtoType;
-        this.RawUsedTypedCtor = true;
-        this.IsIdentityHasher = isIdentityHasher;
-
-        //HashIds library seems to be taking the first 24 chars of the salt. This is why we're reversing the type name
-#pragma warning disable CS0618
-        if (HashId.Enabled)
-            Hashids = new ShiftEntityHashId(salt + new string(dtoType.FullName!.Reverse().ToArray()), minHashLength, alphabet, isIdentityHasher);
-#pragma warning restore CS0618
+        Salt = salt;
+        MinHashLength = minHashLength;
+        Alphabet = alphabet;
+        DtoType = dtoType;
+        ConfigurationName = configurationName;
     }
 
     public override JsonConverter? CreateConverter(Type typeToConvert)
     {
+        EnsureLegacyHasher();
+
         if (typeToConvert == typeof(string))
-            return new StringJsonHashIdConverter(this.Hashids!);
+            return new StringJsonHashIdConverter(this.Hashids, this.ConfigurationName);
         if (typeToConvert == typeof(long))
-            return new LongJsonHashIdConverter(this.Hashids!);
+            return new LongJsonHashIdConverter(this.Hashids, this.ConfigurationName);
         if (typeToConvert == typeof(long?))
-            return new NullableLongJsonHashIdConverter(this.Hashids!);
+            return new NullableLongJsonHashIdConverter(this.Hashids, this.ConfigurationName);
         else if (typeToConvert == typeof(ShiftEntitySelectDTO))
-            return new ShiftEntitySelectDTOJsonHashIdConverter(this.Hashids!);
+            return new ShiftEntitySelectDTOJsonHashIdConverter(this.Hashids, this.ConfigurationName);
         else if (typeToConvert == typeof(IEnumerable<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(this.Hashids!);
+            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(this.Hashids, this.ConfigurationName);
         else if (typeToConvert == typeof(List<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOListJsonHashIdConverter(this.Hashids!);
+            return new ShiftEntitySelectDTOListJsonHashIdConverter(this.Hashids, this.ConfigurationName);
 
         throw new Exception($"No JsonHashIdConverter for type ({typeToConvert.Name}) is available");
+    }
+
+    // Legacy static path only — DI hosts go through HashIdJsonTypeInfoResolverModifier which
+    // replaces the converter with a DI-aware one before this fallback is consulted. Named-config
+    // attributes deliberately don't materialize a hasher here; they require DI.
+    private void EnsureLegacyHasher()
+    {
+        if (Hashids is not null) return;
+        if (ConfigurationName is not null) return;
+#pragma warning disable CS0618
+        if (!HashId.Enabled) return;
+        var saltWithType = DtoType is null
+            ? Salt ?? string.Empty
+            : (Salt ?? string.Empty) + new string(DtoType.FullName!.Reverse().ToArray());
+        Hashids = new ShiftEntityHashId(saltWithType, MinHashLength, Alphabet);
+#pragma warning restore CS0618
     }
 }
 
 public class JsonHashIdConverterAttribute<T> : JsonHashIdConverterAttribute
 {
-    public JsonHashIdConverterAttribute(int minHashLength = 0, string? salt = null, string? alphabet = null, bool isIdentityHasher = false) : base(typeof(T), salt, minHashLength, alphabet, isIdentityHasher)
+    public JsonHashIdConverterAttribute(
+        int minHashLength = 0,
+        string? salt = null,
+        string? alphabet = null,
+        string? configurationName = null)
+        : base(salt, minHashLength, alphabet, typeof(T), configurationName)
     {
-
     }
 }

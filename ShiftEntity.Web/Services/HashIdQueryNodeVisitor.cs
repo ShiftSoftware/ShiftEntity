@@ -150,9 +150,10 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
             ? Visit(rightBinary)
             : nodeIn.Right.Accept(visitor);
 
-        // Validate operator compatibility with HashIds
+        // Validate operator compatibility with HashIds. AcceptUnencodedIds is now per-configuration;
+        // resolve it by the property's attribute configuration name (falls back to "Default").
         if (visitor.JsonConverterAttribute is not null &&
-            !_hashIdService.AcceptUnencodedIds &&
+            !_hashIdService.IsAcceptUnencodedIds(visitor.JsonConverterAttribute.ConfigurationName) &&
             nodeIn.OperatorKind != BinaryOperatorKind.Equal &&
             nodeIn.OperatorKind != BinaryOperatorKind.NotEqual)
         {
