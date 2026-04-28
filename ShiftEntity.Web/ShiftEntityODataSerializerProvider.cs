@@ -42,26 +42,25 @@ class ShiftEntityODataResourceSerializer : ODataResourceSerializer
     {
         ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
 
-        if (property.Value != null)
+        if (hashIdService.Enabled || hashIdService.IdentityHashIdEnabled)
         {
-            // Resolve the CLR property on the underlying resource type to locate the
-            // [JsonHashIdConverterAttribute]. The structural property's declaring EDM type
-            // doesn't always map cleanly back to a CLR type, so we walk via the resource's
-            // EdmType and its ClrType annotation via the resource context.
-            var clrType = resourceContext.StructuredType?.FullTypeName() is string clrTypeName
-                ? Type.GetType(clrTypeName)
-                : null;
-
-            // Fallback: use the ResourceInstance's runtime type.
-            clrType ??= resourceContext.ResourceInstance?.GetType();
-
-            if (clrType != null)
+            if (property.Value != null)
             {
-                var converterAttribute = HashIdConverterAttributeLookup.Get(clrType, property.Name);
-                if (converterAttribute != null)
+                // Resolve the CLR property on the underlying resource type to locate the
+                // [JsonHashIdConverterAttribute]. The structural property's declaring EDM type
+                // doesn't always map cleanly back to a CLR type, so we walk via the resource's
+                // EdmType and its ClrType annotation via the resource context.
+                var clrType = resourceContext.StructuredType?.FullTypeName() is string clrTypeName
+                    ? Type.GetType(clrTypeName)
+                    : null;
+
+                // Fallback: use the ResourceInstance's runtime type.
+                clrType ??= resourceContext.ResourceInstance?.GetType();
+
+                if (clrType != null)
                 {
-                    var configName = converterAttribute.ConfigurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
-                    if (hashIdService.IsConfigurationRegistered(configName))
+                    var converterAttribute = HashIdConverterAttributeLookup.Get(clrType, property.Name);
+                    if (converterAttribute != null)
                     {
                         var encoded = hashIdService.Encode(long.Parse(property.Value.ToString()!), converterAttribute);
                         property.Value = encoded;

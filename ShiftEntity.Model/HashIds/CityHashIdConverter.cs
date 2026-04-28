@@ -2,7 +2,9 @@
 
 public class CityHashIdConverter : JsonHashIdConverterAttribute<CityHashIdConverter>
 {
-    public CityHashIdConverter() : base(configurationName: IdentityConfigurationName)
+    // Identity hasher: salt/minLength/alphabet resolved from HashIdOptions at hasher-build time
+    // by HashIdService.GetHasherFor (detects isIdentityHasher == true). No static reads.
+    public CityHashIdConverter() : base(isIdentityHasher: true)
     {
     }
 }

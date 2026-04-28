@@ -34,6 +34,7 @@ public static class HashId
 public class ShiftEntityHashId
 {
     Hashids hashids;
+    internal bool IsIdentityHasher = false;
 
     public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null)
     {
@@ -43,32 +44,51 @@ public class ShiftEntityHashId
             hashids = new Hashids(salt, minHashLength, alphabet);
     }
 
-    // Encode/Decode are unconditional. Whether to invoke the hasher at all is decided upstream:
-    //  - DI path: HashIdConverterRuntime.IsEnabled gates on IHashIdService.IsConfigurationRegistered.
-    //  - Legacy static path: JsonHashIdConverterAttribute only materializes a hasher when
-    //    HashId.Enabled / HashId.IdentityHashIdEnabled is set at construction time.
+    internal ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = false)
+        : this(salt, minHashLength, alphabet)
+    {
+        this.IsIdentityHasher = userIdsHasher;
+    }
+
     public long Decode(string hash)
     {
-        try
+        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
         {
-            return hashids.DecodeSingleLong(hash);
-        }
-        catch
-        {
-            if (HashId.acceptUnencodedIds)
+            try
             {
-                try
-                {
-                    return long.Parse(hash);
-                }
-                catch
-                {
-                }
+                return hashids.DecodeSingleLong(hash);
             }
+            catch
+            {
+                if (HashId.acceptUnencodedIds)
+                {
+                    try
+                    {
+                        return long.Parse(hash);
+                    }
+                    catch
+                    {
+                    }
+                }
 
-            return default;
+                return default;
+            }
+        }
+        else
+        {
+            return long.Parse(hash);
         }
     }
 
-    public string Encode(long id) => hashids.EncodeLong(id);
+    public string Encode(long id)
+    {
+        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
+        {
+            return hashids.EncodeLong(id);
+        }
+        else
+        {
+            return id.ToString();
+        }
+    }
 }

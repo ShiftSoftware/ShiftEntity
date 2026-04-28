@@ -2,7 +2,9 @@
 
 public class BrandHashIdConverter : JsonHashIdConverterAttribute<BrandHashIdConverter>
 {
-    public BrandHashIdConverter() : base(configurationName: IdentityConfigurationName)
+    // Identity hasher: salt/minLength/alphabet resolved from HashIdOptions at hasher-build time
+    // by HashIdService.GetHasherFor (detects isIdentityHasher == true). No static reads.
+    public BrandHashIdConverter() : base(isIdentityHasher: true)
     {
     }
 }
