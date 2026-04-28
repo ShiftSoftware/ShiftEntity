@@ -20,11 +20,9 @@ public static class IMvcBuilderExtensions
     /// </summary>
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> configure)
     {
-        // Route through AddShiftEntity(configure) so the eager apply (which fires the static
-        // HashId.Register*(...) side effects at registration time) runs for Web hosts too.
-        builder.Services.AddShiftEntity(configure);
+        builder.Services.Configure(configure);
 
-        return AddShiftEntityWebCore(builder);
+        return AddShiftEntityWeb(builder);
     }
 
     /// <summary>
@@ -33,33 +31,28 @@ public static class IMvcBuilderExtensions
     /// </summary>
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder)
     {
-        builder.Services.AddShiftEntity();
-
-        return AddShiftEntityWebCore(builder);
-    }
-
-    private static IMvcBuilder AddShiftEntityWebCore(IMvcBuilder builder)
-    {
         builder.Services
             .AddHttpContextAccessor()
-            .AddLocalization();
+            .AddLocalization()
+            .AddShiftEntity();
 
-        // Wire the DI-aware HashId TypeInfoResolver modifier into both AspNetCore JSON pipelines
-        // so identity hashers resolve through IHashIdService.GetHasherFor at type-info build time
-        // (after DI is configured), fixing the attribute-construction-time timing race in the
-        // legacy static path.
-        builder.Services.AddShiftEntityHashIdJsonSupport();
-
-        // MVC-specific JSON configuration — naming policy and Azure storage converters.
+        // Configure JSON options from resolved ShiftEntityOptions.
+        // The TypeInfoResolver modifier installed here swaps HashId JsonConverters for DI-aware
+        // ones holding a live IHashIdService reference at JsonTypeInfo build time (after DI is
+        // configured), fixing the attribute-construction-time timing race in the legacy static path.
         builder.Services
             .AddOptions<JsonOptions>()
-            .Configure<ShiftEntityOptions, AzureStorageService>(
-                (o, shiftEntityOptions, azureStorageService) =>
+            .Configure<ShiftEntityOptions, IHashIdService, AzureStorageService>(
+                (o, shiftEntityOptions, hashIdService, azureStorageService) =>
                 {
                     o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
 
                     if (shiftEntityOptions.azureStorageOptions.Count > 0)
                         o.RegisterAzureStorageServiceConverters(azureStorageService);
+
+                    var baseResolver = o.JsonSerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver();
+                    o.JsonSerializerOptions.TypeInfoResolver = baseResolver
+                        .WithAddedModifier(HashIdJsonTypeInfoResolverModifier.Create(hashIdService));
                 });
 
         // Configure validation error wrapping from resolved ShiftEntityOptions
