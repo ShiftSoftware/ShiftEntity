@@ -7,11 +7,9 @@ using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
-using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
-using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
@@ -322,58 +320,6 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 Additional = ex.AdditionalData,
             });
         }
-    }
-
-    /// <summary>
-    /// Generates a SAS token for the print endpoint. <paramref name="urlDescriptor"/> must
-    /// be the same string used by the print endpoint when validating the token (typically
-    /// the absolute path of the print-token route).
-    /// </summary>
-    public async Task<CrudResult> PrintTokenAsync(HttpContext httpContext, string key, string urlDescriptor)
-    {
-        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
-        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
-
-        var found = await repository.FindAsync(
-            hashIdService.Decode<ViewAndUpsertDTO>(key),
-            asOf: null,
-            disableDefaultDataLevelAccess: false,
-            disableGlobalFilters: false);
-
-        if (found is null)
-            return CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
-            {
-                Message = new Message
-                {
-                    Title = "Not Found",
-                    Body = $"Can't find entity with ID '{key}'"
-                },
-                Additional = repository.AdditionalResponseData
-            });
-
-        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
-
-        var (token, expires) = TokenService.GenerateSASToken(
-            urlDescriptor,
-            key,
-            DateTime.UtcNow.AddSeconds(options.TokenExpirationInSeconds),
-            options.SASTokenKey);
-
-        return CrudResult.Ok($"expires={expires}&token={token}");
-    }
-
-    /// <summary>
-    /// Validates a SAS token against <paramref name="urlDescriptor"/> (must match the
-    /// descriptor used by <see cref="PrintTokenAsync"/>) and returns true if valid.
-    /// </summary>
-    public bool ValidatePrintSASToken(HttpContext httpContext, string key, string urlDescriptor, string? expires, string? token)
-    {
-        if (string.IsNullOrEmpty(expires) || string.IsNullOrEmpty(token))
-            return false;
-
-        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
-
-        return TokenService.ValidateSASToken(urlDescriptor, key, expires, token, options.SASTokenKey);
     }
 
     // ---- Selection helpers (bulk operations) ----

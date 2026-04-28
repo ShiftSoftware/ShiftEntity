@@ -80,21 +80,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         return StatusCode(result.StatusCode, result.Body);
     }
 
-    [NonAction]
-    internal async Task<ActionResult> PrintTokenNonAction(string key, string urlDescriptor)
-    {
-        var result = await _handler.PrintTokenAsync(HttpContext, key, urlDescriptor);
-
-        if (result.StatusCode == 200)
-            return Ok(result.Body);
-
-        return StatusCode(result.StatusCode, result.Body);
-    }
-
-    [NonAction]
-    internal bool ValidatePrintSASTokenNonAction(string key, string urlDescriptor, string? expires, string? token)
-        => _handler.ValidatePrintSASToken(HttpContext, key, urlDescriptor, expires, token);
-
     internal Task<List<ListDTO>> GetSelectedListDTOsAsyncBase(
         ODataQueryOptions<ListDTO> oDataQueryOptions,
         bool disableDefaultDataLevelAccess = false,

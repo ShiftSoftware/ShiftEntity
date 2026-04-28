@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
+using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
@@ -407,26 +410,38 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     [HttpGet("print-token/{key}")]
     public virtual async Task<ActionResult> PrintToken(string key)
     {
+        var hashIdService = this.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var found = await this.HttpContext.RequestServices.GetRequiredService<Repository>().FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+
+        if (found is null)
+            return NotFound();
+
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         var url = Url.Action(nameof(PrintToken), new { key = key });
 
-        return await base.PrintTokenNonAction(key, url!);
+        var (token, expires) = TokenService.GenerateSASToken(url!, key,
+            DateTime.UtcNow.AddSeconds(options.TokenExpirationInSeconds), options.SASTokenKey);
+
+        return Ok($"expires={expires}&token={token}");
     }
 
     [HttpGet("print/{key}")]
     [AllowAnonymous]
     public virtual async Task<ActionResult> Print(string key, [FromQuery] string? expires = null, [FromQuery] string? token = null)
     {
+        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+
         var url = Url.Action(nameof(PrintToken), new { key = key });
 
-        if (!base.ValidatePrintSASTokenNonAction(key, url!, expires, token))
+        if (!TokenService.ValidateSASToken(url!, key, expires!, token!, options.SASTokenKey))
             return Forbid();
 
-        return await base.PrintNonAction(key);
+        return (await base.PrintNonAction(key));
     }
 
     [Authorize]

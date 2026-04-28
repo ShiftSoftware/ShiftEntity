@@ -52,9 +52,6 @@ public class ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpser
     internal Func<Func<HttpContext, string, Task<IResult>>,
         HttpContext, string, Task<IResult>>? _printOverride;
 
-    internal Func<Func<HttpContext, string, Task<IResult>>,
-        HttpContext, string, Task<IResult>>? _printTokenOverride;
-
     /// <summary>
     /// Override the GET list endpoint. The <paramref name="handler"/> receives the
     /// original (default) handler as its first parameter.
@@ -143,19 +140,6 @@ public class ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpser
                 HttpContext, string, Task<IResult>> handler)
     {
         _printOverride = handler;
-        return this;
-    }
-
-    /// <summary>
-    /// Override the GET print-token endpoint (secure mode only). The <paramref name="handler"/>
-    /// receives the original (default) handler as its first parameter.
-    /// </summary>
-    public ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpsertDTO>
-        OverridePrintToken(
-            Func<Func<HttpContext, string, Task<IResult>>,
-                HttpContext, string, Task<IResult>> handler)
-    {
-        _printTokenOverride = handler;
         return this;
     }
 }

@@ -178,33 +178,11 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
             return ToMinimalApiResult(result);
         };
 
-        // The SAS-token unique descriptor must match between the print-token issuer and
-        // the print validator. We derive it deterministically from the route prefix so
-        // both endpoints in this group produce/validate the same string.
-        var normalizedPrefix = "/" + prefix.Trim('/');
-        string PrintTokenDescriptor(string k) => $"{normalizedPrefix}/print-token/{k}";
-
         Func<HttpContext, string, Task<IResult>> defaultPrint = async (HttpContext ctx, string key) =>
         {
-            // In secure mode, the print endpoint is anonymous and gated by a SAS token
-            // (mirrors ShiftEntitySecureControllerAsync.Print which is [AllowAnonymous]).
-            if (secure)
-            {
-                var expires = ctx.Request.Query["expires"].ToString();
-                var token = ctx.Request.Query["token"].ToString();
-                if (!handler.ValidatePrintSASToken(ctx, key, PrintTokenDescriptor(key), expires, token))
-                    return Results.Forbid();
-            }
-
             var result = await handler.PrintAsync(ctx, key);
             if (result.Stream is not null)
                 return Results.Stream(result.Stream, result.ContentType ?? "application/octet-stream");
-            return ToMinimalApiResult(result);
-        };
-
-        Func<HttpContext, string, Task<IResult>> defaultPrintToken = async (HttpContext ctx, string key) =>
-        {
-            var result = await handler.PrintTokenAsync(ctx, key, PrintTokenDescriptor(key));
             return ToMinimalApiResult(result);
         };
 
@@ -249,39 +227,22 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                 : await defaultDelete(ctx, key, isHardDelete));
 
         // GET /print/{key}
-        // In secure mode the SAS token is validated inside defaultPrint, and the route is
-        // marked AllowAnonymous (mirrors [AllowAnonymous] on ShiftEntitySecureControllerAsync.Print).
         var printRoute = group.MapGet("/print/{key}", async (HttpContext ctx, string key) =>
             config?._printOverride is not null
                 ? await config._printOverride(defaultPrint, ctx, key)
                 : await defaultPrint(ctx, key));
 
         if (secure)
-            printRoute.AllowAnonymous();
-
-        // GET /print-token/{key} — secure mode only. Mirrors ShiftEntitySecureControllerAsync.PrintToken.
-        RouteHandlerBuilder? printTokenRoute = null;
-        if (secure)
-        {
-            printTokenRoute = group.MapGet("/print-token/{key}", async (HttpContext ctx, string key) =>
-                config?._printTokenOverride is not null
-                    ? await config._printTokenOverride(defaultPrintToken, ctx, key)
-                    : await defaultPrintToken(ctx, key));
-        }
-
-        if (secure)
         {
             // Per-verb TypeAuth filter, mirroring ShiftEntitySecureControllerAsync's
             // CanRead / CanWrite / CanDelete wrapping. Passing a null action keeps
             // RequireAuthorization without permission checks (authenticated-only).
-            // Note: print itself is anonymous + SAS-gated, so it gets no TypeAuth filter
-            // — only print-token does (matching the controller).
             if (action is not null)
             {
                 getList.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getSingleRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getRevisionsRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
-                printTokenRoute!.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
+                printRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 postRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 putRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 deleteRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Delete));
