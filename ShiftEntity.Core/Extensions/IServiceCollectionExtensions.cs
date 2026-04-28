@@ -15,6 +15,8 @@ public static class IServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddShiftEntity(this IServiceCollection services, Action<ShiftEntityOptions> configure)
     {
+        configure(new ShiftEntityOptions());
+
         services.Configure(configure);
 
         return services.AddShiftEntity();
