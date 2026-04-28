@@ -2,9 +2,7 @@
 
 public class TeamHashIdConverter : JsonHashIdConverterAttribute<TeamHashIdConverter>
 {
-    // Identity hasher: salt/minLength/alphabet resolved from HashIdOptions at hasher-build time
-    // by HashIdService.GetHasherFor (detects isIdentityHasher == true). No static reads.
-    public TeamHashIdConverter() : base(isIdentityHasher: true)
+    public TeamHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
     {
     }
 }

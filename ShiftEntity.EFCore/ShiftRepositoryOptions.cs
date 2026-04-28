@@ -13,7 +13,6 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();
     private ICurrentUserProvider? CurrentUserProvider { get; set; }
     private ITypeAuthService? TypeAuthService { get; set; }
-    private IHashIdService? HashIdService { get; set; }
 
     public void SetCurrentUserProvider(ICurrentUserProvider currentUserProvider)
     {
@@ -23,11 +22,6 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     public void SetTypeAuthService(ITypeAuthService typeAuthService)
     {
         this.TypeAuthService = typeAuthService;
-    }
-
-    public void SetHashIdService(IHashIdService hashIdService)
-    {
-        this.HashIdService = hashIdService;
     }
 
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
@@ -58,9 +52,8 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     )
     {
         var createdFilter = new ClaimValuesFilter<EntityType>(
-            keySelector,
+            keySelector, 
             this.CurrentUserProvider,
-            this.HashIdService,
             id ?? Guid.NewGuid()
         )
         {
@@ -79,10 +72,9 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     )
     {
         var createdFilter = new TypeAuthValuesFilter<EntityType>(
-            keySelector,
-            this.CurrentUserProvider,
+            keySelector, 
+            this.CurrentUserProvider, 
             this.TypeAuthService,
-            this.HashIdService,
             id ?? Guid.NewGuid()
         )
         {

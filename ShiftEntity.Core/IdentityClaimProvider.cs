@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Security.Claims;
 
 namespace ShiftSoftware.ShiftEntity.Core;
@@ -6,32 +6,30 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public class IdentityClaimProvider
 {
     private readonly ClaimsPrincipal? user;
-    private readonly IHashIdService hashIdService;
 
-    public IdentityClaimProvider(ICurrentUserProvider currentUserProvider, IHashIdService hashIdService)
+    public IdentityClaimProvider(ICurrentUserProvider currentUserProvider)
     {
         this.user = currentUserProvider.GetUser();
-        this.hashIdService = hashIdService;
     }
 
     public long? GetCityID()
     {
-        return this.user.GetCityID(this.hashIdService);
+        return this.user.GetCityID();
     }
 
     public long? GetCompanyBranchID()
     {
-        return this.user.GetCompanyBranchID(this.hashIdService);
+        return this.user.GetCompanyBranchID();
     }
 
     public long? GetCompanyID()
     {
-        return this.user.GetCompanyID(this.hashIdService);
+        return this.user.GetCompanyID();
     }
 
     public long? GetCountryID()
     {
-        return this.user.GetCountryID(this.hashIdService);
+        return this.user.GetCountryID();
     }
 
     public string? GetHashedCityID()
@@ -66,17 +64,17 @@ public class IdentityClaimProvider
 
     public long? GetRegionID()
     {
-        return this.user.GetRegionID(this.hashIdService);
+        return this.user.GetRegionID();
     }
 
     public List<long>? GetTeamIDs()
     {
-        return this.user.GetTeamIDs(this.hashIdService);
+        return this.user.GetTeamIDs();
     }
 
     public long? GetUserID()
     {
-        return this.user.GetUserID(this.hashIdService);
+        return this.user.GetUserID();
     }
 
     public string? GetHashedUserID()

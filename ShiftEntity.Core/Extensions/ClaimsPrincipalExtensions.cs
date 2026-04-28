@@ -1,4 +1,4 @@
-using ShiftSoftware.ShiftEntity.Core;
+﻿using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,14 +20,14 @@ public static class ClaimsPrincipalExtensions
         return value;
     }
 
-    public static List<long>? GetDecodedClaimValues(this ClaimsPrincipal? claimsPrincipal, string claimId, JsonHashIdConverterAttribute jsonHashIdConverterAttribute, IHashIdService hashIdService)
+    public static List<long>? GetDecodedClaimValues(this ClaimsPrincipal? claimsPrincipal, string claimId, JsonHashIdConverterAttribute jsonHashIdConverterAttribute)
     {
         var values = GetClaimValues(claimsPrincipal, claimId);
 
         if (values is null)
             return null;
 
-        return values.Select(x => hashIdService.Decode(x, jsonHashIdConverterAttribute)).ToList();
+        return values.Select(x => ShiftEntityHashIdService.Decode(x, jsonHashIdConverterAttribute)).ToList();
     }
 
     public static string? GetHashedRegionID(this ClaimsPrincipal? claimsPrincipal)
@@ -35,9 +35,9 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.RegionIdClaim)?.FirstOrDefault();
     }
 
-    public static long? GetRegionID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetRegionID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.RegionIdClaim, new RegionHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.RegionIdClaim, (new RegionHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCountryID(this ClaimsPrincipal? claimsPrincipal)
@@ -45,9 +45,9 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.CountryIdClaim)?.FirstOrDefault();
     }
 
-    public static long? GetCountryID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetCountryID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CountryIdClaim, new CountryHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CountryIdClaim, (new CountryHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCompanyID(this ClaimsPrincipal? claimsPrincipal)
@@ -55,9 +55,9 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.CompanyIdClaim)?.FirstOrDefault();
     }
 
-    public static long? GetCompanyID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetCompanyID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyIdClaim, new CompanyHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyIdClaim, (new CompanyHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCityID(this ClaimsPrincipal? claimsPrincipal)
@@ -65,9 +65,9 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.CityIdClaim)?.FirstOrDefault();
     }
 
-    public static long? GetCityID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetCityID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CityIdClaim, new CityHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CityIdClaim, (new CityHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedCompanyBranchID(this ClaimsPrincipal? claimsPrincipal)
@@ -75,14 +75,14 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.CompanyBranchIdClaim)?.FirstOrDefault();
     }
 
-    public static long? GetCompanyBranchID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetCompanyBranchID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyBranchIdClaim, new CompanyBranchHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, Constants.CompanyBranchIdClaim, (new CompanyBranchHashIdConverter()))?.FirstOrDefault();
     }
 
-    public static long? GetUserID(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static long? GetUserID(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, ClaimTypes.NameIdentifier, new UserHashIdConverter(), hashIdService)?.FirstOrDefault();
+        return GetDecodedClaimValues(claimsPrincipal, ClaimTypes.NameIdentifier, (new UserHashIdConverter()))?.FirstOrDefault();
     }
 
     public static string? GetHashedUserID(this ClaimsPrincipal? claimsPrincipal)
@@ -95,8 +95,8 @@ public static class ClaimsPrincipalExtensions
         return GetClaimValues(claimsPrincipal, Constants.TeamIdsClaim);
     }
 
-    public static List<long>? GetTeamIDs(this ClaimsPrincipal? claimsPrincipal, IHashIdService hashIdService)
+    public static List<long>? GetTeamIDs(this ClaimsPrincipal? claimsPrincipal)
     {
-        return GetDecodedClaimValues(claimsPrincipal, Constants.TeamIdsClaim, new TeamHashIdConverter(), hashIdService);
+        return GetDecodedClaimValues(claimsPrincipal, Constants.TeamIdsClaim, (new TeamHashIdConverter()));
     }
 }

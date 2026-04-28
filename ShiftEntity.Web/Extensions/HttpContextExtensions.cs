@@ -1,6 +1,4 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,13 +24,11 @@ public static class HttpContextExtensions
     public static List<long>? GetDecodedClaimValues<T>(this HttpContext httpContext, string claimId)
     {
         var values = GetClaimValues(httpContext, claimId);
-
+        
         if (values is null)
             return null;
 
-        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
-
-        return values.Select(x => hashIdService.Decode<T>(x)).ToList();
+        return values.Select(x => ShiftEntityHashIdService.Decode<T>(x)).ToList();
     }
 
     public static string? GetHashedRegionID(this HttpContext httpContext)

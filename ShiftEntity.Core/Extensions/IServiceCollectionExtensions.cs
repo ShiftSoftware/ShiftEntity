@@ -29,11 +29,6 @@ public static class IServiceCollectionExtensions
         // Expose ShiftEntityOptions as a singleton resolved from IOptions (backward compat)
         services.TryAddSingleton(sp => sp.GetRequiredService<IOptions<ShiftEntityOptions>>().Value);
 
-        // Non-static HashId service — reads its configuration from ShiftEntityOptions.HashId,
-        // populated via the fluent x.HashId.RegisterHashId(...) / RegisterIdentityHashId(...) API
-        // inside AddShiftEntityWeb. Replaces the static HashId / ShiftEntityHashIdService path.
-        services.TryAddSingleton<IHashIdService, HashIdService>();
-
         // Register AzureStorageService lazily from merged options
         services.TryAddSingleton(sp =>
         {

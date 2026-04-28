@@ -1,9 +1,8 @@
-using Microsoft.AspNetCore.OData.Formatter;
+﻿using Microsoft.AspNetCore.OData.Formatter;
 using Microsoft.AspNetCore.OData.Formatter.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.Edm;
-using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
@@ -22,7 +21,7 @@ class ShiftEntityODataSerializerProvider : ODataSerializerProvider
     public override IODataEdmTypeSerializer GetEdmTypeSerializer(IEdmTypeReference edmType)
     {
         if (edmType.Definition.TypeKind == EdmTypeKind.Entity)
-            return new ShiftEntityODataResourceSerializer(this, serviceProvider.GetRequiredService<IHashIdService>());
+            return new ShiftEntityODataResourceSerializer(this/*, serviceProvider.GetRequiredService<TimeZoneService>()*/);
         else
             return base.GetEdmTypeSerializer(edmType);
     }
@@ -30,44 +29,49 @@ class ShiftEntityODataSerializerProvider : ODataSerializerProvider
 
 class ShiftEntityODataResourceSerializer : ODataResourceSerializer
 {
-    private readonly IHashIdService hashIdService;
+    //private readonly TimeZoneService timeZoneService;
 
-    public ShiftEntityODataResourceSerializer(ODataSerializerProvider serializerProvider, IHashIdService hashIdService)
+    public ShiftEntityODataResourceSerializer(ODataSerializerProvider serializerProvider/*, TimeZoneService timeZoneService*/) 
         : base(serializerProvider)
     {
-        this.hashIdService = hashIdService;
+        //this.timeZoneService = timeZoneService;
     }
 
     public override ODataProperty CreateStructuralProperty(IEdmStructuralProperty structuralProperty, ResourceContext resourceContext)
     {
         ODataProperty property = base.CreateStructuralProperty(structuralProperty, resourceContext);
 
-        if (hashIdService.Enabled || hashIdService.IdentityHashIdEnabled)
+        if (HashId.Enabled || HashId.IdentityHashIdEnabled)
         {
-            if (property.Value != null)
+            if (property.Value != null && OdataHashIdConverter.GetJsonConverterAttribute(structuralProperty.DeclaringType.FullTypeName(), property.Name) is JsonHashIdConverterAttribute converterAttribute && converterAttribute != null)
             {
-                // Resolve the CLR property on the underlying resource type to locate the
-                // [JsonHashIdConverterAttribute]. The structural property's declaring EDM type
-                // doesn't always map cleanly back to a CLR type, so we walk via the resource's
-                // EdmType and its ClrType annotation via the resource context.
-                var clrType = resourceContext.StructuredType?.FullTypeName() is string clrTypeName
-                    ? Type.GetType(clrTypeName)
-                    : null;
+                var encoded = converterAttribute.Hashids?.Encode(long.Parse(property.Value.ToString()));
 
-                // Fallback: use the ResourceInstance's runtime type.
-                clrType ??= resourceContext.ResourceInstance?.GetType();
-
-                if (clrType != null)
-                {
-                    var converterAttribute = HashIdConverterAttributeLookup.Get(clrType, property.Name);
-                    if (converterAttribute != null)
-                    {
-                        var encoded = hashIdService.Encode(long.Parse(property.Value.ToString()!), converterAttribute);
-                        property.Value = encoded;
-                    }
-                }
+                if (encoded != null)
+                    property.Value = encoded;
             }
         }
+
+        //if (property?.Value?.GetType() == typeof(DateTimeOffset))
+        //{
+        //    var dateTime = (DateTimeOffset)property.Value;
+
+        //    if (dateTime != default)
+        //    {
+        //        //Substracting or adding may result in invalid dates.
+        //        //For example if the value is Datetime.Min or Datetime.Max
+        //        try
+        //        {
+        //            dateTime = new DateTimeOffset(timeZoneService.WriteOffsettedDate(dateTime), timeZoneService.GetTimeZoneOffset());
+        //        }
+        //        catch
+        //        {
+
+        //        }
+
+        //        property.Value = dateTime;
+        //    }
+        //}
 
         return property;
     }

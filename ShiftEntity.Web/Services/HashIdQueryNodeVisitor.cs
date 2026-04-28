@@ -1,7 +1,6 @@
-using Microsoft.OData;
+﻿using Microsoft.OData;
 using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
-using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
 using System.Collections.Concurrent;
@@ -9,31 +8,6 @@ using System.Linq;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
-
-/// <summary>
-/// Non-generic, reflection-cached lookup of <see cref="JsonHashIdConverterAttribute"/> for a
-/// property on a given type. Shared by <see cref="HashIdQueryNodeVisitor{T}"/> and the OData
-/// resource serializer.
-/// </summary>
-internal static class HashIdConverterAttributeLookup
-{
-    private static readonly ConcurrentDictionary<(Type, string), JsonHashIdConverterAttribute?> cache = new();
-
-    public static JsonHashIdConverterAttribute? Get(Type type, string propertyName)
-    {
-        if (type == null || string.IsNullOrWhiteSpace(propertyName))
-            return null;
-
-        return cache.GetOrAdd((type, propertyName), key =>
-        {
-            var (declType, propName) = key;
-            var property = declType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            return property?.GetCustomAttribute<JsonHashIdConverterAttribute>(inherit: true);
-        });
-    }
-
-    internal static void ClearCache() => cache.Clear();
-}
 
 public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantNode>
 {
@@ -48,7 +22,7 @@ public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantN
     {
         // Preserve the current converter state before visiting collection items
         var converterBeforeVisit = _hashIdQueryNodeVisitor.JsonConverterAttribute;
-
+        
         var newCollection = nodeIn.Collection.Select(x =>
         {
             // Restore the converter for each item in the collection
@@ -64,7 +38,7 @@ public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantN
                 // If it's already a number (decoded HashId), don't add quotes
                 if (constantNode.Value is long || constantNode.Value is int)
                     return constantNode.Value.ToString();
-
+                
                 // For strings, add quotes if not already present
                 var valueStr = constantNode.Value.ToString()!;
                 return valueStr.StartsWith("'") ? valueStr : $"'{valueStr}'";
@@ -79,27 +53,42 @@ public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantN
 public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
 {
     private readonly Type _rootType;
-    private readonly IHashIdService _hashIdService;
     private JsonHashIdConverterAttribute? _preservedConverterAttribute;
+
+    // Cache for property converter attributes to avoid repeated reflection
+    internal static readonly ConcurrentDictionary<(Type, string), JsonHashIdConverterAttribute?> _converterCache = new();
 
     public JsonHashIdConverterAttribute? JsonConverterAttribute { get; set; }
 
-    public HashIdQueryNodeVisitor(IHashIdService hashIdService)
+    public HashIdQueryNodeVisitor()
     {
         _rootType = typeof(T);
-        _hashIdService = hashIdService ?? throw new ArgumentNullException(nameof(hashIdService));
     }
 
     /// <summary>
     /// Gets the JsonHashIdConverterAttribute for a property on the specified type.
     /// </summary>
     internal static JsonHashIdConverterAttribute? GetJsonConverterAttribute(Type type, string propertyName)
-        => HashIdConverterAttributeLookup.Get(type, propertyName);
+    {
+        if (type == null || string.IsNullOrWhiteSpace(propertyName))
+            return null;
+
+        return _converterCache.GetOrAdd((type, propertyName), key =>
+        {
+            var (declType, propName) = key;
+            var property = declType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+
+            return property?.GetCustomAttribute<JsonHashIdConverterAttribute>(inherit: true);
+        });
+    }
 
     /// <summary>
     /// Clears the internal cache. Useful for testing scenarios.
     /// </summary>
-    internal static void ClearCache() => HashIdConverterAttributeLookup.ClearCache();
+    internal static void ClearCache()
+    {
+        _converterCache.Clear();
+    }
 
     public override SingleValueNode Visit(ConstantNode nodeIn)
     {
@@ -117,7 +106,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
             if (string.IsNullOrWhiteSpace(hashIdString))
                 return nodeIn;
 
-            var decodedValue = _hashIdService.Decode(hashIdString!, converter);
+            var decodedValue = converter.Hashids!.Decode(hashIdString);
 
             // Return a new ConstantNode with the decoded long value
             return new ConstantNode(decodedValue.ToString(), $"'{decodedValue}'");
@@ -126,7 +115,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
         {
             // If decoding fails, reset the attribute and return original node
             JsonConverterAttribute = null;
-
+            
             // Optionally log the error or throw a more specific exception
             throw new ODataException($"Failed to decode HashId value '{nodeIn.Value}': {ex.Message}", ex);
         }
@@ -135,7 +124,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
     public override SingleValueNode Visit(BinaryOperatorNode nodeIn)
     {
         // Create a child visitor that inherits the current state
-        var visitor = new HashIdQueryNodeVisitor<T>(_hashIdService)
+        var visitor = new HashIdQueryNodeVisitor<T>
         {
             JsonConverterAttribute = JsonConverterAttribute,
             _preservedConverterAttribute = _preservedConverterAttribute
@@ -151,9 +140,9 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
             : nodeIn.Right.Accept(visitor);
 
         // Validate operator compatibility with HashIds
-        if (visitor.JsonConverterAttribute is not null &&
-            !_hashIdService.AcceptUnencodedIds &&
-            nodeIn.OperatorKind != BinaryOperatorKind.Equal &&
+        if (visitor.JsonConverterAttribute is not null && 
+            !HashId.acceptUnencodedIds && 
+            nodeIn.OperatorKind != BinaryOperatorKind.Equal && 
             nodeIn.OperatorKind != BinaryOperatorKind.NotEqual)
         {
             throw new ODataException(
@@ -210,7 +199,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
     {
         // Visit all parameters with the current converter state
         var visitedParameters = nodeIn.Parameters.Select(x => x.Accept(this));
-
+        
         return new SingleValueFunctionCallNode(
             nodeIn.Name,
             visitedParameters,
@@ -230,7 +219,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
             {
                 // Extract property from the source node
                 var property = ExtractPropertyFromNode(source);
-
+                
                 if (property != null)
                 {
                     converter = GetJsonConverterAttribute(_rootType, property.Name);
@@ -243,7 +232,7 @@ public class HashIdQueryNodeVisitor<T> : QueryNodeVisitor<SingleValueNode>
         }
 
         // Create a child visitor with the converter preserved throughout the Any body
-        var childVisitor = new HashIdQueryNodeVisitor<T>(_hashIdService)
+        var childVisitor = new HashIdQueryNodeVisitor<T>
         {
             JsonConverterAttribute = converter,
             _preservedConverterAttribute = converter
