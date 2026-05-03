@@ -1,4 +1,3 @@
-using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
@@ -7,7 +6,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-namespace ShiftSoftware.ShiftEntity.Web.Services;
+namespace ShiftSoftware.ShiftEntity.Core.HashIds;
 
 /// <summary>
 /// Swaps the JSON converter on each property decorated with <see cref="JsonHashIdConverterAttribute"/>
@@ -15,7 +14,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 /// <c>JsonTypeInfo</c> build time (first serialization of a given type), which happens after DI is
 /// fully configured.
 /// </summary>
-internal static class HashIdJsonTypeInfoResolverModifier
+public static class HashIdJsonTypeInfoResolverModifier
 {
     public static Action<JsonTypeInfo> Create(IHashIdService hashIdService)
     {

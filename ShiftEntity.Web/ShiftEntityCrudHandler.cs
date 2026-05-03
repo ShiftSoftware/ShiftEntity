@@ -7,6 +7,7 @@ using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;

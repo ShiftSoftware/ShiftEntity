@@ -1,21 +1,20 @@
 using Microsoft.OData;
 using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
-using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 
-namespace ShiftSoftware.ShiftEntity.Web.Services;
+namespace ShiftSoftware.ShiftEntity.Core.HashIds;
 
 /// <summary>
 /// Non-generic, reflection-cached lookup of <see cref="JsonHashIdConverterAttribute"/> for a
 /// property on a given type. Shared by <see cref="HashIdQueryNodeVisitor{T}"/> and the OData
 /// resource serializer.
 /// </summary>
-internal static class HashIdConverterAttributeLookup
+public static class HashIdConverterAttributeLookup
 {
     private static readonly ConcurrentDictionary<(Type, string), JsonHashIdConverterAttribute?> cache = new();
 
@@ -32,7 +31,7 @@ internal static class HashIdConverterAttributeLookup
         });
     }
 
-    internal static void ClearCache() => cache.Clear();
+    public static void ClearCache() => cache.Clear();
 }
 
 public class CollectionConstantVisitor<T> : QueryNodeVisitor<CollectionConstantNode>

@@ -1,5 +1,5 @@
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Core.HashIds;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Microsoft.Extensions.DependencyInjection;

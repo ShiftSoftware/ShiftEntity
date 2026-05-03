@@ -4,8 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.Edm;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
-using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 
 namespace ShiftSoftware.ShiftEntity.Web;

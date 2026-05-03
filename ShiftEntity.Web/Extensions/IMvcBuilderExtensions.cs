@@ -38,13 +38,19 @@ public static class IMvcBuilderExtensions
 
     private static IMvcBuilder AddShiftEntityWebCore(IMvcBuilder builder)
     {
+        // Core registration runs first via AddShiftEntity (called by the public overloads above).
+        // Everything below is web-specific: AspNetCore JSON middleware wiring, MVC options,
+        // and HTTP/localization plumbing. OData middleware registration lives in the consumer's
+        // composition root (the commented-out AddShiftEntityOdata sample further down shows the
+        // shape) since EDM model construction is application-specific.
+
         builder.Services
             .AddHttpContextAccessor()
             .AddLocalization();
 
-        // Wire the DI-aware HashId TypeInfoResolver modifier into both AspNetCore JSON pipelines
-        // so identity hashers resolve through IHashIdService.GetHasherFor at type-info build time
-        // (after DI is configured).
+        // Wire the DI-aware HashId TypeInfoResolver modifier (defined in ShiftEntity.Core) into
+        // both AspNetCore JSON pipelines so identity hashers resolve through
+        // IHashIdService.GetHasherFor at type-info build time (after DI is configured).
         builder.Services.AddShiftEntityHashIdJsonSupport();
 
         // MVC-specific JSON configuration — naming policy and Azure storage converters.
