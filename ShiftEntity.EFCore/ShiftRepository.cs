@@ -77,6 +77,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             this.ShiftRepositoryOptions.SetTypeAuthService(db.GetService<ITypeAuthService>());
 
+            this.ShiftRepositoryOptions.SetHashIdService(db.GetService<IHashIdService>());
+
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
@@ -317,7 +319,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public virtual async Task<int> SaveChangesAsync()
     {
         var now = DateTimeOffset.UtcNow;
-        long? userId = this.currentUserProvider?.GetUser()?.GetUserID();
+        var hashIdService = this.db.GetService<IHashIdService>();
+        long? userId = this.currentUserProvider?.GetUser()?.GetUserID(hashIdService);
         var beforeSaveTasks = new List<ValueTask>();
         var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 

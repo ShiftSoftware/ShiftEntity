@@ -1,4 +1,5 @@
-﻿using HashidsNet;
+using HashidsNet;
+using System;
 
 namespace ShiftSoftware.ShiftEntity.Model.HashIds;
 public static class HashId
@@ -11,6 +12,7 @@ public static class HashId
     internal static int IdentityHashIdMinLength;
     internal static string? IdentityHashIdAlphabet;
 
+    [Obsolete("Configure HashId via x.HashId.RegisterHashId(...) inside AddShiftEntityWeb and inject IHashIdService. The static path is kept for backward compatibility.")]
     public static void RegisterHashId(bool acceptUnencodedIds = false)
     {
         HashId.acceptUnencodedIds = acceptUnencodedIds;
@@ -18,6 +20,7 @@ public static class HashId
         HashId.Enabled = true;
     }
 
+    [Obsolete("Configure HashId via x.HashId.RegisterIdentityHashId(...) inside AddShiftEntityWeb and inject IHashIdService. The static path is kept for backward compatibility.")]
     public static void RegisterUserIdsHasher(string salt = "", int minHashLength = 0, string? alphabet = null)
     {
         HashId.IdentityHashIdSalt = salt;

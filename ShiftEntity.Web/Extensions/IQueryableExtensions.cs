@@ -44,7 +44,9 @@ public static class IQueryableExtensions
         {
             FilterClause? filterClause = oDataQueryOptions.Filter?.FilterClause!;
 
-            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor<T>());
+            var hashIdService = httpRequest.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
+
+            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor<T>(hashIdService));
 
             FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
 
@@ -111,7 +113,7 @@ public static class IQueryableExtensions
             Value = isAsync ? await data.ToListAsync() : data.ToList(),
 
             // Uncomment the following line if you need to check converter cache during debugging
-            //ConverterCache = HashIdQueryNodeVisitor<T>._converterCache.ToDictionary(x => $"{x.Key.Item1.FullName}.{x.Key.Item2}", x => x.Value?.GetType()?.FullName)
+            //ConverterCache = HashIdConverterAttributeLookup cache contents (debugging only)
         };
     }
 
