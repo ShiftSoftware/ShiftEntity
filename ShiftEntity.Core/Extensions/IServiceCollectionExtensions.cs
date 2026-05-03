@@ -15,6 +15,17 @@ public static class IServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddShiftEntity(this IServiceCollection services, Action<ShiftEntityOptions> configure)
     {
+        // Apply the configure lambda eagerly against a throwaway instance so the static side
+        // effects inside HashIdOptions.RegisterHashId / RegisterIdentityHashId
+        // (HashId.Enabled, HashId.IdentityHashIdSalt, ...) fire at registration time. Otherwise
+        // the lambda would only run when IOptions<ShiftEntityOptions>.Value is first resolved,
+        // which never happens automatically in non-MVC hosts (Azure Functions Worker, console),
+        // leaving the legacy HashId statics unset and JsonHashIdConverterAttribute disabled.
+        configure(new ShiftEntityOptions());
+
+        // Also register through the Options pattern so the canonical instance picks up the same
+        // configuration when materialized, and so additional Configure<ShiftEntityOptions>(...)
+        // calls compose additively.
         services.Configure(configure);
 
         return services.AddShiftEntity();
