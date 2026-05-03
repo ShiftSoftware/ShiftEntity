@@ -13,8 +13,7 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 /// Swaps the JSON converter on each property decorated with <see cref="JsonHashIdConverterAttribute"/>
 /// for a DI-aware instance constructed with a live <see cref="IHashIdService"/>. Runs at
 /// <c>JsonTypeInfo</c> build time (first serialization of a given type), which happens after DI is
-/// fully configured — so it isn't subject to the attribute-construction-time race that affected
-/// the legacy static path.
+/// fully configured.
 /// </summary>
 internal static class HashIdJsonTypeInfoResolverModifier
 {

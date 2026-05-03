@@ -9,9 +9,8 @@ using Microsoft.Extensions.Options;
 namespace ShiftSoftware.ShiftEntity.Core;
 
 /// <summary>
-/// DI-registered, non-static replacement for the legacy <see cref="HashId"/> / <see cref="ShiftEntityHashIdService"/>
-/// statics. Reads its configuration from <see cref="HashIdOptions"/> (populated via the existing
-/// <c>x.HashId.RegisterHashId(...)</c> / <c>x.HashId.RegisterIdentityHashId(...)</c> /
+/// DI-registered HashId service. Reads its configuration from <see cref="HashIdOptions"/>
+/// (populated via the <c>x.HashId.RegisterHashId(...)</c> / <c>x.HashId.RegisterIdentityHashId(...)</c> /
 /// <c>x.HashId.RegisterHashId(name, ...)</c> fluent API inside <c>AddShiftEntityWeb</c>) and
 /// exposes Encode/Decode against a per-DTO hasher cache.
 /// </summary>
@@ -72,11 +71,14 @@ public class HashIdService : IHashIdService
         string? salt;
         int minLen;
         string? alpha;
+        bool acceptUnencoded;
 
         if (attr.ConfigurationName is { } name)
         {
             if (!options.Configurations.TryGetValue(name, out var cfg))
                 return null;
+
+            acceptUnencoded = cfg.AcceptUnencodedIds;
 
             if (cfg.Salt is null)
             {
@@ -95,6 +97,8 @@ public class HashIdService : IHashIdService
         {
             options.Configurations.TryGetValue(JsonHashIdConverterAttribute.DefaultConfigurationName, out var dflt);
 
+            acceptUnencoded = dflt?.AcceptUnencodedIds ?? false;
+
             if (dflt is null || dflt.Salt is null)
             {
                 salt = attr.Salt;
@@ -111,8 +115,8 @@ public class HashIdService : IHashIdService
 
         var typed = attr.DtoType is not null;
         var key = typed
-            ? $"typed|{attr.DtoType!.FullName}|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}"
-            : $"plain|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}";
+            ? $"typed|{attr.DtoType!.FullName}|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}|{acceptUnencoded}"
+            : $"plain|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}|{acceptUnencoded}";
 
         return hasherCache.GetOrAdd(key, _ =>
         {
@@ -120,11 +124,11 @@ public class HashIdService : IHashIdService
             {
                 var finalSalt = (salt ?? string.Empty)
                     + new string(attr.DtoType!.FullName!.Reverse().ToArray());
-                return new ShiftEntityHashId(finalSalt, minLen, alpha);
+                return new ShiftEntityHashId(finalSalt, minLen, alpha, acceptUnencoded);
             }
             else
             {
-                return new ShiftEntityHashId(salt ?? string.Empty, minLen, alpha);
+                return new ShiftEntityHashId(salt ?? string.Empty, minLen, alpha, acceptUnencoded);
             }
         });
     }

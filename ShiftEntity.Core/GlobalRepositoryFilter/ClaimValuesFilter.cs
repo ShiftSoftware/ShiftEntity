@@ -63,15 +63,10 @@ public class ClaimValuesFilter<Entity> :
                 .Select(x => x.Value)?
                 .ToList();
 
-            if (claimValues is not null && DTOTypeForHashId is not null)
+            if (claimValues is not null && DTOTypeForHashId is not null && this.HashIdService is not null)
             {
                 claimValues = claimValues
-                    .Select(x => (this.HashIdService is not null
-                        ? this.HashIdService.Decode(x, DTOTypeForHashId)
-#pragma warning disable CS0618
-                        : ShiftEntityHashIdService.Decode(x, DTOTypeForHashId)
-#pragma warning restore CS0618
-                    ).ToString())
+                    .Select(x => this.HashIdService.Decode(x, DTOTypeForHashId).ToString())
                     .ToList();
             }
         }

@@ -65,16 +65,11 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
                 selfIds
             );
 
-            if (accessibleItems.AccessibleIds is not null && dtoTypeForHashId is not null)
+            if (accessibleItems.AccessibleIds is not null && dtoTypeForHashId is not null && this.HashIdService is not null)
             {
                 accessibleItems.AccessibleIds = accessibleItems
                     .AccessibleIds
-                    .Select(x => (this.HashIdService is not null
-                        ? this.HashIdService.Decode(x, dtoTypeForHashId)
-#pragma warning disable CS0618
-                        : ShiftEntityHashIdService.Decode(x, dtoTypeForHashId)
-#pragma warning restore CS0618
-                    ).ToString())
+                    .Select(x => this.HashIdService.Decode(x, dtoTypeForHashId).ToString())
                     .ToList();
             }
 

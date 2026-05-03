@@ -325,24 +325,16 @@ internal static class HashIdConverterRuntime
 {
     internal static bool IsEnabled(string? configurationName, IHashIdServiceReader? service)
     {
+        if (service is null) return false;
+
         var name = configurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
-
-        if (service is not null)
-            return service.IsConfigurationRegistered(name);
-
-#pragma warning disable CS0618
-        return name == JsonHashIdConverterAttribute.IdentityConfigurationName
-            ? HashId.IdentityHashIdEnabled
-            : HashId.Enabled;
-#pragma warning restore CS0618
+        return service.IsConfigurationRegistered(name);
     }
 }
 public class JsonHashIdConverterAttribute : JsonConverterAttribute
 {
     public const string IdentityConfigurationName = "Identity";
     public const string DefaultConfigurationName  = "Default";
-
-    internal ShiftEntityHashId? Hashids;
 
     public string? Salt { get; set; }
     public int MinHashLength { get; set; }
@@ -367,40 +359,25 @@ public class JsonHashIdConverterAttribute : JsonConverterAttribute
         ConfigurationName = configurationName;
     }
 
+    // Returns a placeholder converter with no hasher. The DI-aware HashIdJsonTypeInfoResolverModifier
+    // replaces this at type-info build time with a converter wired to IHashIdService. When DI isn't
+    // wired up, the placeholder passes IDs through unchanged.
     public override JsonConverter? CreateConverter(Type typeToConvert)
     {
-        EnsureLegacyHasher();
-
         if (typeToConvert == typeof(string))
-            return new StringJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new StringJsonHashIdConverter(null, this.ConfigurationName);
         if (typeToConvert == typeof(long))
-            return new LongJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new LongJsonHashIdConverter(null, this.ConfigurationName);
         if (typeToConvert == typeof(long?))
-            return new NullableLongJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new NullableLongJsonHashIdConverter(null, this.ConfigurationName);
         else if (typeToConvert == typeof(ShiftEntitySelectDTO))
-            return new ShiftEntitySelectDTOJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new ShiftEntitySelectDTOJsonHashIdConverter(null, this.ConfigurationName);
         else if (typeToConvert == typeof(IEnumerable<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(null, this.ConfigurationName);
         else if (typeToConvert == typeof(List<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOListJsonHashIdConverter(this.Hashids, this.ConfigurationName);
+            return new ShiftEntitySelectDTOListJsonHashIdConverter(null, this.ConfigurationName);
 
         throw new Exception($"No JsonHashIdConverter for type ({typeToConvert.Name}) is available");
-    }
-
-    // Legacy static path only — DI hosts go through HashIdJsonTypeInfoResolverModifier which
-    // replaces the converter with a DI-aware one before this fallback is consulted. Named-config
-    // attributes deliberately don't materialize a hasher here; they require DI.
-    private void EnsureLegacyHasher()
-    {
-        if (Hashids is not null) return;
-        if (ConfigurationName is not null) return;
-#pragma warning disable CS0618
-        if (!HashId.Enabled) return;
-        var saltWithType = DtoType is null
-            ? Salt ?? string.Empty
-            : (Salt ?? string.Empty) + new string(DtoType.FullName!.Reverse().ToArray());
-        Hashids = new ShiftEntityHashId(saltWithType, MinHashLength, Alphabet);
-#pragma warning restore CS0618
     }
 }
 

@@ -15,13 +15,7 @@ public class HashIdOptions
     {
         // Default registration with no explicit salt: enables unnamed attributes via the
         // service.IsConfigurationRegistered("Default") gate while letting them keep using the
-        // salt/min/alphabet supplied to the attribute constructor. AcceptUnencodedIds is stored
-        // on the Default config and is also propagated to the legacy static for back-compat
-        // with external projects that still read HashId.acceptUnencodedIds directly.
-#pragma warning disable CS0618
-        HashId.RegisterHashId(acceptUnencodedIds);
-#pragma warning restore CS0618
-
+        // salt/min/alphabet supplied to the attribute constructor.
         this.Configurations[JsonHashIdConverterAttribute.DefaultConfigurationName]
             = new HashIdConfiguration(Salt: null, MinHashLength: 0, Alphabet: null, AcceptUnencodedIds: acceptUnencodedIds);
 
@@ -38,10 +32,6 @@ public class HashIdOptions
     {
         this.Configurations[JsonHashIdConverterAttribute.IdentityConfigurationName]
             = new HashIdConfiguration(salt, minHashLength, alphabet, acceptUnencodedIds);
-
-#pragma warning disable CS0618
-        HashId.RegisterUserIdsHasher(salt, minHashLength, alphabet);
-#pragma warning restore CS0618
 
         return this;
     }

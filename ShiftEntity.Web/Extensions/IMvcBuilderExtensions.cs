@@ -20,8 +20,6 @@ public static class IMvcBuilderExtensions
     /// </summary>
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> configure)
     {
-        // Route through AddShiftEntity(configure) so the eager apply (which fires the static
-        // HashId.Register*(...) side effects at registration time) runs for Web hosts too.
         builder.Services.AddShiftEntity(configure);
 
         return AddShiftEntityWebCore(builder);
@@ -46,8 +44,7 @@ public static class IMvcBuilderExtensions
 
         // Wire the DI-aware HashId TypeInfoResolver modifier into both AspNetCore JSON pipelines
         // so identity hashers resolve through IHashIdService.GetHasherFor at type-info build time
-        // (after DI is configured), fixing the attribute-construction-time timing race in the
-        // legacy static path.
+        // (after DI is configured).
         builder.Services.AddShiftEntityHashIdJsonSupport();
 
         // MVC-specific JSON configuration — naming policy and Azure storage converters.
