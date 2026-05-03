@@ -11,12 +11,18 @@ namespace ShiftSoftware.ShiftEntity.Core;
 /// <summary>
 /// DI-registered, non-static replacement for the legacy <see cref="HashId"/> / <see cref="ShiftEntityHashIdService"/>
 /// statics. Reads its configuration from <see cref="HashIdOptions"/> (populated via the existing
-/// <c>x.HashId.RegisterHashId(...)</c> / <c>x.HashId.RegisterIdentityHashId(...)</c> fluent API inside
-/// <c>AddShiftEntityWeb</c>) and exposes Encode/Decode against a per-DTO hasher cache.
+/// <c>x.HashId.RegisterHashId(...)</c> / <c>x.HashId.RegisterIdentityHashId(...)</c> /
+/// <c>x.HashId.RegisterHashId(name, ...)</c> fluent API inside <c>AddShiftEntityWeb</c>) and
+/// exposes Encode/Decode against a per-DTO hasher cache.
 /// </summary>
 public interface IHashIdService : IHashIdServiceReader
 {
-    bool AcceptUnencodedIds { get; }
+    /// <summary>
+    /// Returns the per-configuration <c>AcceptUnencodedIds</c> flag for the given configuration
+    /// name (resolves to <c>"Default"</c> when null). Returns false when the configuration isn't
+    /// registered.
+    /// </summary>
+    bool IsAcceptUnencodedIds(string? configurationName);
 
     long Decode<TDTO>(string key);
     long Decode(string key, Type dtoType);
@@ -26,7 +32,7 @@ public interface IHashIdService : IHashIdServiceReader
     string Encode(long id, JsonHashIdConverterAttribute attr);
 
     /// <summary>
-    /// Returns the hasher matching the attribute's construction arguments. Used by the
+    /// Returns the hasher matching the attribute's effective configuration. Used by the
     /// <c>TypeInfoResolver</c> modifier to build JSON converters with a live hasher at type-info
     /// build time (after DI is fully configured), avoiding the attribute-construction-time timing
     /// race that affected the legacy static path.
@@ -45,40 +51,80 @@ public class HashIdService : IHashIdService
         this.options = options.Value.HashId ?? new HashIdOptions();
     }
 
-    public bool Enabled => this.options.Enabled;
-    public bool IdentityHashIdEnabled => this.options.IdentityHashIdEnabled;
-    public bool AcceptUnencodedIds => this.options.AcceptUnencodedIds;
+    public bool IsConfigurationRegistered(string configurationName)
+        => this.options.Configurations.ContainsKey(configurationName);
+
+    public bool IsAcceptUnencodedIds(string? configurationName)
+    {
+        var name = configurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
+        return this.options.Configurations.TryGetValue(name, out var cfg) && cfg.AcceptUnencodedIds;
+    }
 
     public ShiftEntityHashId? GetHasherFor(JsonHashIdConverterAttribute attr)
     {
         if (attr is null) return null;
 
-        // For identity hashers, substitute salt/minLength/alphabet from HashIdOptions (populated
-        // via x.HashId.RegisterIdentityHashId(...) in AddShiftEntityWeb). The attribute's Raw fields
-        // are ignored in this case — the identity converter classes (UserHashIdConverter,
-        // CountryHashIdConverter, ...) don't read from the static HashId.Identity* fields anymore.
-        var effectiveSalt = attr.IsIdentityHasher ? options.IdentityHashIdSalt : attr.RawSalt;
-        var effectiveMinLength = attr.IsIdentityHasher ? options.IdentityHashIdMinLength : attr.RawMinHashLength;
-        var effectiveAlphabet = attr.IsIdentityHasher ? options.IdentityHashIdAlphabet : attr.RawAlphabet;
+        // Resolution rule: named configuration wins over literal Salt/MinHashLength/Alphabet
+        // when both are set on the attribute. If the named entry exists but has no Salt of its
+        // own (the entry was seeded by RegisterHashId(bool) without explicit values), the
+        // attribute's literal values are used as a fallback so a "Default-only" registration
+        // acts purely as an enable gate.
+        string? salt;
+        int minLen;
+        string? alpha;
 
-        // Build and cache the hasher unconditionally based on the resolved args. The converters
-        // that receive this hasher decide at Read/Write time (via the service's Enabled /
-        // IdentityHashIdEnabled flags) whether to actually invoke it.
-        var key = attr.RawUsedTypedCtor
-            ? $"typed|{attr.RawDtoType?.FullName}|{effectiveSalt}|{effectiveMinLength}|{effectiveAlphabet}|{attr.IsIdentityHasher}"
-            : $"plain|{effectiveSalt}|{effectiveMinLength}|{effectiveAlphabet}";
-
-        return hasherCache.GetOrAdd(key, _ =>
+        if (attr.ConfigurationName is { } name)
         {
-            if (attr.RawUsedTypedCtor)
+            if (!options.Configurations.TryGetValue(name, out var cfg))
+                return null;
+
+            if (cfg.Salt is null)
             {
-                var salt = (effectiveSalt ?? string.Empty)
-                    + new string(attr.RawDtoType!.FullName!.Reverse().ToArray());
-                return new ShiftEntityHashId(salt, effectiveMinLength, effectiveAlphabet, attr.IsIdentityHasher);
+                salt = attr.Salt;
+                minLen = attr.MinHashLength;
+                alpha = attr.Alphabet;
             }
             else
             {
-                return new ShiftEntityHashId(effectiveSalt!, effectiveMinLength, effectiveAlphabet);
+                salt = cfg.Salt;
+                minLen = cfg.MinHashLength;
+                alpha = cfg.Alphabet;
+            }
+        }
+        else
+        {
+            options.Configurations.TryGetValue(JsonHashIdConverterAttribute.DefaultConfigurationName, out var dflt);
+
+            if (dflt is null || dflt.Salt is null)
+            {
+                salt = attr.Salt;
+                minLen = attr.MinHashLength;
+                alpha = attr.Alphabet;
+            }
+            else
+            {
+                salt = dflt.Salt;
+                minLen = dflt.MinHashLength;
+                alpha = dflt.Alphabet;
+            }
+        }
+
+        var typed = attr.DtoType is not null;
+        var key = typed
+            ? $"typed|{attr.DtoType!.FullName}|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}"
+            : $"plain|{attr.ConfigurationName}|{salt}|{minLen}|{alpha}";
+
+        return hasherCache.GetOrAdd(key, _ =>
+        {
+            if (typed)
+            {
+                var finalSalt = (salt ?? string.Empty)
+                    + new string(attr.DtoType!.FullName!.Reverse().ToArray());
+                return new ShiftEntityHashId(finalSalt, minLen, alpha);
+            }
+            else
+            {
+                return new ShiftEntityHashId(salt ?? string.Empty, minLen, alpha);
             }
         });
     }
@@ -87,9 +133,6 @@ public class HashIdService : IHashIdService
 
     public long Decode(string key, Type dtoType)
     {
-        if (!Enabled)
-            return long.Parse(key);
-
         var attr = GetIdAttribute(dtoType);
         if (attr is null)
             return long.Parse(key);
@@ -99,7 +142,8 @@ public class HashIdService : IHashIdService
 
     public long Decode(string key, JsonHashIdConverterAttribute attr)
     {
-        if (!Enabled && !(IdentityHashIdEnabled && attr.IsIdentityHasher))
+        var configName = attr.ConfigurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
+        if (!IsConfigurationRegistered(configName))
             return long.Parse(key);
 
         var hasher = GetHasherFor(attr);
@@ -113,9 +157,6 @@ public class HashIdService : IHashIdService
 
     public string Encode(long id, Type dtoType)
     {
-        if (!Enabled)
-            return id.ToString();
-
         var attr = GetIdAttribute(dtoType);
         if (attr is null)
             return id.ToString();
@@ -125,7 +166,8 @@ public class HashIdService : IHashIdService
 
     public string Encode(long id, JsonHashIdConverterAttribute attr)
     {
-        if (!Enabled && !(IdentityHashIdEnabled && attr.IsIdentityHasher))
+        var configName = attr.ConfigurationName ?? JsonHashIdConverterAttribute.DefaultConfigurationName;
+        if (!IsConfigurationRegistered(configName))
             return id.ToString();
 
         var hasher = GetHasherFor(attr);

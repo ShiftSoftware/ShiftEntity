@@ -2,9 +2,7 @@
 
 public class CountryHashIdConverter : JsonHashIdConverterAttribute<CountryHashIdConverter>
 {
-    // Identity hasher: salt/minLength/alphabet resolved from HashIdOptions at hasher-build time
-    // by HashIdService.GetHasherFor (detects isIdentityHasher == true). No static reads.
-    public CountryHashIdConverter(): base(isIdentityHasher: true)
+    public CountryHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

@@ -34,27 +34,27 @@ internal static class HashIdJsonTypeInfoResolverModifier
                 if (attr is null) continue;
 
                 var hasher = hashIdService.GetHasherFor(attr);
-                var converter = BuildConverter(prop.PropertyType, hasher, hashIdService);
+                var converter = BuildConverter(prop.PropertyType, hasher, attr.ConfigurationName, hashIdService);
                 if (converter is not null)
                     prop.CustomConverter = converter;
             }
         };
     }
 
-    private static JsonConverter? BuildConverter(Type propertyType, ShiftEntityHashId? hasher, IHashIdService hashIdService)
+    private static JsonConverter? BuildConverter(Type propertyType, ShiftEntityHashId? hasher, string? configurationName, IHashIdService hashIdService)
     {
         if (propertyType == typeof(string))
-            return new StringJsonHashIdConverter(hasher, hashIdService);
+            return new StringJsonHashIdConverter(hasher, configurationName, hashIdService);
         if (propertyType == typeof(long))
-            return new LongJsonHashIdConverter(hasher, hashIdService);
+            return new LongJsonHashIdConverter(hasher, configurationName, hashIdService);
         if (propertyType == typeof(long?))
-            return new NullableLongJsonHashIdConverter(hasher, hashIdService);
+            return new NullableLongJsonHashIdConverter(hasher, configurationName, hashIdService);
         if (propertyType == typeof(ShiftEntitySelectDTO))
-            return new ShiftEntitySelectDTOJsonHashIdConverter(hasher, hashIdService);
+            return new ShiftEntitySelectDTOJsonHashIdConverter(hasher, configurationName, hashIdService);
         if (propertyType == typeof(IEnumerable<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(hasher, hashIdService);
+            return new ShiftEntitySelectDTOEnumerableJsonHashIdConverter(hasher, configurationName, hashIdService);
         if (propertyType == typeof(List<ShiftEntitySelectDTO>))
-            return new ShiftEntitySelectDTOListJsonHashIdConverter(hasher, hashIdService);
+            return new ShiftEntitySelectDTOListJsonHashIdConverter(hasher, configurationName, hashIdService);
 
         return null;
     }
