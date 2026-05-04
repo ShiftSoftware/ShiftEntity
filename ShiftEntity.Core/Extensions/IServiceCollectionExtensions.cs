@@ -14,8 +14,11 @@ public static class IServiceCollectionExtensions
     /// <summary>
     /// Registers ShiftEntity core services with the given configuration.
     /// Multiple calls to <c>services.Configure&lt;ShiftEntityOptions&gt;(...)</c> are additive.
+    /// Internal — consumers go through <c>AddShiftEntityWeb</c> (MVC hosts) or
+    /// <c>AddShiftEntityFunctions</c> (Functions Worker AspNetCore hosts), which both call
+    /// this internally so the core is wired exactly once.
     /// </summary>
-    public static IServiceCollection AddShiftEntity(this IServiceCollection services, Action<ShiftEntityOptions> configure)
+    internal static IServiceCollection AddShiftEntity(this IServiceCollection services, Action<ShiftEntityOptions> configure)
     {
         services.Configure(configure);
 
@@ -25,8 +28,9 @@ public static class IServiceCollectionExtensions
     /// <summary>
     /// Registers ShiftEntity core infrastructure without configuring options.
     /// Options can be registered separately via <c>services.Configure&lt;ShiftEntityOptions&gt;(o => { ... })</c>.
+    /// Internal — see the overload above for the rationale.
     /// </summary>
-    public static IServiceCollection AddShiftEntity(this IServiceCollection services)
+    internal static IServiceCollection AddShiftEntity(this IServiceCollection services)
     {
         // Expose ShiftEntityOptions as a singleton resolved from IOptions (backward compat)
         services.TryAddSingleton(sp => sp.GetRequiredService<IOptions<ShiftEntityOptions>>().Value);

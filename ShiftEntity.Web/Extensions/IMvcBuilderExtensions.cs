@@ -1,14 +1,9 @@
-﻿using EntityFrameworkCore.Triggered;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
-using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
-using System.Text.Json.Serialization.Metadata;
-
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -39,33 +34,19 @@ public static class IMvcBuilderExtensions
     private static IMvcBuilder AddShiftEntityWebCore(IMvcBuilder builder)
     {
         // Core registration runs first via AddShiftEntity (called by the public overloads above).
-        // Everything below is web-specific: AspNetCore JSON middleware wiring, MVC options,
-        // and HTTP/localization plumbing. OData middleware registration lives in the consumer's
-        // composition root (the commented-out AddShiftEntityOdata sample further down shows the
-        // shape) since EDM model construction is application-specific.
+        // The shared web/functions plumbing (HashId JSON middleware, JsonOptions naming policy,
+        // HTTP context, localization, identity/data-level providers) is applied through
+        // AddShiftEntityWebSharedCore so the Functions Worker entry point reuses exactly the
+        // same wiring. Everything that remains here is MVC-controller-pipeline specific.
+        // OData middleware registration lives in the consumer's composition root (the
+        // commented-out AddShiftEntityOdata sample further down shows the shape) since EDM
+        // model construction is application-specific.
 
-        builder.Services
-            .AddHttpContextAccessor()
-            .AddLocalization();
+        builder.Services.AddShiftEntityWebSharedCore();
 
-        // Wire the DI-aware HashId TypeInfoResolver modifier (defined in ShiftEntity.Core) into
-        // both AspNetCore JSON pipelines so identity hashers resolve through
-        // IHashIdService.GetHasherFor at type-info build time (after DI is configured).
-        builder.Services.AddShiftEntityHashIdJsonSupport();
-
-        // MVC-specific JSON configuration — naming policy and Azure storage converters.
-        builder.Services
-            .AddOptions<JsonOptions>()
-            .Configure<ShiftEntityOptions, AzureStorageService>(
-                (o, shiftEntityOptions, azureStorageService) =>
-                {
-                    o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
-
-                    if (shiftEntityOptions.azureStorageOptions.Count > 0)
-                        o.RegisterAzureStorageServiceConverters(azureStorageService);
-                });
-
-        // Configure validation error wrapping from resolved ShiftEntityOptions
+        // MVC-only: wraps [ApiController] model-state 400 responses in ShiftEntityResponse.
+        // Functions Worker doesn't run through this pipeline, so this stays out of the shared
+        // helper.
         builder.Services.AddSingleton<IConfigureOptions<ApiBehaviorOptions>>(sp =>
         {
             var shiftEntityOptions = sp.GetRequiredService<ShiftEntityOptions>();
@@ -87,10 +68,6 @@ public static class IMvcBuilderExtensions
                 }
             });
         });
-
-        builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
-        builder.Services.AddScoped<IdentityClaimProvider>();
-        builder.Services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
         return builder;
     }
