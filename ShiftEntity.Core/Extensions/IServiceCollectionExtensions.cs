@@ -12,6 +12,32 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class IServiceCollectionExtensions
 {
     /// <summary>
+    /// Registers only <see cref="IHashIdService"/> and the <see cref="HashIdOptions"/> slice of
+    /// <see cref="ShiftEntityOptions"/>. Use this from hosts that need HashId encode/decode but
+    /// don't want the rest of the ShiftEntity stack (AutoMapper scanning, Azure storage converters,
+    /// claim providers, MVC plumbing) — e.g. data sync agents, console tools, or any non-web
+    /// process. For MVC hosts use <c>AddShiftEntityWeb</c>; for Azure Functions Worker hosts that
+    /// use the AspNetCore extension use <c>AddShiftEntityFunctions</c>.
+    /// </summary>
+    public static IServiceCollection AddShiftEntityHashId(this IServiceCollection services, Action<HashIdOptions> configure)
+    {
+        services.Configure<ShiftEntityOptions>(o => configure(o.HashId));
+        return services.AddShiftEntityHashIdCore();
+    }
+
+    /// <summary>
+    /// Registers <see cref="IHashIdService"/> as a singleton without touching options. Shared by
+    /// the narrow <see cref="AddShiftEntityHashId"/> entry point and the broader
+    /// <c>AddShiftEntity</c> internal registration so the service descriptor lives in exactly one
+    /// place.
+    /// </summary>
+    private static IServiceCollection AddShiftEntityHashIdCore(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IHashIdService, HashIdService>();
+        return services;
+    }
+
+    /// <summary>
     /// Registers ShiftEntity core services with the given configuration.
     /// Multiple calls to <c>services.Configure&lt;ShiftEntityOptions&gt;(...)</c> are additive.
     /// Internal — consumers go through <c>AddShiftEntityWeb</c> (MVC hosts) or
@@ -38,7 +64,7 @@ public static class IServiceCollectionExtensions
         // HashId service — reads its configuration from ShiftEntityOptions.HashId, populated via
         // the fluent x.HashId.RegisterHashId(...) / RegisterIdentityHashId(...) API inside
         // AddShiftEntityWeb.
-        services.TryAddSingleton<IHashIdService, HashIdService>();
+        services.AddShiftEntityHashIdCore();
 
         // Register AzureStorageService lazily from merged options
         services.TryAddSingleton(sp =>
