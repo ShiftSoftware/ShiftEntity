@@ -39,8 +39,8 @@
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.OpenApi" Version="1.6.0" />
-		<PackageReference Include="Google.Apis.Auth.AspNetCore3" Version="1.73.0" />
-		<PackageReference Include="Google.Apis.Firebaseappcheck.v1beta" Version="1.73.0.4110" />
+		<PackageReference Include="Google.Apis.Auth.AspNetCore3" Version="1.74.0" />
+		<PackageReference Include="Google.Apis.Firebaseappcheck.v1beta" Version="1.74.0.4110" />
 		<PackageReference Include="Azure.Security.KeyVault.Certificates" Version="4.8.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs" Version="6.8.1" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" Version="5.5.4" />
@@ -48,7 +48,7 @@
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.18.0" />
 		<!--<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />-->
 	</ItemGroup>
 
