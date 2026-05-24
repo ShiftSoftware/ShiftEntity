@@ -1,5 +1,8 @@
 ﻿using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -17,7 +20,7 @@ public static class ModelBuilderExtensions
 
                 if (isTemporal != null)
                 {
-                    //Make the tables temporal that has TemporalShiftEntyty attribute 
+                    //Make the tables temporal that has TemporalShiftEntyty attribute
                     modelBuilder.Entity(entityType.ClrType).ToTable(b => b.IsTemporal());
                 }
             }
@@ -44,6 +47,8 @@ public static class ModelBuilderExtensions
             }
         }
 
+        ConfigureAttention(modelBuilder);
+
         ///// Disable Cascade Delete
         var cascadeFKs = modelBuilder.Model.GetEntityTypes()
                 .SelectMany(t => t.GetForeignKeys())
@@ -55,4 +60,39 @@ public static class ModelBuilderExtensions
         return modelBuilder;
     }
 
+    private static void ConfigureAttention(ModelBuilder modelBuilder)
+    {
+        var hasIndexedAttention = false;
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var clrType = entityType.ClrType;
+
+            if (!typeof(IHasAttention).IsAssignableFrom(clrType))
+                continue;
+
+            if (typeof(IHasIndexedAttention).IsAssignableFrom(clrType))
+            {
+                hasIndexedAttention = true;
+            }
+            else
+            {
+                modelBuilder.Entity(clrType)
+                    .Property<string>(AttentionSignalJsonHelper.ShadowPropertyName);
+            }
+        }
+
+        if (hasIndexedAttention)
+        {
+            modelBuilder.Entity<AttentionSignalEntry>(entity =>
+            {
+                entity.ToTable("AttentionSignals");
+                entity.HasKey(e => e.ID);
+                entity.Property(e => e.EntityType).HasMaxLength(256);
+                entity.Property(e => e.Source).HasMaxLength(256);
+                entity.Property(e => e.Category).HasMaxLength(256);
+                entity.HasIndex(e => new { e.EntityType, e.EntityId, e.ClearedAt });
+            });
+        }
+    }
 }
