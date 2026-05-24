@@ -3,7 +3,9 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Flags;
@@ -34,6 +36,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public IdentityClaimProvider identityClaimProvider { get; private set; } = default!;
     public ICurrentUserProvider? currentUserProvider { get; private set; }
     private bool _hasUniqueHashInterface;
+    private bool _hasAttentionInterface;
+    private bool _needsAttentionTransaction;
 
     private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
     private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
@@ -64,6 +68,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         _hasUniqueHashInterface = typeof(EntityType).GetInterfaces()
             .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
+
+        _hasAttentionInterface = typeof(IHasAttention).IsAssignableFrom(typeof(EntityType));
+        _needsAttentionTransaction = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(EntityType));
 
         if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
             this.beforeSaveHook = beforeSaveHook;
@@ -324,8 +331,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         var beforeSaveTasks = new List<ValueTask>();
         var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 
-        // Only use explicit transaction if AfterSave is overridden
-        if (this.afterSaveHook is not null)
+        if (this.afterSaveHook is not null || _needsAttentionTransaction)
         {
             return await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
         }
@@ -380,6 +386,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
         var entitiesToReload = new List<EntityType>();
+        List<PendingIndexedSignal>? allPendingSignals = null;
 
         foreach (var entry in db.ChangeTracker.Entries())
         {
@@ -424,6 +431,22 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 afterSaveEntities.Add((entityType, actionType));
             }
 
+            // Attention evaluation
+            if (_hasAttentionInterface)
+            {
+                var original = added ? null : (EntityType?)entry.OriginalValues.ToObject();
+                var serviceProvider = ((IInfrastructure<IServiceProvider>)db).Instance;
+
+                var pending = await AttentionPipeline.ProcessEntity(
+                    db, entry, entityType, original, actionType, serviceProvider);
+
+                if (pending is not null)
+                {
+                    allPendingSignals ??= [];
+                    allPendingSignals.AddRange(pending);
+                }
+            }
+
             // Track entities that need reload after save
             if (entityType.ReloadAfterSave)
             {
@@ -462,6 +485,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
 
             throw;
+        }
+
+        // Flush pending indexed attention signals (INSERT case — entity IDs now available)
+        if (allPendingSignals is { Count: > 0 })
+        {
+            AttentionPipeline.FlushPendingSignals(db, allPendingSignals);
+            await db.SaveChangesAsync();
         }
 
         // Reload entities that have navigation properties (Includes)

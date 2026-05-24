@@ -1,10 +1,56 @@
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {
+    public static IServiceCollection AddAttentionEvaluator<TEntity, TEvaluator>(this IServiceCollection services)
+        where TEntity : class
+        where TEvaluator : class, IAttentionEvaluator<TEntity>
+    {
+        services.AddScoped<TEvaluator>();
+
+        var requiresHistory = typeof(IRequiresAttentionHistory<TEntity>).IsAssignableFrom(typeof(TEvaluator));
+
+        services.AddSingleton(new AttentionEvaluatorDescriptor
+        {
+            TargetType = typeof(TEntity),
+            EvaluatorTypeName = typeof(TEvaluator).Name,
+            RequiresHistory = requiresHistory,
+            Invoke = (sp, entity, original, action) =>
+            {
+                var evaluator = sp.GetRequiredService<TEvaluator>();
+                var context = new AttentionContext<TEntity>
+                {
+                    Action = action,
+                    Entity = (TEntity)entity,
+                    Original = original as TEntity,
+                    Services = sp,
+                };
+                return evaluator.Evaluate(context);
+            },
+            InvokeWithHistory = requiresHistory
+                ? (sp, entity, original, action, history) =>
+                {
+                    var evaluator = (IRequiresAttentionHistory<TEntity>)sp.GetRequiredService<TEvaluator>();
+                    var context = new AttentionContext<TEntity>
+                    {
+                        Action = action,
+                        Entity = (TEntity)entity,
+                        Original = original as TEntity,
+                        Services = sp,
+                    };
+                    return evaluator.EvaluateWithHistory(context, history);
+                }
+                : null,
+        });
+
+        return services;
+    }
+
 
     private static IServiceCollection RegisterIShiftEntityFind(this IServiceCollection services, Assembly repositoriesAssembly)
     {
