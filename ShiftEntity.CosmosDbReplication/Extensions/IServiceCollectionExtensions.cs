@@ -15,7 +15,6 @@ public static class IServiceCollectionExtensions
         services.AddDbContext<TDbContext>((sp, options) => options.UseTriggers());
 
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
-        services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
         services.AddScoped(x =>
         {

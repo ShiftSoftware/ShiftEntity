@@ -139,6 +139,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     internal Type ReplicateComsomsDbItemType { get; private set; }
 
     private Func<Entity, IServiceProvider, Database, Task<bool>> replicateAction;
+    private Func<Entity, Entity, IServiceProvider, Database, Task<bool>> deletePreviousPartitionKeyAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
@@ -204,6 +205,49 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             return false;
         };
 
+        this.deletePreviousPartitionKeyAction = async (entity, unmodifiedEntity, services, db) =>
+        {
+            CosmosDbItem newItem;
+            CosmosDbItem oldItem;
+
+            if (mapping is not null)
+            {
+                newItem = mapping(new EntityWrapper<Entity>(entity, services));
+                oldItem = mapping(new EntityWrapper<Entity>(unmodifiedEntity, services));
+            }
+            else
+            {
+                var autoMapper = services.GetRequiredService<IMapper>();
+                newItem = autoMapper.Map<CosmosDbItem>(entity);
+                oldItem = autoMapper.Map<CosmosDbItem>(unmodifiedEntity);
+            }
+
+            if (!PartitionKeyChanged(newItem!, oldItem!))
+                return true;
+
+            var container = db.GetContainer(cosmosContainerId);
+            var containerResponse = await container.ReadContainerAsync();
+            var oldPartitionKey = Utility.GetPartitionKey(containerResponse, oldItem!);
+            var idString = Convert.ToString(oldItem.GetProperty("id"));
+
+            bool isSucceeded = false;
+
+            await container.DeleteItemAsync<CosmosDbItem>(idString, oldPartitionKey)
+                .ContinueWith(x =>
+                {
+                    CosmosException ex = null;
+
+                    if (x.Exception != null)
+                        foreach (var innerException in x.Exception.InnerExceptions)
+                            if (innerException is CosmosException customException)
+                                ex = customException;
+
+                    isSucceeded = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
+                }).WaitAsync(new CancellationToken());
+
+            return isSucceeded;
+        };
+
         this.replicateDeleteAction = async (entity, services, db) =>
             {
                 bool isSucceeded = false;
@@ -243,6 +287,27 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 return (id, partitionKeyDetails, isSucceeded);
             };
+    }
+
+    private bool PartitionKeyChanged(object newItem, object oldItem)
+    {
+        if (PartitionKeyLevel1Action is not null && !ValuesEqual(PartitionKeyLevel1Action(newItem)?.value, PartitionKeyLevel1Action(oldItem)?.value))
+            return true;
+
+        if (PartitionKeyLevel2Action is not null && !ValuesEqual(PartitionKeyLevel2Action(newItem)?.value, PartitionKeyLevel2Action(oldItem)?.value))
+            return true;
+
+        if (PartitionKeyLevel3Action is not null && !ValuesEqual(PartitionKeyLevel3Action(newItem)?.value, PartitionKeyLevel3Action(oldItem)?.value))
+            return true;
+
+        return false;
+    }
+
+    private static bool ValuesEqual(object? a, object? b)
+    {
+        if (a is null && b is null) return true;
+        if (a is null || b is null) return false;
+        return a.Equals(b);
     }
 
     private void SetPartitonKeyActions<CosmosDbItem>(
@@ -522,7 +587,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         return items;
     }
 
-    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
+    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType,
+        Entity? unmodifiedEntity = null)
     {
         (long id, (PartitionKey? partitionKey,
             (string? value, PartitionKeyTypes type)? level1,
@@ -550,6 +616,19 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         client.ClientOptions.AllowBulkExecution = true;
 
         var db = client.GetDatabase(this.cosmosDataBaseId);
+
+        //If the change type is modified and an unmodified snapshot is available,
+        //detect partition key changes and remove the stale document under the old partition key
+        //before upserting under the new one (Cosmos does not allow mutating a document's partition key).
+        if (changeType == ChangeType.Modified && unmodifiedEntity is not null && this.deletePreviousPartitionKeyAction is not null)
+        {
+            //Reset the isSucceeded flag
+            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
+
+            var deleteResult = await this.deletePreviousPartitionKeyAction(entity, unmodifiedEntity, serviceProvider, db);
+
+            isSucceeded = isSucceeded.GetValueOrDefault(true) && deleteResult;
+        }
 
         //If the change type is added or modified, then do the upsert action
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
