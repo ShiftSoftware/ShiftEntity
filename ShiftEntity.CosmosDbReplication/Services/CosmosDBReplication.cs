@@ -602,7 +602,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         if (this.entities is null)
             return;
 
-        //IsTemporal() works on the runtime read-optimized model.
         var designTimeModel = this.db.GetService<IDesignTimeModel>().Model;
         var entityType = designTimeModel.FindEntityType(typeof(Entity));
         if (entityType is null || !entityType.IsTemporal())
@@ -617,27 +616,36 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         if (idsToLookup.Length == 0)
             return;
 
-        //Find the previously-synced version by matching the LastSaveDate column on the history row to the entity's
-        //LastReplicationDate. UpdateReplicationDate() sets LRD = LastSaveDate, so the row we synced still carries the
-        //exact same LastSaveDate value in the temporal history. Both columns are written from .NET (same clock), so
-        //the match is robust against the SQL/.NET clock skew that breaks comparisons against PeriodStart/PeriodEnd
-        //(SQL-clock managed). The explicit `join` form keeps it a single INNER JOIN — no correlated subquery — and
-        //SQL Server can index on LastSaveDate for the temporal table if needed.
+        //Per entity in the batch, pick the history row with the largest LastSaveDate that's still <= LastReplicationDate.
+        //
+        //That row is the version we last synced regardless of how LRD got set:
+        //  - When LRD was written via UpdateReplicationDate() (LRD = LastSaveDate), the max LastSaveDate <= LRD equals
+        //    LRD exactly, landing on the synced row.
+        //  - When LRD was set to DateTime.UtcNow (or any other monotonic value), no history row's LastSaveDate equals
+        //    LRD, but the largest LastSaveDate still <= LRD is the version that was current right before LRD was stamped.
+        //
+        //Both columns live in the .NET clock domain (written by the application), so the comparison is exact — there's
+        //no SQL-vs-.NET clock skew to introduce off-by-one neighbouring rows. Modelled as a correlated subquery in the
+        //projection, EF Core translates this to a CROSS APPLY(SELECT TOP 1 ... ORDER BY ... DESC) on SQL Server, so the
+        //per-row TOP-1 happens server-side without materializing history chains.
         var matched = await (
             from current in this.db.Set<Entity>().AsNoTracking().IgnoreQueryFilters()
-            join history in this.db.Set<Entity>().TemporalAll().AsNoTracking().IgnoreQueryFilters()
-                on current.ID equals history.ID
-            where idsToLookup.Contains(current.ID)
-                && current.LastReplicationDate.HasValue
-                && history.LastSaveDate == current.LastReplicationDate!.Value
-            select new { ID = current.ID, History = history }
+            where idsToLookup.Contains(current.ID) && current.LastReplicationDate.HasValue
+            select new
+            {
+                ID = current.ID,
+                History = this.db.Set<Entity>().TemporalAll().AsNoTracking().IgnoreQueryFilters()
+                    .Where(h => h.ID == current.ID && h.LastSaveDate <= current.LastReplicationDate!.Value)
+                    .OrderByDescending(h => h.LastSaveDate)
+                    .FirstOrDefault()
+            }
         ).ToListAsync();
 
-        //Multiple history rows can share the same LastSaveDate (e.g. the framework's own LRD-update on the synced row
-        //creates a new history row without changing LastSaveDate). They all carry the same business data, so picking
-        //any one of them yields the same partition-key comparison result.
-        foreach (var group in matched.GroupBy(x => x.ID))
-            this.previouslySyncedEntities[group.Key] = group.First().History;
+        foreach (var row in matched)
+        {
+            if (row.History is not null)
+                this.previouslySyncedEntities[row.ID] = row.History;
+        }
     }
 
     private void UpdateLastReplicationDatesAsync()
