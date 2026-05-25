@@ -621,46 +621,25 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         var periodStartName = entityType.GetPeriodStartPropertyName() ?? "PeriodStart";
         var periodEndName = entityType.GetPeriodEndPropertyName() ?? "PeriodEnd";
 
-        //Single query: pull the current row + all history rows for the batch IDs, projecting the SQL Server period columns
-        //so we can match each entity to the version that was current at its own LastReplicationDate without an N+1 fan-out.
-        var historyRows = await this.db.Set<Entity>().TemporalAll()
-            .AsNoTracking()
-            .IgnoreQueryFilters()
-            .Where(x => idsToLookup.Contains(x.ID))
-            .Select(x => new
-            {
-                Entity = x,
-                PeriodStart = EF.Property<DateTime>(x, periodStartName),
-                PeriodEnd = EF.Property<DateTime>(x, periodEndName),
-            })
-            .ToListAsync();
+        //Join each current row in the batch to the single history row that was current at the moment replication last succeeded.
+        //SQL Server temporal period columns are stored in UTC; LastReplicationDate is a datetimeoffset, so SQL Server's implicit
+        //datetime2->datetimeoffset conversion (treating datetime2 as UTC offset 00:00) yields the right comparison without us
+        //emitting any extra conversion. The explicit `join` form avoids EF Core's known limitation translating correlated
+        //SelectMany subqueries that reference an outer entity inside TemporalAll. SQL Server guarantees non-overlapping periods,
+        //so the JOIN returns at most one history row per entity.
+        var matched = await (
+            from current in this.db.Set<Entity>().AsNoTracking().IgnoreQueryFilters()
+            join history in this.db.Set<Entity>().TemporalAll().AsNoTracking().IgnoreQueryFilters()
+                on current.ID equals history.ID
+            where idsToLookup.Contains(current.ID)
+                && current.LastReplicationDate.HasValue
+                && EF.Property<DateTime>(history, periodStartName) <= current.LastReplicationDate!.Value
+                && EF.Property<DateTime>(history, periodEndName) > current.LastReplicationDate!.Value
+            select new { ID = current.ID, History = history }
+        ).ToListAsync();
 
-        var byId = historyRows
-            .GroupBy(h => h.Entity.ID)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        foreach (var entity in this.entities.Where(e => e.LastReplicationDate.HasValue))
-        {
-            if (!byId.TryGetValue(entity.ID, out var versions))
-                continue;
-
-            //SQL Server temporal period columns are stored UTC but EF projects them as DateTime with Kind=Unspecified.
-            //LastReplicationDate is a DateTimeOffset. Comparing them directly causes an implicit DateTime->DateTimeOffset
-            //conversion that treats Unspecified as Local time — a 3-hour skew here in UTC+3, which makes the *current*
-            //version's PeriodStart appear earlier than the LRD and incorrectly match. Normalize both sides to UTC ticks
-            //before comparing.
-            var lastSyncedUtc = entity.LastReplicationDate!.Value.UtcDateTime;
-
-            var match = versions.FirstOrDefault(v =>
-            {
-                var startUtc = DateTime.SpecifyKind(v.PeriodStart, DateTimeKind.Utc);
-                var endUtc = DateTime.SpecifyKind(v.PeriodEnd, DateTimeKind.Utc);
-                return startUtc <= lastSyncedUtc && endUtc > lastSyncedUtc;
-            });
-
-            if (match is not null)
-                this.previouslySyncedEntities[entity.ID] = match.Entity;
-        }
+        foreach (var row in matched)
+            this.previouslySyncedEntities[row.ID] = row.History;
     }
 
     private void UpdateLastReplicationDatesAsync()
