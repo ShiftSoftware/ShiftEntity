@@ -602,8 +602,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         if (this.entities is null)
             return;
 
-        //IsTemporal() works on the runtime read-optimized model, but GetPeriodStart/EndPropertyName()
-        //throw on it — those accessors require the design-time model.
+        //IsTemporal() works on the runtime read-optimized model.
         var designTimeModel = this.db.GetService<IDesignTimeModel>().Model;
         var entityType = designTimeModel.FindEntityType(typeof(Entity));
         if (entityType is null || !entityType.IsTemporal())
@@ -618,28 +617,27 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         if (idsToLookup.Length == 0)
             return;
 
-        var periodStartName = entityType.GetPeriodStartPropertyName() ?? "PeriodStart";
-        var periodEndName = entityType.GetPeriodEndPropertyName() ?? "PeriodEnd";
-
-        //Join each current row in the batch to the single history row that was current at the moment replication last succeeded.
-        //SQL Server temporal period columns are stored in UTC; LastReplicationDate is a datetimeoffset, so SQL Server's implicit
-        //datetime2->datetimeoffset conversion (treating datetime2 as UTC offset 00:00) yields the right comparison without us
-        //emitting any extra conversion. The explicit `join` form avoids EF Core's known limitation translating correlated
-        //SelectMany subqueries that reference an outer entity inside TemporalAll. SQL Server guarantees non-overlapping periods,
-        //so the JOIN returns at most one history row per entity.
+        //Find the previously-synced version by matching the LastSaveDate column on the history row to the entity's
+        //LastReplicationDate. UpdateReplicationDate() sets LRD = LastSaveDate, so the row we synced still carries the
+        //exact same LastSaveDate value in the temporal history. Both columns are written from .NET (same clock), so
+        //the match is robust against the SQL/.NET clock skew that breaks comparisons against PeriodStart/PeriodEnd
+        //(SQL-clock managed). The explicit `join` form keeps it a single INNER JOIN — no correlated subquery — and
+        //SQL Server can index on LastSaveDate for the temporal table if needed.
         var matched = await (
             from current in this.db.Set<Entity>().AsNoTracking().IgnoreQueryFilters()
             join history in this.db.Set<Entity>().TemporalAll().AsNoTracking().IgnoreQueryFilters()
                 on current.ID equals history.ID
             where idsToLookup.Contains(current.ID)
                 && current.LastReplicationDate.HasValue
-                && EF.Property<DateTime>(history, periodStartName) <= current.LastReplicationDate!.Value
-                && EF.Property<DateTime>(history, periodEndName) > current.LastReplicationDate!.Value
+                && history.LastSaveDate == current.LastReplicationDate!.Value
             select new { ID = current.ID, History = history }
         ).ToListAsync();
 
-        foreach (var row in matched)
-            this.previouslySyncedEntities[row.ID] = row.History;
+        //Multiple history rows can share the same LastSaveDate (e.g. the framework's own LRD-update on the synced row
+        //creates a new history row without changing LastSaveDate). They all carry the same business data, so picking
+        //any one of them yields the same partition-key comparison result.
+        foreach (var group in matched.GroupBy(x => x.ID))
+            this.previouslySyncedEntities[group.Key] = group.First().History;
     }
 
     private void UpdateLastReplicationDatesAsync()
