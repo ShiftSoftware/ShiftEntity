@@ -17,6 +17,8 @@ public abstract class ShiftDbContext : DbContext
 
     private readonly IServiceProvider? _applicationServiceProvider;
 
+    internal IServiceProvider? ApplicationServiceProvider => _applicationServiceProvider;
+
     public ShiftDbContext(DbContextOptions options) : base(options)
     {
         ShiftDbContextOptions = options.Extensions

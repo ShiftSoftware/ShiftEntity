@@ -26,6 +26,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 {
     public DB db { get; private set; } = default!;
     internal DbSet<EntityType> dbSet = default!;
+    public override object? GetDbContext() => db;
 
     [Obsolete("Use entityMapper instead. This property is kept for backwards compatibility.")]
     public IMapper? mapper => (entityMapper as AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)?.Mapper;
@@ -435,7 +436,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (_hasAttentionInterface)
             {
                 var original = added ? null : (EntityType?)entry.OriginalValues.ToObject();
-                var serviceProvider = ((IInfrastructure<IServiceProvider>)db).Instance;
+                var serviceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
 
                 var pending = await AttentionPipeline.ProcessEntity(
                     db, entry, entityType, original, actionType, serviceProvider);

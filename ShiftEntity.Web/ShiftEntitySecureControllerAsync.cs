@@ -1,15 +1,20 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -533,6 +538,97 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         );
 
         return result.ActionResult;
+    }
+
+    [Authorize]
+    [HttpGet("{key}/attention")]
+    public virtual async Task<ActionResult> GetAttentionSignals(string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return NotFound();
+
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (action is not null && !typeAuthService.CanRead(action))
+            return Forbid();
+
+        var hashIdService = this.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+        var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
+
+        var repository = this.HttpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return StatusCode(500);
+
+        List<StoredAttentionSignal> signals;
+
+        if (isIndexed)
+        {
+            signals = await db.Set<AttentionSignalEntry>()
+                .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
+                .OrderByDescending(x => x.Severity)
+                .ThenByDescending(x => x.RaisedAt)
+                .Select(x => new StoredAttentionSignal
+                {
+                    Id = x.ID,
+                    EntityType = x.EntityType,
+                    EntityId = x.EntityId,
+                    Source = x.Source,
+                    Category = x.Category,
+                    Reason = x.Reason,
+                    Severity = x.Severity,
+                    PayloadJson = x.PayloadJson,
+                    RaisedAt = x.RaisedAt,
+                    ClearedAt = x.ClearedAt,
+                    ClearedByUserId = x.ClearedByUserId,
+                })
+                .ToListAsync();
+        }
+        else
+        {
+            var entity = await db.FindAsync(typeof(Entity), entityId);
+            if (entity is null)
+                return NotFound();
+
+            var entry = db.Entry(entity);
+            var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
+            signals = AttentionSignalJsonHelper.Deserialize(json);
+        }
+
+        return Ok(signals);
+    }
+
+    [Authorize]
+    [HttpPost("{key}/attention/clear")]
+    public virtual async Task<ActionResult> ClearAttentionSignals(string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return NotFound();
+
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (action is not null && !typeAuthService.CanWrite(action))
+            return Forbid();
+
+        var hashIdService = this.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+
+        var identityClaimProvider = this.HttpContext.RequestServices.GetRequiredService<IdentityClaimProvider>();
+        long? userId = identityClaimProvider.GetUserID();
+
+        var repository = this.HttpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return StatusCode(500);
+
+        try
+        {
+            await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+            return Ok();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(ex.Message);
+        }
     }
 
     [NonAction]
