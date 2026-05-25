@@ -23,8 +23,8 @@ public sealed record StoredAttentionSignal
     /// <summary>Entity type name. Populated in indexed mode only.</summary>
     public string? EntityType { get; init; }
 
-    /// <summary>Entity row id. Populated in indexed mode only.</summary>
-    public long? EntityId { get; init; }
+    /// <summary>Entity row id (hash-encoded for client serialization). Populated in indexed mode only.</summary>
+    public string? EntityId { get; init; }
 
     /// <inheritdoc cref="AttentionSignal.Source"/>
     public required string Source { get; init; }

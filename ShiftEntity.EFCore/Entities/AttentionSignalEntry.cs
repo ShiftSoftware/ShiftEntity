@@ -20,7 +20,7 @@ public class AttentionSignalEntry
     {
         Id = ID,
         EntityType = EntityType,
-        EntityId = EntityId,
+        EntityId = EntityId.ToString(),
         Source = Source,
         Category = Category,
         Reason = Reason,
@@ -37,7 +37,7 @@ public class AttentionSignalEntry
         long entityId) => new()
     {
         EntityType = signal.EntityType ?? entityType,
-        EntityId = signal.EntityId ?? entityId,
+        EntityId = signal.EntityId is not null ? long.Parse(signal.EntityId) : entityId,
         Source = signal.Source,
         Category = signal.Category,
         Reason = signal.Reason,

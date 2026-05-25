@@ -225,23 +225,11 @@ internal static class AttentionPipeline
             if (entityId == 0)
                 return [];
 
-            return await db.Set<AttentionSignalEntry>()
+            var entries = await db.Set<AttentionSignalEntry>()
                 .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
-                .Select(x => new StoredAttentionSignal
-                {
-                    Id = x.ID,
-                    EntityType = x.EntityType,
-                    EntityId = x.EntityId,
-                    Source = x.Source,
-                    Category = x.Category,
-                    Reason = x.Reason,
-                    Severity = x.Severity,
-                    PayloadJson = x.PayloadJson,
-                    RaisedAt = x.RaisedAt,
-                    ClearedAt = x.ClearedAt,
-                    ClearedByUserId = x.ClearedByUserId,
-                })
                 .ToListAsync();
+
+            return entries.Select(x => x.ToStoredSignal()).ToList();
         }
 
         var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;

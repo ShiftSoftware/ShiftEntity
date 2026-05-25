@@ -564,25 +564,16 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
         if (isIndexed)
         {
-            signals = await db.Set<AttentionSignalEntry>()
+            var entries = await db.Set<AttentionSignalEntry>()
                 .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
                 .OrderByDescending(x => x.Severity)
                 .ThenByDescending(x => x.RaisedAt)
-                .Select(x => new StoredAttentionSignal
-                {
-                    Id = x.ID,
-                    EntityType = x.EntityType,
-                    EntityId = x.EntityId,
-                    Source = x.Source,
-                    Category = x.Category,
-                    Reason = x.Reason,
-                    Severity = x.Severity,
-                    PayloadJson = x.PayloadJson,
-                    RaisedAt = x.RaisedAt,
-                    ClearedAt = x.ClearedAt,
-                    ClearedByUserId = x.ClearedByUserId,
-                })
                 .ToListAsync();
+
+            signals = entries.Select(x => x.ToStoredSignal() with
+            {
+                EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
+            }).ToList();
         }
         else
         {

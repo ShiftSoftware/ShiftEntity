@@ -120,6 +120,14 @@ public static class IServiceCollectionExtensions
             services.RegisterIShiftEntityPrepareForReplication(Assembly.GetEntryAssembly()!);
         }
 
+        var existingMap = services.FirstOrDefault(d => d.ServiceType == typeof(ShiftEntityDtoMap));
+        var map = existingMap?.ImplementationInstance as ShiftEntityDtoMap ?? new ShiftEntityDtoMap();
+
+        map.PopulateFromAssemblies(assemblies ?? [Assembly.GetEntryAssembly()!]);
+
+        if (existingMap is null)
+            services.AddSingleton(map);
+
         return services;
     }
 }

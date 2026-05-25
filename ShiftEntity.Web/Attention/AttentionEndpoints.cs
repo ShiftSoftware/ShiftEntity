@@ -1,22 +1,22 @@
-using System;
-using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using System;
+using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Attention;
 
 public sealed class ClearAttentionRequest
 {
     public required string EntityType { get; set; }
-    public required long EntityId { get; set; }
+    public required string EntityId { get; set; }
 }
 
 public static class AttentionEndpoints
@@ -26,16 +26,24 @@ public static class AttentionEndpoints
         string prefix = "api/attention")
         where TDbContext : ShiftDbContext
     {
+        var entityDtoMap = endpoints.ServiceProvider.GetRequiredService<ShiftEntityDtoMap>();
+
         endpoints.MapPost($"{prefix}/clear", async (
             TDbContext db,
+            IHashIdService hashIdService,
             IdentityClaimProvider identityClaimProvider,
             [FromBody] ClearAttentionRequest request) =>
         {
+            var dtoType = entityDtoMap.GetDtoType(request.EntityType);
+            if (dtoType is null)
+                return Results.NotFound($"Unknown entity type: {request.EntityType}");
+
+            var entityId = hashIdService.Decode(request.EntityId, dtoType);
             long? userId = identityClaimProvider.GetUserID();
 
             try
             {
-                await AttentionPipeline.ClearSignals(db, request.EntityType, request.EntityId, userId);
+                await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId);
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -44,24 +52,22 @@ public static class AttentionEndpoints
             }
         }).RequireAuthorization();
 
-        endpoints.MapGet($"{prefix}/active", async (TDbContext db) =>
+        endpoints.MapGet($"{prefix}/active", async (TDbContext db, IHashIdService hashIdService) =>
         {
-            var signals = await db.Set<AttentionSignalEntry>()
+            var entries = await db.Set<AttentionSignalEntry>()
                 .Where(x => x.ClearedAt == null)
                 .OrderByDescending(x => x.Severity)
                 .ThenByDescending(x => x.RaisedAt)
-                .Select(x => new StoredAttentionSignal
-                {
-                    Id = x.ID,
-                    EntityType = x.EntityType,
-                    EntityId = x.EntityId,
-                    Source = x.Source,
-                    Category = x.Category,
-                    Reason = x.Reason,
-                    Severity = x.Severity,
-                    RaisedAt = x.RaisedAt,
-                })
                 .ToListAsync();
+
+            var signals = entries.Select(x =>
+            {
+                var signal = x.ToStoredSignal();
+                var dtoType = entityDtoMap.GetDtoType(x.EntityType);
+                if (dtoType is not null)
+                    signal = signal with { EntityId = hashIdService.Encode(x.EntityId, dtoType) };
+                return signal;
+            }).ToList();
 
             return Results.Ok(signals);
         }).RequireAuthorization();
