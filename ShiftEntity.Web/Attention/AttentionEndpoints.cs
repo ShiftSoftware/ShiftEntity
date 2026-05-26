@@ -13,14 +13,30 @@ using System.Linq;
 
 namespace ShiftSoftware.ShiftEntity.Web.Attention;
 
+/// <summary>
+/// Request payload for the standalone attention clear endpoint (<c>POST {prefix}/clear</c>).
+/// Entity IDs are hash-encoded.
+/// </summary>
 public sealed class ClearAttentionRequest
 {
+    /// <summary>CLR type name of the entity whose signals should be cleared.</summary>
     public required string EntityType { get; set; }
+
+    /// <summary>Hash-encoded entity ID. Decoded via <see cref="ShiftEntityDtoMap"/> to resolve the DTO type.</summary>
     public required string EntityId { get; set; }
 }
 
+/// <summary>
+/// Standalone (non-controller) attention endpoints for cross-entity operations.
+/// Supplements the per-entity controller endpoints on <c>ShiftEntitySecureControllerAsync</c>.
+/// </summary>
 public static class AttentionEndpoints
 {
+    /// <summary>
+    /// Maps standalone attention endpoints: <c>POST {prefix}/clear</c> (clears signals for a
+    /// specific entity) and <c>GET {prefix}/active</c> (returns all uncleared indexed-mode
+    /// signals with hash-encoded entity IDs). Both require authorization.
+    /// </summary>
     public static IEndpointRouteBuilder MapAttentionEndpoints<TDbContext>(
         this IEndpointRouteBuilder endpoints,
         string prefix = "api/attention")

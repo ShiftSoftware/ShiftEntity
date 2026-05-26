@@ -8,15 +8,38 @@ using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Attention;
 
+/// <summary>
+/// Holds an indexed-mode signal whose entity has not yet been assigned a database ID
+/// (Insert path). Flushed after <c>SaveChangesAsync</c> assigns the ID.
+/// </summary>
 internal sealed class PendingIndexedSignal
 {
+    /// <summary>CLR type name of the entity that raised the signal.</summary>
     public required string EntityTypeName { get; init; }
+
+    /// <summary>EF Core change-tracker entry; used to read the assigned ID after save.</summary>
     public required EntityEntry Entry { get; init; }
+
+    /// <summary>The signal to persist once the entity ID is known.</summary>
     public required StoredAttentionSignal Signal { get; init; }
 }
 
+/// <summary>
+/// Core evaluation and persistence engine for the attention system. Invoked by
+/// <c>ShiftRepository.ProcessEntriesAndSave</c> for each <see cref="IHasAttention"/> entity.
+/// Discovers evaluators, runs them, deduplicates signals, persists results, and updates
+/// the entity's summary columns — all within the same <c>SaveChanges</c> transaction.
+/// </summary>
 internal static class AttentionPipeline
 {
+    /// <summary>
+    /// Runs all registered evaluators against the entity, deduplicates raised signals,
+    /// persists new signals in the entity's storage mode, and updates summary columns.
+    /// </summary>
+    /// <returns>
+    /// Pending indexed signals for Insert entities (flushed via <see cref="FlushPendingSignals"/>
+    /// after <c>SaveChangesAsync</c> assigns database IDs), or <c>null</c> when no work was done.
+    /// </returns>
     internal static async Task<List<PendingIndexedSignal>?> ProcessEntity<TEntity>(
         ShiftDbContext db,
         EntityEntry entry,
@@ -144,6 +167,10 @@ internal static class AttentionPipeline
         return pendingIndexed;
     }
 
+    /// <summary>
+    /// Marks all active signals for the specified entity as cleared, resets the entity's
+    /// summary columns, and saves. Works against both JSON-shadow and indexed storage modes.
+    /// </summary>
     internal static async Task ClearSignals(
         ShiftDbContext db,
         string entityTypeName,
@@ -203,6 +230,10 @@ internal static class AttentionPipeline
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Persists pending indexed signals after <c>SaveChangesAsync</c> has assigned database IDs
+    /// to Insert entities. Called in a second save pass by the repository.
+    /// </summary>
     internal static void FlushPendingSignals(ShiftDbContext db, List<PendingIndexedSignal> pending)
     {
         foreach (var p in pending)
