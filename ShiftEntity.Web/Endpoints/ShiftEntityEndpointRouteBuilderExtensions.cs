@@ -2,16 +2,22 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData.ModelBuilder;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Core.Attention;
+using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.AspNetCore.EndpointFilters;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Concurrent;
-using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web.Endpoints;
@@ -269,6 +275,78 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                     : await defaultPrintToken(ctx, key));
         }
 
+        // ---- Attention endpoints (only when Entity implements IHasAttention) ----
+
+        RouteHandlerBuilder? getAttentionRoute = null;
+        RouteHandlerBuilder? clearAttentionRoute = null;
+
+        if (typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+        {
+            var entityTypeName = typeof(Entity).Name;
+            var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
+
+            getAttentionRoute = group.MapGet("/{key}/attention", async (HttpContext ctx, string key) =>
+            {
+                var hashIdService = ctx.RequestServices.GetRequiredService<IHashIdService>();
+                var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+
+                var repository = ctx.RequestServices.GetRequiredService<Repository>();
+                if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+                    return Results.StatusCode(500);
+
+                List<StoredAttentionSignal> signals;
+
+                if (isIndexed)
+                {
+                    var entries = await db.Set<AttentionSignalEntry>()
+                        .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
+                        .OrderByDescending(x => x.Severity)
+                        .ThenByDescending(x => x.RaisedAt)
+                        .ToListAsync();
+
+                    signals = entries.Select(x => x.ToStoredSignal() with
+                    {
+                        EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
+                    }).ToList();
+                }
+                else
+                {
+                    var entity = await db.FindAsync(typeof(Entity), entityId);
+                    if (entity is null)
+                        return Results.NotFound();
+
+                    var entry = db.Entry(entity);
+                    var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
+                    signals = AttentionSignalJsonHelper.Deserialize(json);
+                }
+
+                return Results.Ok(signals);
+            });
+
+            clearAttentionRoute = group.MapPost("/{key}/attention/clear", async (HttpContext ctx, string key) =>
+            {
+                var hashIdService = ctx.RequestServices.GetRequiredService<IHashIdService>();
+                var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+
+                var identityClaimProvider = ctx.RequestServices.GetRequiredService<IdentityClaimProvider>();
+                long? userId = identityClaimProvider.GetUserID();
+
+                var repository = ctx.RequestServices.GetRequiredService<Repository>();
+                if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+                    return Results.StatusCode(500);
+
+                try
+                {
+                    await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+                    return Results.Ok();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.NotFound(ex.Message);
+                }
+            });
+        }
+
         if (secure)
         {
             // Per-verb TypeAuth filter, mirroring ShiftEntitySecureControllerAsync's
@@ -285,6 +363,8 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                 postRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 putRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 deleteRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Delete));
+                getAttentionRoute?.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
+                clearAttentionRoute?.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
             }
         }
     }
