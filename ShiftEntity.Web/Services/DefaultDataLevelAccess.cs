@@ -33,15 +33,9 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 
     private List<long?>? GetAccessibleItems<TDto>(DynamicReadWriteDeleteAction claim, params string[]? selfId)
     {
-        var accessibleItemsTypeAuth = typeAuthService.GetAccessibleItems(claim, x => x == TypeAuth.Core.Access.Read, selfId!);
-
-        List<long?>? accessibleItems = accessibleItemsTypeAuth.WildCard ? null :
-            accessibleItemsTypeAuth
-            .AccessibleIds
-            .Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)hashIdService.Decode<TDto>(x))
-            .ToList();
-
-        return accessibleItems;
+        return typeAuthService
+            .GetAccessibleItems(claim, x => x == TypeAuth.Core.Access.Read, selfId!)
+            .ConvertIds<long>(x => hashIdService.Decode<TDto>(x));
     }
 
     public List<long?>? GetAccessibleCountries()

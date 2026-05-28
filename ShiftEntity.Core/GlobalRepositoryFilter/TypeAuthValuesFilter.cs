@@ -59,21 +59,22 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
     {
         if (dynamicAction is not null)
         {
-            var accessibleItems = this.TypeAuthService!.GetAccessibleItems(
+            var result = this.TypeAuthService!.GetAccessibleItems(
                 dynamicAction,
                 x => x == access,
                 selfIds
             );
 
-            if (accessibleItems.AccessibleIds is not null && dtoTypeForHashId is not null && this.HashIdService is not null)
+            var accessibleIds = result.AccessibleIds;
+
+            if (accessibleIds is not null && dtoTypeForHashId is not null && this.HashIdService is not null)
             {
-                accessibleItems.AccessibleIds = accessibleItems
-                    .AccessibleIds
+                accessibleIds = accessibleIds
                     .Select(x => this.HashIdService.Decode(x, dtoTypeForHashId).ToString())
                     .ToList();
             }
 
-            return (accessibleItems.AccessibleIds, accessibleItems.WildCard);
+            return (accessibleIds, result.WildCard);
         }
 
         return (null, false);
