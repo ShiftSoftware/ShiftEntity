@@ -34,7 +34,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
     private List<long?>? GetAccessibleItems<TDto>(DynamicReadWriteDeleteAction claim, params string[]? selfId)
     {
         return typeAuthService
-            .GetAccessibleItems(claim, x => x == TypeAuth.Core.Access.Read, selfId!)
+            .GetReadableItems(claim, selfId!)
             .ConvertIds<long>(x => hashIdService.Decode<TDto>(x));
     }
 
