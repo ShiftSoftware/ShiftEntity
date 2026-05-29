@@ -1,5 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ShiftSoftware.ShiftEntity.EFCore.Migrations;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
@@ -11,6 +14,10 @@ internal class ShiftDbContextExtensionOptions : IDbContextOptionsExtension
 
     public void ApplyServices(IServiceCollection services)
     {
+        if (UseTemporal)
+        {
+            services.Replace(ServiceDescriptor.Scoped<IMigrationsModelDiffer, ShiftEntityMigrationsModelDiffer>());
+        }
     }
 
     public void Validate(IDbContextOptions options)
