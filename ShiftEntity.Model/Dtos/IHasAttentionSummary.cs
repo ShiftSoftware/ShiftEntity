@@ -10,7 +10,7 @@ public interface IHasAttentionSummary
     /// <summary>Whether any uncleared attention signal exists for this entity.</summary>
     bool HasActiveAttention { get; set; }
 
-    /// <summary>Highest <see cref="ShiftSoftware.ShiftEntity.Core.Attention.AttentionSeverity"/> across active signals (as int), or <c>null</c> if none.</summary>
+    /// <summary>Highest attention severity across active signals as its underlying <c>int</c> value (maps to <c>AttentionSeverity</c> in ShiftEntity.Core), or <c>null</c> if none.</summary>
     int? HighestSeverity { get; set; }
 
     /// <summary>Count of uncleared attention signals.</summary>
