@@ -6,9 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
@@ -375,6 +379,92 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
         return TokenService.ValidateSASToken(urlDescriptor, key, expires, token, options.SASTokenKey);
+    }
+
+    // ---- Attention ----
+
+    /// <summary>
+    /// Returns the stored attention signals for one entity. Single source of truth shared by the
+    /// controller (<c>ShiftEntitySecureControllerAsync.GetAttentionSignals</c>) and the minimal-API
+    /// <c>MapShiftEntitySecureCrud</c> endpoint, so the two surfaces can't drift.
+    /// <para>
+    /// Returns an empty list (200) when the entity hasn't opted into attention — the route is
+    /// exposed on every surface, so a 404 there reads as a real error in the browser; an empty
+    /// list is indistinguishable to the client from an opted-in entity with no signals yet.
+    /// </para>
+    /// </summary>
+    public async Task<CrudResult> GetAttentionSignalsAsync(HttpContext httpContext, string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return CrudResult.Ok(new List<StoredAttentionSignal>());
+
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+        var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
+
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return CrudResult.Status(500, null);
+
+        List<StoredAttentionSignal> signals;
+
+        if (isIndexed)
+        {
+            var entries = await db.Set<AttentionSignalEntry>()
+                .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
+                .OrderByDescending(x => x.Severity)
+                .ThenByDescending(x => x.RaisedAt)
+                .ToListAsync();
+
+            signals = entries.Select(x => x.ToStoredSignal() with
+            {
+                EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
+            }).ToList();
+        }
+        else
+        {
+            var entity = await db.FindAsync(typeof(Entity), entityId);
+            if (entity is null)
+                return CrudResult.NotFound(null);
+
+            var entry = db.Entry(entity);
+            var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
+            signals = AttentionSignalJsonHelper.Deserialize(json);
+        }
+
+        return CrudResult.Ok(signals);
+    }
+
+    /// <summary>
+    /// Clears all active attention signals for one entity. Single source of truth shared by the
+    /// controller and the minimal-API endpoint. No-op (200) when the entity hasn't opted in.
+    /// </summary>
+    public async Task<CrudResult> ClearAttentionSignalsAsync(HttpContext httpContext, string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return CrudResult.Ok(null);
+
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+
+        var identityClaimProvider = httpContext.RequestServices.GetRequiredService<IdentityClaimProvider>();
+        long? userId = identityClaimProvider.GetUserID();
+
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return CrudResult.Status(500, null);
+
+        try
+        {
+            await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+            return CrudResult.Ok(null);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CrudResult.NotFound(ex.Message);
+        }
     }
 
     // ---- Selection helpers (bulk operations) ----

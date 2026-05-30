@@ -544,82 +544,25 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     [HttpGet("{key}/attention")]
     public virtual async Task<ActionResult> GetAttentionSignals(string key)
     {
-        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
-            return NotFound();
-
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
-        var hashIdService = this.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
-        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
-        var entityTypeName = typeof(Entity).Name;
-        var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
-
-        var repository = this.HttpContext.RequestServices.GetRequiredService<Repository>();
-        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
-            return StatusCode(500);
-
-        List<StoredAttentionSignal> signals;
-
-        if (isIndexed)
-        {
-            var entries = await db.Set<AttentionSignalEntry>()
-                .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
-                .OrderByDescending(x => x.Severity)
-                .ThenByDescending(x => x.RaisedAt)
-                .ToListAsync();
-
-            signals = entries.Select(x => x.ToStoredSignal() with
-            {
-                EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
-            }).ToList();
-        }
-        else
-        {
-            var entity = await db.FindAsync(typeof(Entity), entityId);
-            if (entity is null)
-                return NotFound();
-
-            var entry = db.Entry(entity);
-            var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
-            signals = AttentionSignalJsonHelper.Deserialize(json);
-        }
-
-        return Ok(signals);
+        // The fetch/clear logic lives in the shared ShiftEntityCrudHandler so this controller and
+        // the minimal-API MapShiftEntitySecureCrud endpoint can't drift. Auth stays here (the
+        // surface concern); the handler owns the data logic and the opt-in decision.
+        return ToActionResult(await _handler.GetAttentionSignalsAsync(HttpContext, key));
     }
 
     [Authorize]
     [HttpPost("{key}/attention/clear")]
     public virtual async Task<ActionResult> ClearAttentionSignals(string key)
     {
-        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
-            return NotFound();
-
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
         if (action is not null && !typeAuthService.CanWrite(action))
             return Forbid();
 
-        var hashIdService = this.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
-        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
-        var entityTypeName = typeof(Entity).Name;
-
-        var identityClaimProvider = this.HttpContext.RequestServices.GetRequiredService<IdentityClaimProvider>();
-        long? userId = identityClaimProvider.GetUserID();
-
-        var repository = this.HttpContext.RequestServices.GetRequiredService<Repository>();
-        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
-            return StatusCode(500);
-
-        try
-        {
-            await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
-            return Ok();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return NotFound(ex.Message);
-        }
+        return ToActionResult(await _handler.ClearAttentionSignalsAsync(HttpContext, key));
     }
 
     [NonAction]

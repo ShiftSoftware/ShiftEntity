@@ -275,77 +275,16 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                     : await defaultPrintToken(ctx, key));
         }
 
-        // ---- Attention endpoints (only when Entity implements IHasAttention) ----
+        // ---- Attention endpoints ----
+        // Always mapped, mirroring the inherited controller actions. The shared
+        // ShiftEntityCrudHandler owns the fetch/clear logic and the opt-in decision (empty 200
+        // when the entity doesn't implement IHasAttention), so this surface and the controller
+        // can't drift. See ShiftEntityCrudHandler.GetAttentionSignalsAsync / ClearAttentionSignalsAsync.
+        var getAttentionRoute = group.MapGet("/{key}/attention", async (HttpContext ctx, string key) =>
+            ToMinimalApiResult(await handler.GetAttentionSignalsAsync(ctx, key)));
 
-        RouteHandlerBuilder? getAttentionRoute = null;
-        RouteHandlerBuilder? clearAttentionRoute = null;
-
-        if (typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
-        {
-            var entityTypeName = typeof(Entity).Name;
-            var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
-
-            getAttentionRoute = group.MapGet("/{key}/attention", async (HttpContext ctx, string key) =>
-            {
-                var hashIdService = ctx.RequestServices.GetRequiredService<IHashIdService>();
-                var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
-
-                var repository = ctx.RequestServices.GetRequiredService<Repository>();
-                if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
-                    return Results.StatusCode(500);
-
-                List<StoredAttentionSignal> signals;
-
-                if (isIndexed)
-                {
-                    var entries = await db.Set<AttentionSignalEntry>()
-                        .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
-                        .OrderByDescending(x => x.Severity)
-                        .ThenByDescending(x => x.RaisedAt)
-                        .ToListAsync();
-
-                    signals = entries.Select(x => x.ToStoredSignal() with
-                    {
-                        EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
-                    }).ToList();
-                }
-                else
-                {
-                    var entity = await db.FindAsync(typeof(Entity), entityId);
-                    if (entity is null)
-                        return Results.NotFound();
-
-                    var entry = db.Entry(entity);
-                    var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
-                    signals = AttentionSignalJsonHelper.Deserialize(json);
-                }
-
-                return Results.Ok(signals);
-            });
-
-            clearAttentionRoute = group.MapPost("/{key}/attention/clear", async (HttpContext ctx, string key) =>
-            {
-                var hashIdService = ctx.RequestServices.GetRequiredService<IHashIdService>();
-                var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
-
-                var identityClaimProvider = ctx.RequestServices.GetRequiredService<IdentityClaimProvider>();
-                long? userId = identityClaimProvider.GetUserID();
-
-                var repository = ctx.RequestServices.GetRequiredService<Repository>();
-                if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
-                    return Results.StatusCode(500);
-
-                try
-                {
-                    await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
-                    return Results.Ok();
-                }
-                catch (InvalidOperationException ex)
-                {
-                    return Results.NotFound(ex.Message);
-                }
-            });
-        }
+        var clearAttentionRoute = group.MapPost("/{key}/attention/clear", async (HttpContext ctx, string key) =>
+            ToMinimalApiResult(await handler.ClearAttentionSignalsAsync(ctx, key)));
 
         if (secure)
         {
@@ -363,8 +302,8 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                 postRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 putRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
                 deleteRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Delete));
-                getAttentionRoute?.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
-                clearAttentionRoute?.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
+                getAttentionRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
+                clearAttentionRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));
             }
         }
     }
