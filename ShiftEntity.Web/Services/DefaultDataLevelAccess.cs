@@ -237,61 +237,61 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         var entityHasTeam = typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<EntityType>)));
 
         if (entityHasCountry && !disableDefaultCountryFilter)
-            query = query.WhereIn(x => ((IEntityHasCountry<EntityType>)x).CountryID, this.GetAccessibleCountries());
+            query = query.WhereIn(this.GetAccessibleCountries(), x => ((IEntityHasCountry<EntityType>)x).CountryID);
 
         if (entityHasRegion && !disableDefaultRegionFilter)
-            query = query.WhereIn(x => ((IEntityHasRegion<EntityType>)x).RegionID, this.GetAccessibleRegions());
+            query = query.WhereIn(this.GetAccessibleRegions(), x => ((IEntityHasRegion<EntityType>)x).RegionID);
 
         if (entityHasCompany && !disableDefaultCompanyFilter)
-            query = query.WhereIn(x => ((IEntityHasCompany<EntityType>)x).CompanyID, this.GetAccessibleCompanies());
+            query = query.WhereIn(this.GetAccessibleCompanies(), x => ((IEntityHasCompany<EntityType>)x).CompanyID);
 
         if (entityHasCompanyBranch && !disableDefaultCompanyBranchFilter)
-            query = query.WhereIn(x => ((IEntityHasCompanyBranch<EntityType>)x).CompanyBranchID, this.GetAccessibleBranches());
+            query = query.WhereIn(this.GetAccessibleBranches(), x => ((IEntityHasCompanyBranch<EntityType>)x).CompanyBranchID);
 
         if (entityHasBrand && !disableDefaultBrandFilter)
-            query = query.WhereIn(x => ((IEntityHasBrand<EntityType>)x).BrandID, this.GetAccessibleBrands());
+            query = query.WhereIn(this.GetAccessibleBrands(), x => ((IEntityHasBrand<EntityType>)x).BrandID);
 
         if (entityHasCity && !disableDefaultCityFilter)
-            query = query.WhereIn(x => ((IEntityHasCity<EntityType>)x).CityID, this.GetAccessibleCities());
+            query = query.WhereIn(this.GetAccessibleCities(), x => ((IEntityHasCity<EntityType>)x).CityID);
 
         if (entityHasTeam && !disableDefaultTeamFilter)
-            query = query.WhereIn(x => ((IEntityHasTeam<EntityType>)x).TeamID, this.GetAccessibleTeams());
+            query = query.WhereIn(this.GetAccessibleTeams(), x => ((IEntityHasTeam<EntityType>)x).TeamID);
 
         return query;
     }
 
     public IQueryable<EntityType> ApplyDefaultCountryFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCountry<EntityType>
     {
-        return query.WhereIn(x => x.CountryID, this.GetAccessibleCountries());
+        return query.WhereIn(this.GetAccessibleCountries(), x => x.CountryID);
     }
 
     public IQueryable<EntityType> ApplyDefaultRegionFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasRegion<EntityType>
     {
-        return query.WhereIn(x => x.RegionID, this.GetAccessibleRegions());
+        return query.WhereIn(this.GetAccessibleRegions(), x => x.RegionID);
     }
 
     public IQueryable<EntityType> ApplyDefaultCompanyFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompany<EntityType>
     {
-        return query.WhereIn(x => x.CompanyID, this.GetAccessibleCompanies());
+        return query.WhereIn(this.GetAccessibleCompanies(), x => x.CompanyID);
     }
 
     public IQueryable<EntityType> ApplyDefaultBranchFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompanyBranch<EntityType>
     {
-        return query.WhereIn(x => x.CompanyBranchID, this.GetAccessibleBranches());
+        return query.WhereIn(this.GetAccessibleBranches(), x => x.CompanyBranchID);
     }
 
     public IQueryable<EntityType> ApplyDefaultBrandFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasBrand<EntityType>
     {
-        return query.WhereIn(x => x.BrandID, this.GetAccessibleBrands());
+        return query.WhereIn(this.GetAccessibleBrands(), x => x.BrandID);
     }
 
     public IQueryable<EntityType> ApplyDefaultCityFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCity<EntityType>
     {
-        return query.WhereIn(x => x.CityID, this.GetAccessibleCities());
+        return query.WhereIn(this.GetAccessibleCities(), x => x.CityID);
     }
 
     public IQueryable<EntityType> ApplyDefaultTeamFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasTeam<EntityType>
     {
-        return query.WhereIn(x => x.TeamID, this.GetAccessibleTeams());
+        return query.WhereIn(this.GetAccessibleTeams(), x => x.TeamID);
     }
 }

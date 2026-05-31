@@ -12,7 +12,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 /// Legacy source mapping (read the real thing for fidelity — but this does not depend on it):
 /// <list type="bullet">
 /// <item><b>Query path</b> ≈ <c>ApplyDefaultDataLevelFilters</c> → <c>ApplyDefaultCompanyFilter</c>:
-/// <c>query.WhereIn(x =&gt; x.CompanyID, GetAccessibleCompanies())</c>, where
+/// <c>query.WhereIn(GetAccessibleCompanies(), x =&gt; x.CompanyID)</c>, where
 /// <c>GetAccessibleCompanies()</c> = <c>GetReadableItems(Companies, self).ConvertIds&lt;long&gt;(decode)</c>
 /// — <b>always at Read level</b>, and <b>single-column</b> (no <c>IntermediaryCompanyID</c> — the gap).</item>
 /// <item><b>Row path</b> ≈ the Company block of <c>HasDefaultDataLevelAccess</c>:
@@ -37,7 +37,7 @@ public static class LegacyDataLevelMechanism
     /// It cannot reach <see cref="Vehicle.IntermediaryCompanyID"/>, which is the cross-column OR gap.
     /// </summary>
     public static IQueryable<Vehicle> ApplyCompanyQueryFilter(IQueryable<Vehicle> query, TypeAuthContext ctx, string? selfCompanyId = null)
-        => query.WhereIn(x => x.CompanyID, AccessibleCompanies(ctx, selfCompanyId));
+        => query.WhereIn(AccessibleCompanies(ctx, selfCompanyId), x => x.CompanyID);
 
     /// <summary>
     /// The custom OR query a consumer must hand-write today (≈ a <c>FilterByTypeAuthValues</c> escape hatch) to

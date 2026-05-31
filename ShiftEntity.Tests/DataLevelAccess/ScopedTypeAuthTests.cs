@@ -17,7 +17,7 @@ public class ScopedTypeAuthTests
     private static List<Vehicle> VisibleByCompanyId(TypeAuthContext ctx, params string[] selfId)
     {
         var readable = ctx.GetReadableItems(ScopedTypeAuth.CompaniesAction, selfId);
-        return Vehicles().WhereAccessible(readable, x => x.CompanyID, ScopedTypeAuth.ToCompanyId).ToList();
+        return Vehicles().WhereAccessible(readable, ScopedTypeAuth.ToCompanyId, x => x.CompanyID).ToList();
     }
 
     [Fact]
