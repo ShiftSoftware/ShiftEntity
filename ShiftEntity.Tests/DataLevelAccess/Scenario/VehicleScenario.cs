@@ -34,6 +34,9 @@ public class Vehicle
     public string Name { get; set; } = "";
     public long? CompanyID { get; set; }
     public long? IntermediaryCompanyID { get; set; }
+
+    /// <summary>The user a vehicle is assigned to — illustrates owner dimensions (<c>OnOwner</c>). Unset in the sample data.</summary>
+    public long? AssignedUserID { get; set; }
 }
 
 public static class VehicleScenario
