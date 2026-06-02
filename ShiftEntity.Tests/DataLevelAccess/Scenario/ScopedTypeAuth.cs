@@ -49,6 +49,20 @@ public static class ScopedTypeAuth
         => ToCompanies(new[] { companyId }, accesses);
 
     /// <summary>
+    /// Access scoped to the given raw accessible-id <em>strings</em> at the given levels. Unlike
+    /// <see cref="ToCompanies(IEnumerable{long}, Access[])"/> (which stringifies longs) the keys are granted verbatim,
+    /// so a test can grant a hashid-<em>encoded</em> id (e.g. <c>"C4"</c>) and verify the dimension decodes it.
+    /// </summary>
+    public static TypeAuthContext ToCompanyKeys(IEnumerable<string> keys, params Access[] accesses)
+    {
+        var levels = Defaulted(accesses);
+        var byKey = new Dictionary<string, object>();
+        foreach (var key in keys)
+            byKey[key] = levels;
+        return BuildCompanies(byKey);
+    }
+
+    /// <summary>
     /// "Own data" access: grants the self-reference key, which resolves to whatever self id is supplied
     /// to <c>GetAccessibleItemsByAccess</c> / <c>GetReadableItems</c> / <c>Can</c> at evaluation time.
     /// </summary>

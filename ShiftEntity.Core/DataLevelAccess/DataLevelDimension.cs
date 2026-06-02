@@ -5,16 +5,16 @@ using System.Linq.Expressions;
 namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 
 /// <summary>
-/// Escape-hatch predicate factory: given the dimension's accessible ids and the caller's resolved self-ids
-/// (both decoded to <see cref="long"/>; the engine skips wildcard dimensions, so neither is a "wildcard"), returns
-/// an entity predicate. Use for child-collection / related-entity / custom comparisons that Key/Keys can't express.
+/// Escape-hatch predicate factory: given the dimension's decoded accessible ids (the engine skips wildcard
+/// dimensions, so this is never a "wildcard"), returns an entity predicate. Use for child-collection /
+/// related-entity / custom comparisons that Key/Keys can't express. To match the caller's <i>own</i> id, declare a
+/// separate <c>OnOwner</c> dimension (which AND-composes) — a <c>Self</c> grant is already folded into
+/// <paramref name="accessibleIds"/>, so there is no separate "self" argument here.
 /// </summary>
 /// <typeparam name="TEntity">The queried entity type.</typeparam>
 /// <param name="accessibleIds">The decoded accessible ids for this dimension at the requested access level.</param>
-/// <param name="selfIds">The caller's resolved self-ids (empty when no <c>Self</c> claim is declared).</param>
 public delegate Expression<Func<TEntity, bool>> DataLevelMatch<TEntity>(
-    IReadOnlyCollection<long?> accessibleIds,
-    IReadOnlyCollection<long?> selfIds);
+    IReadOnlyCollection<long?> accessibleIds);
 
 /// <summary>
 /// How a dimension matches an entity against its accessible-id set. Closed hierarchy:

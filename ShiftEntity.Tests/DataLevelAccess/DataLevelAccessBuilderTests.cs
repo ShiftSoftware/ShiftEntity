@@ -53,7 +53,7 @@ public class DataLevelAccessBuilderTests
         // hand-writes the same cross-column OR Keys would produce — to show Match can do what Keys does, and more.
         var access = Access();
         DataLevelMatch<Vehicle> match =
-            (set, self) => v => set.Contains(v.CompanyID) || set.Contains(v.IntermediaryCompanyID);
+            set => v => set.Contains(v.CompanyID) || set.Contains(v.IntermediaryCompanyID);
         access.On(VehicleDataLevel.Companies).Match(match);
 
         var dim = Assert.Single(access.Dimensions);
@@ -138,7 +138,7 @@ public class DataLevelAccessBuilderTests
         var dimension = access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID);
 
         Assert.Throws<InvalidOperationException>(
-            () => { dimension.Match((set, self) => v => set.Contains(v.CompanyID)); });
+            () => { dimension.Match(set => v => set.Contains(v.CompanyID)); });
     }
 
     [Fact]
