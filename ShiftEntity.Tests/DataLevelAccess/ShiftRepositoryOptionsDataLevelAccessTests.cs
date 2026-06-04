@@ -16,21 +16,9 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 /// </summary>
 public class ShiftRepositoryOptionsDataLevelAccessTests
 {
-    /// <summary>
-    /// <see cref="ShiftEntity{EntityType}"/>-derived twin of the scenario <see cref="Vehicle"/> POCO —
-    /// <see cref="ShiftRepositoryOptions{EntityType}"/> constrains its entity to <c>ShiftEntity&lt;T&gt;</c>, which
-    /// the engine-level tests' POCO deliberately isn't. Same two company legs, seeded from the same sample set.
-    /// </summary>
-    private class VehicleEntity : ShiftEntity<VehicleEntity>
-    {
-        public long? CompanyID { get; set; }
-        public long? IntermediaryCompanyID { get; set; }
-    }
-
-    private static IQueryable<VehicleEntity> Vehicles()
-        => VehicleScenario.SampleVehicles()
-            .Select(v => new VehicleEntity { ID = v.Id, CompanyID = v.CompanyID, IntermediaryCompanyID = v.IntermediaryCompanyID })
-            .AsQueryable();
+    // The ShiftEntity<T>-derived twin of the scenario POCO lives in Scenario/VehicleEntity.cs — shared with the
+    // Phase 3 repository tests, which also map it through EF.
+    private static IQueryable<VehicleEntity> Vehicles() => VehicleEntity.FromSamples().AsQueryable();
 
     private static DataLevelAccessContext IntermediaryContext()
         => new(new TypeAuthAccessibleItemsSource(ScopedTypeAuth.ToCompany(Companies.Intermediary)),

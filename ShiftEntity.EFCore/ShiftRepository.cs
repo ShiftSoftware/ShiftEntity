@@ -2,8 +2,10 @@ using AutoMapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
+using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.Model;
@@ -266,12 +268,51 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         if (!disableDefaultDataLevelAccess)
-            query = this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
+            query = ApplyDataLevelFilters(query);
 
         if (!disableGlobalFilters)
             query = await query.ApplyGlobalRepositoryFiltersAsync(this.ShiftRepositoryOptions.GlobalRepositoryFilters);
 
         return query;
+    }
+
+    /// <summary>
+    /// The query-path data-level filter: when a v2 policy was declared via
+    /// <see cref="ShiftRepositoryOptions{EntityType}.DataLevelAccess"/> the declaration is the whole truth for the
+    /// entity — its filter replaces the legacy default filters entirely (an explicit <c>Unscoped()</c> applies no
+    /// filter from either path). With no declaration, today's legacy default filters run unchanged (opt-in
+    /// coexistence, D1).
+    /// </summary>
+    private IQueryable<EntityType> ApplyDataLevelFilters(IQueryable<EntityType> query)
+    {
+        var policy = this.ShiftRepositoryOptions.DataLevelAccessPolicy;
+
+        if (policy is null)
+            return this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
+
+        // An explicit opt-out needs no filtering and no per-request context — short-circuit before resolving it,
+        // so an unscoped entity also works on hosts that never registered data-level access.
+        if (policy.IsUnscoped)
+            return query;
+
+        // Querying is a View ⇒ the Read level (D6); Insert/Edit/Delete pick their own levels on the row paths (3.2).
+        return policy.ApplyQueryFilter(query, TypeAuth.Core.Access.Read, GetRequiredDataLevelAccessContext());
+    }
+
+    /// <summary>
+    /// The per-request v2 <see cref="DataLevelAccessContext"/>, resolved lazily so repositories without a declared
+    /// policy never depend on it (non-web hosts may not register data-level access at all). A declared policy with
+    /// no resolvable context is fatal — fail closed; running the query unfiltered would leak out-of-scope rows.
+    /// </summary>
+    private DataLevelAccessContext GetRequiredDataLevelAccessContext()
+    {
+        var serviceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
+
+        return serviceProvider.GetService<DataLevelAccessContext>()
+            ?? throw new InvalidOperationException(
+                $"'{typeof(EntityType).Name}' declares data-level access, but no {nameof(DataLevelAccessContext)} is " +
+                $"registered. Call AddShiftEntityDataLevelAccess() on the host's service collection " +
+                $"(AddShiftEntityWebSharedCore does this automatically).");
     }
 
     public virtual IQueryable<RevisionDTO> GetRevisionsAsync(long id)
