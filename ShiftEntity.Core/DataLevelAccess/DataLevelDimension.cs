@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
@@ -33,8 +34,19 @@ public sealed class KeysPredicate<TEntity> : DataLevelPredicate<TEntity>
 {
     public IReadOnlyList<Expression<Func<TEntity, long?>>> Selectors { get; }
 
+    /// <summary>
+    /// The selectors compiled to delegates for the in-memory row path, built once at construction (so a row check
+    /// does not recompile per entity) and held in a readonly auto-property for safe publication to the threads that
+    /// share a compiled policy. The query path uses <see cref="Selectors"/> (the expression form EF translates); the
+    /// row path uses these — one declaration, two emissions (D5), so the paths cannot drift.
+    /// </summary>
+    public IReadOnlyList<Func<TEntity, long?>> CompiledSelectors { get; }
+
     public KeysPredicate(IReadOnlyList<Expression<Func<TEntity, long?>>> selectors)
-        => Selectors = selectors ?? throw new ArgumentNullException(nameof(selectors));
+    {
+        Selectors = selectors ?? throw new ArgumentNullException(nameof(selectors));
+        CompiledSelectors = selectors.Select(selector => selector.Compile()).ToArray();
+    }
 }
 
 /// <summary>A consumer-supplied predicate factory (the escape hatch).</summary>

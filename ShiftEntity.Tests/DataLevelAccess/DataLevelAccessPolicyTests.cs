@@ -202,4 +202,195 @@ public class DataLevelAccessPolicyTests
         Assert.Contains("C4", hashIds.DecodeCalls.Select(c => c.Key));
         Assert.All(hashIds.DecodeCalls, c => Assert.Equal(typeof(CompanyDto), c.DtoType));
     }
+
+    // ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+    //  Row path — Authorize(entity, access, context) — slice 2.4
+    //
+    //  The row twin of ApplyQueryFilter: same dimensions, same DataLevelAccessContext, same per-dimension set
+    //  resolution — evaluated in memory over a single entity. AND across dimensions; OR across a dimension's key
+    //  columns. The new capability vs the query path is LEVEL-PER-OPERATION (D6): a Read grant authorizes a View but
+    //  gates Insert/Edit/Delete (the gate that closes defect #1's unguarded Insert).
+    // ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+    private static Vehicle Sample(long id) => Vehicles().First(v => v.Id == id);
+
+    [Fact]
+    public void Authorize_CrossColumnOr_AuthorizesEitherLeg_DeniesOutOfScope()
+    {
+        // OR across columns on the row path: the Intermediary (company 4) may touch a row matched on EITHER leg — the
+        // owner leg (#3, CompanyID==4) or the intermediary leg (#6, IntermediaryCompanyID==4) — but not one on neither
+        // leg (#2, DealerB). This is defect #2's row twin: legacy wrongly denied the legitimate intermediary leg.
+        var policy = CompanyOrPolicy();
+        var context = Context(ScopedTypeAuth.ToCompany(Companies.Intermediary));
+
+        Assert.True(policy.Authorize(Sample(3), Access.Write, context));  // owner leg
+        Assert.True(policy.Authorize(Sample(6), Access.Write, context));  // intermediary leg
+        Assert.False(policy.Authorize(Sample(2), Access.Write, context)); // neither leg
+    }
+
+    [Fact]
+    public void Authorize_ReadGrantOnly_AuthorizesViewButGatesWriteAndDelete()
+    {
+        // The caller may READ company 4's rows but was granted no Write/Delete. View passes; Insert/Edit (Write) and
+        // Delete are gated — the row path's reason to exist (level-per-operation, D6). This closes defect #1: Insert
+        // was previously unguarded, so a read-only caller could create/edit/delete a row they cannot write.
+        var context = Context(ScopedTypeAuth.ToCompany(Companies.Intermediary, Access.Read));
+        var vehicle = Sample(3); // CompanyID == 4 (Intermediary-owned)
+        var policy = CompanyOrPolicy();
+
+        Assert.True(policy.Authorize(vehicle, Access.Read, context));    // View — granted
+        Assert.False(policy.Authorize(vehicle, Access.Write, context));  // Insert/Edit — gated
+        Assert.False(policy.Authorize(vehicle, Access.Delete, context)); // Delete — gated
+    }
+
+    [Fact]
+    public void Authorize_FullGrant_AuthorizesViewEditInsertAndDelete()
+    {
+        // A Read+Write+Delete grant on company 4 authorizes the in-scope row at every operation level.
+        var context = Context(ScopedTypeAuth.ToCompany(Companies.Intermediary)); // defaults to Read+Write+Delete
+        var vehicle = Sample(3);
+        var policy = CompanyOrPolicy();
+
+        Assert.True(policy.Authorize(vehicle, Access.Read, context));
+        Assert.True(policy.Authorize(vehicle, Access.Write, context));
+        Assert.True(policy.Authorize(vehicle, Access.Delete, context));
+    }
+
+    [Fact]
+    public void Authorize_Wildcard_AuthorizesEveryRow()
+    {
+        var context = Context(ScopedTypeAuth.Wildcard());
+        var policy = CompanyOrPolicy();
+
+        Assert.All(VehicleScenario.SampleVehicles(), v => Assert.True(policy.Authorize(v, Access.Write, context)));
+    }
+
+    [Fact]
+    public void Authorize_NoAccess_DeniesEveryRow()
+    {
+        var context = Context(ScopedTypeAuth.None());
+        var policy = CompanyOrPolicy();
+
+        Assert.All(VehicleScenario.SampleVehicles(), v => Assert.False(policy.Authorize(v, Access.Read, context)));
+    }
+
+    [Fact]
+    public void Authorize_NullForeignKeys_AuthorizedOnlyWhenNullGranted()
+    {
+        // Vehicle #7 has both company columns null. Scoped to a real company, the null columns are not in the set ⇒
+        // denied; granting the empty/null key makes a null column match the null entry (the same convention as WhereIn).
+        var policy = CompanyOrPolicy();
+        var nullRow = Sample(7);
+
+        Assert.False(policy.Authorize(nullRow, Access.Read, Context(ScopedTypeAuth.ToCompany(Companies.Intermediary))));
+        Assert.True(policy.Authorize(nullRow, Access.Read, Context(ScopedTypeAuth.NullCompany())));
+    }
+
+    [Fact]
+    public void Authorize_TwoDimensions_RequireBoth()
+    {
+        // Two single-column dimensions ⇒ AND: a row passes only if company 4 appears on BOTH columns.
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID);
+        access.On(VehicleDataLevel.Companies).Key(x => x.IntermediaryCompanyID);
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.ToCompany(Companies.Intermediary));
+
+        var bothLegs = new Vehicle { Id = 100, CompanyID = Companies.Intermediary, IntermediaryCompanyID = Companies.Intermediary };
+        Assert.True(policy.Authorize(bothLegs, Access.Read, context));   // both dimensions satisfied
+        Assert.False(policy.Authorize(Sample(3), Access.Read, context)); // #3 has IntermediaryCompanyID null ⇒ 2nd fails
+    }
+
+    [Fact]
+    public void Authorize_Match_AppliesConsumerPredicate()
+    {
+        // Match equivalent to Key(CompanyID): authorized iff CompanyID is in the accessible set.
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.On(VehicleDataLevel.Companies).Match(set => v => set.Contains(v.CompanyID));
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.ToCompany(Companies.Intermediary));
+
+        Assert.True(policy.Authorize(Sample(3), Access.Read, context));  // CompanyID == 4
+        Assert.False(policy.Authorize(Sample(2), Access.Read, context)); // CompanyID == 2
+    }
+
+    [Fact]
+    public void Authorize_OnOwner_AuthorizesOnlyCallersOwnRow()
+    {
+        // "Touch it only if it is assigned to me." The set is the user_id claim — no TypeAuth action consulted.
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.OnOwner("user_id").Key(x => x.AssignedUserID);
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.None(), FakeCurrentUserProvider.WithClaims(("user_id", Alice.ToString())));
+
+        Assert.True(policy.Authorize(new Vehicle { Id = 1, AssignedUserID = Alice }, Access.Write, context));
+        Assert.False(policy.Authorize(new Vehicle { Id = 2, AssignedUserID = Bob }, Access.Write, context));
+        Assert.False(policy.Authorize(new Vehicle { Id = 3, AssignedUserID = null }, Access.Write, context));
+    }
+
+    [Fact]
+    public void Authorize_OnOwner_AbsentClaim_DeniesEveryRow()
+    {
+        // No user_id claim ⇒ empty owner set ⇒ matches nothing. Fail closed (never wildcard for an owner source).
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.OnOwner("user_id").Key(x => x.AssignedUserID);
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.None(), FakeCurrentUserProvider.Anonymous());
+
+        Assert.False(policy.Authorize(new Vehicle { Id = 1, AssignedUserID = Alice }, Access.Write, context));
+    }
+
+    [Fact]
+    public void Authorize_Self_FoldsCallersOwnCompany()
+    {
+        // The grant is only the self-reference; Self("company_id") folds the caller's own company (claim = 4) into the
+        // set, so a row on either leg with company 4 is authorized — exactly like an explicit ToCompany(4) grant.
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID).Self("company_id");
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.Self(), FakeCurrentUserProvider.WithClaims(("company_id", Companies.Intermediary.ToString())));
+
+        Assert.True(policy.Authorize(Sample(6), Access.Write, context));  // intermediary leg, via folded self id
+        Assert.False(policy.Authorize(Sample(2), Access.Write, context)); // out of scope
+    }
+
+    [Fact]
+    public void Authorize_Self_AbsentClaim_DeniesEveryRow()
+    {
+        // No company_id claim ⇒ the self-only grant resolves to nothing ⇒ every row denied. Fail closed.
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID).Self("company_id");
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.Self(), FakeCurrentUserProvider.Anonymous());
+
+        Assert.False(policy.Authorize(Sample(3), Access.Write, context));
+    }
+
+    [Fact]
+    public void Authorize_HashId_RoutesDecodeThroughHashIdService()
+    {
+        // The row path uses the SAME HashId-aware converter as the query path (D5): the grant stores "C4", decoded
+        // through IHashIdService as CompanyDto (a raw long.Parse("C4") would throw), so the row check lands on company 4.
+        var hashIds = new RecordingHashIdService(decode: (key, _) => key == "C4" ? 4L : long.Parse(key));
+        var access = new DataLevelAccessBuilder<Vehicle>();
+        access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID).HashId<CompanyDto>();
+        var policy = new DataLevelAccessPolicy<Vehicle>(access);
+        var context = Context(ScopedTypeAuth.ToCompanyKeys(new[] { "C4" }), hashIds: hashIds);
+
+        Assert.True(policy.Authorize(Sample(3), Access.Write, context));  // CompanyID == 4
+        Assert.False(policy.Authorize(Sample(2), Access.Write, context)); // CompanyID == 2
+
+        Assert.NotEmpty(hashIds.DecodeCalls);
+        Assert.All(hashIds.DecodeCalls, c => Assert.Equal(typeof(CompanyDto), c.DtoType));
+    }
+
+    [Fact]
+    public void Authorize_NullArguments_Throw()
+    {
+        var policy = CompanyOrPolicy();
+        var context = Context(ScopedTypeAuth.None());
+
+        Assert.Throws<ArgumentNullException>(() => policy.Authorize(null!, Access.Read, context));
+        Assert.Throws<ArgumentNullException>(() => policy.Authorize(Sample(1), Access.Read, null!));
+    }
 }

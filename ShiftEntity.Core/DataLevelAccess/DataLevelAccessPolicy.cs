@@ -7,13 +7,16 @@ using ShiftSoftware.TypeAuth.Core.Linq;
 namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 
 /// <summary>
-/// Compiled from a <see cref="DataLevelAccessBuilder{TEntity}"/>: applies the declared dimensions to a query,
-/// AND-composing them (each dimension's predicate is OR-internal). A wildcard dimension adds no constraint.
+/// Compiled from a <see cref="DataLevelAccessBuilder{TEntity}"/>: enforces the declared dimensions on both the query
+/// path (<see cref="ApplyQueryFilter"/>) and the row path (<see cref="Authorize"/>), AND-composing them (each
+/// dimension's predicate is OR-internal). A wildcard dimension adds no constraint; an empty accessible set matches
+/// nothing (fail closed).
 /// <para>
-/// Resolves every declared dimension kind from a <see cref="DataLevelAccessContext"/>: TypeAuth-action sources
-/// (<c>On(...)</c>) — with <c>Self</c> self-reference resolution and optional <c>HashId&lt;TDto&gt;</c> id decoding —
-/// and owner-claim sources (<c>OnOwner(...)</c>). The same string→id converter decodes the grant ids here and will
-/// encode for the row check (Phase 2.4), so the two paths cannot drift (D5).
+/// Both paths run the same per-dimension <see cref="ResolveValues"/> step over a <see cref="DataLevelAccessContext"/> —
+/// resolving every declared kind (TypeAuth-action sources via <c>On(...)</c>, with <c>Self</c> self-reference
+/// resolution and optional <c>HashId&lt;TDto&gt;</c> id decoding; owner-claim sources via <c>OnOwner(...)</c>) to one
+/// decoded value list — then emit either a query filter (<c>WhereIn</c>) or an in-memory membership test from it. One
+/// source, two emissions (D5), so the two paths cannot drift.
 /// </para>
 /// </summary>
 public sealed class DataLevelAccessPolicy<TEntity>
@@ -50,6 +53,32 @@ public sealed class DataLevelAccessPolicy<TEntity>
         return query;
     }
 
+    /// <summary>
+    /// Whether the caller may act on a single <paramref name="entity"/> at <paramref name="access"/> — the row twin of
+    /// <see cref="ApplyQueryFilter"/>, evaluated in memory against the same per-request <paramref name="context"/>.
+    /// AND-composes every declared dimension (all must pass); within a dimension the key columns are OR-internal. A
+    /// wildcard dimension passes; an empty accessible set denies (fail closed). An unscoped entity (no declared
+    /// dimensions) is always authorized.
+    /// <para>
+    /// The level is picked per operation by <paramref name="access"/> (View⇒Read, Insert/Edit⇒Write, Delete⇒Delete,
+    /// D6): a Read-only grant authorizes a View of the row but gates Insert/Edit/Delete — the row path's reason to
+    /// exist, closing the worst case of defect #1 (an unguarded Insert of a wholly out-of-scope row).
+    /// </para>
+    /// </summary>
+    public bool Authorize(TEntity entity, Access access, DataLevelAccessContext context)
+    {
+        if (entity is null)
+            throw new ArgumentNullException(nameof(entity));
+        if (context is null)
+            throw new ArgumentNullException(nameof(context));
+
+        foreach (var dimension in dimensions)
+            if (!AuthorizeDimension(entity, dimension, access, context))
+                return false; // one failing dimension denies the row (dimensions AND-compose)
+
+        return true;
+    }
+
     private static IQueryable<TEntity> ApplyDimension(
         IQueryable<TEntity> query, DataLevelDimension<TEntity> dimension, Access access, DataLevelAccessContext context)
     {
@@ -67,6 +96,42 @@ public sealed class DataLevelAccessPolicy<TEntity>
             // Escape hatch: skip entirely when wildcard (no constraint), else hand the decoded set to the factory.
             case MatchPredicate<TEntity> match:
                 return values is null ? query : query.Where(match.Match(values));
+
+            default:
+                throw new NotSupportedException($"Unsupported data-level predicate '{dimension.Predicate?.GetType().Name}'.");
+        }
+    }
+
+    /// <summary>
+    /// The row twin of <see cref="ApplyDimension"/>: whether <paramref name="entity"/> satisfies one dimension at
+    /// <paramref name="access"/>. Resolves the same accessible-value list and applies the same predicate semantics in
+    /// memory — wildcard (null) ⇒ passes; <c>Keys</c> ⇒ the set contains any one key column (OR); <c>Match</c> ⇒ the
+    /// consumer predicate evaluated against the set.
+    /// </summary>
+    private static bool AuthorizeDimension(
+        TEntity entity, DataLevelDimension<TEntity> dimension, Access access, DataLevelAccessContext context)
+    {
+        // Same per-dimension resolution as the query path (null ⇒ wildcard, empty ⇒ matches nothing), so the two
+        // paths cannot drift.
+        var values = ResolveValues(dimension, access, context);
+
+        // Wildcard ⇒ no constraint on this dimension ⇒ it passes (mirrors the query path adding no Where).
+        if (values is null)
+            return true;
+
+        switch (dimension.Predicate)
+        {
+            // OR across the key columns: reachable iff the accessible set contains ANY column's value. A null column
+            // matches a null entry (a granted null FK), the same convention as WhereIn; an empty set matches nothing.
+            case KeysPredicate<TEntity> keys:
+                foreach (var selector in keys.CompiledSelectors)
+                    if (values.Contains(selector(entity)))
+                        return true;
+                return false;
+
+            // Escape hatch: evaluate the consumer predicate in memory against the resolved set (wildcard handled above).
+            case MatchPredicate<TEntity> match:
+                return match.Match(values).Compile()(entity);
 
             default:
                 throw new NotSupportedException($"Unsupported data-level predicate '{dimension.Predicate?.GetType().Name}'.");
@@ -108,8 +173,9 @@ public sealed class DataLevelAccessPolicy<TEntity>
 
     /// <summary>
     /// The string→id converter for a dimension: hashid-decode as the declared DTO when <c>HashId&lt;TDto&gt;</c> was
-    /// set, else raw <see cref="long.Parse(string)"/>. The same converter decodes the grant ids on the query path and
-    /// (Phase 2.4) encodes the entity key on the row path — one source, two emissions.
+    /// set, else raw <see cref="long.Parse(string)"/>. The <em>same</em> converter decodes the grant ids for both the
+    /// query path (<see cref="ApplyDimension"/> → <c>WhereIn</c>) and the row path (<see cref="AuthorizeDimension"/> →
+    /// membership of the entity's key columns), so the two paths resolve identical id-spaces and cannot drift (D5).
     /// </summary>
     private static Func<string, long> Converter(DataLevelDimension<TEntity> dimension, IHashIdService hashIds)
     {
