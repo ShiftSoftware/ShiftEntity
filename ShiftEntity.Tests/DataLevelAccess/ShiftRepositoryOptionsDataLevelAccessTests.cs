@@ -94,4 +94,29 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
         Assert.NotNull(options.DataLevelAccessPolicy);
         Assert.True(options.DataLevelAccessPolicy.IsUnscoped);
     }
+
+    [Fact]
+    public void DataLevelAccess_EmptyDeclaration_FailsClosedAtDeclarationTime()
+    {
+        // An empty declaration would compile to a filter-nothing policy — a silent, total fail-open on an entity
+        // that says it is protected. The policy ctor validates, so the declaration itself throws at startup.
+        var options = new ShiftRepositoryOptions<VehicleEntity>();
+
+        Assert.Throws<InvalidOperationException>(() => options.DataLevelAccess(access => { }));
+    }
+
+    [Fact]
+    public void DataLevelAccess_WhenDenied_LandsOnTheStoredPolicy()
+    {
+        // The denied-View disclosure choice (D7) travels with the compiled policy — the Find path (3.3) keys off it.
+        var options = new ShiftRepositoryOptions<VehicleEntity>();
+
+        options.DataLevelAccess(access =>
+        {
+            access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID);
+            access.WhenDenied(DataLevelDeniedBehavior.Forbidden);
+        });
+
+        Assert.Equal(DataLevelDeniedBehavior.Forbidden, options.DataLevelAccessPolicy!.DeniedBehavior);
+    }
 }

@@ -210,7 +210,16 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        var q = await GetIQueryable(asOf, includes, disableDefaultDataLevelAccess, disableGlobalFilters);
+        // WhenDenied(Forbidden) (D7, 3.3): to refuse an out-of-scope row loudly the repository must SEE it — skip the
+        // v2 query filter for this single-row fetch and let the row check below produce the 403. That is what
+        // distinguishes "exists but out of scope" (403) from "doesn't exist" (null ⇒ the caller's 404). Under
+        // NotFound (the default) the fetch stays filtered and an out-of-scope row is simply invisible. Only this
+        // fetch changes: lists always filter (GetIQueryable callers are untouched), and the caller's
+        // disableDefaultDataLevelAccess bypass keeps skipping fetch-filter and row check alike.
+        var revealOutOfScopeRow =
+            this.ShiftRepositoryOptions?.DataLevelAccessPolicy?.DeniedBehavior == DataLevelDeniedBehavior.Forbidden;
+
+        var q = await GetIQueryable(asOf, includes, disableDefaultDataLevelAccess || revealOutOfScopeRow, disableGlobalFilters);
 
         EntityType? entity = null;
 
@@ -234,7 +243,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             // Find is a View ⇒ the Read level (D6). With a v2 policy the query above is already Read-filtered (3.1),
             // so an out-of-scope id comes back null — and a null entity passes (nothing to authorize; see
-            // HasDataLevelAccess). The legacy path keeps row-checking even the null entity, exactly as today.
+            // HasDataLevelAccess). Under WhenDenied(Forbidden) the fetch was deliberately unfiltered instead, and
+            // this check is what denies an existing out-of-scope row (403 "Can Not Read Item"). The legacy path
+            // keeps row-checking even the null entity, exactly as today.
             var canRead = HasDataLevelAccess(entity, TypeAuth.Core.Access.Read);
 
             if (!canRead)
@@ -306,9 +317,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     /// <para>
     /// An explicit <c>Unscoped()</c> passes without resolving the per-request context, so an unscoped entity works
     /// on hosts that never registered data-level access. A null entity (a Find that came back empty — with a policy
-    /// declared the query path already filtered it out, 3.1) has nothing to authorize and passes; whether the caller
-    /// surfaces that as 404 or 403 is slice 3.3's denied-behavior choice. The legacy path keeps receiving the null
-    /// entity exactly as today.
+    /// declared the query path already filtered it out, 3.1) has nothing to authorize and passes — the caller's null
+    /// surfaces as 404. The entity's <see cref="DataLevelDeniedBehavior"/> declaration (<c>WhenDenied</c>, D7) can
+    /// flip that disclosure: under <c>Forbidden</c>, <c>BaseFindAsync</c> fetches unfiltered and this check is what
+    /// denies an existing out-of-scope row with 403. The legacy path keeps receiving the null entity exactly as today.
     /// </para>
     /// </summary>
     private bool HasDataLevelAccess(EntityType? entity, Access access)

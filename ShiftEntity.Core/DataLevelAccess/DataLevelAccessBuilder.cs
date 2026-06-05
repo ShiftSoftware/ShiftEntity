@@ -13,12 +13,19 @@ namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 public sealed class DataLevelAccessBuilder<TEntity>
 {
     private readonly List<DataLevelDimension<TEntity>> dimensions = new();
+    private DataLevelDeniedBehavior? deniedBehavior;
 
     /// <summary>The dimensions declared so far, in declaration order.</summary>
     public IReadOnlyList<DataLevelDimension<TEntity>> Dimensions => dimensions;
 
     /// <summary>True once <see cref="Unscoped"/> has been called — the entity intentionally has no data-level scope.</summary>
     public bool IsUnscoped { get; private set; }
+
+    /// <summary>
+    /// What a denied single-row View surfaces as (see <see cref="DataLevelDeniedBehavior"/>):
+    /// <see cref="DataLevelDeniedBehavior.NotFound"/> unless <see cref="WhenDenied"/> declared otherwise.
+    /// </summary>
+    public DataLevelDeniedBehavior DeniedBehavior => deniedBehavior ?? DataLevelDeniedBehavior.NotFound;
 
     /// <summary>Declares a dimension whose accessible set comes from a TypeAuth dynamic action.</summary>
     public DataLevelDimensionBuilder<TEntity> On(DynamicAction action)
@@ -36,16 +43,41 @@ public sealed class DataLevelAccessBuilder<TEntity>
     {
         if (dimensions.Count > 0)
             throw new InvalidOperationException("Unscoped() cannot be combined with declared dimensions.");
+        if (deniedBehavior is not null)
+            throw new InvalidOperationException("Unscoped() cannot be combined with WhenDenied(...) — an unscoped entity never denies access.");
 
         IsUnscoped = true;
     }
 
     /// <summary>
+    /// Declares what a denied single-row View surfaces as — invisible (<see cref="DataLevelDeniedBehavior.NotFound"/>,
+    /// the default) or refused loudly (<see cref="DataLevelDeniedBehavior.Forbidden"/>, disclosing that the row
+    /// exists). See <see cref="DataLevelDeniedBehavior"/> for the trade-off. Lists and Insert/Edit/Delete are
+    /// unaffected. Meaningless on an unscoped entity (nothing is ever denied) — combining the two throws.
+    /// </summary>
+    public void WhenDenied(DataLevelDeniedBehavior behavior)
+    {
+        if (IsUnscoped)
+            throw new InvalidOperationException("WhenDenied(...) cannot be combined with Unscoped() — an unscoped entity never denies access.");
+        if (deniedBehavior is not null)
+            throw new InvalidOperationException("A denied behavior has already been declared.");
+
+        deniedBehavior = behavior;
+    }
+
+    /// <summary>
     /// Validates the declarations fail-closed: every declared dimension must also declare a predicate
-    /// (Key/Keys/Match). Called by the policy when it is compiled (Phase 2.3); exposed for tests.
+    /// (Key/Keys/Match), and the declaration as a whole must scope something — dimensions or an explicit
+    /// <see cref="Unscoped"/> (an empty declaration would compile to a policy that filters nothing: a silent,
+    /// total fail-open on an entity that says it is protected). Called by the policy when it is compiled
+    /// (Phase 2.3); exposed for tests.
     /// </summary>
     public void Validate()
     {
+        if (dimensions.Count == 0 && !IsUnscoped)
+            throw new InvalidOperationException(
+                $"Data-level access on {typeof(TEntity).Name} declares no dimensions — declare at least one (On/OnOwner) or call Unscoped() to opt out explicitly.");
+
         foreach (var dimension in dimensions)
         {
             if (dimension.Predicate is null)

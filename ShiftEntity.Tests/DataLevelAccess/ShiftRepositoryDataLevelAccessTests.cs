@@ -17,10 +17,11 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 /// <see cref="DataLevelAccessContext"/> cannot be resolved fails closed rather than running unguarded.
 /// Slice 3.1 covers the query path (<c>GetIQueryable</c> ⇒ <c>ApplyQueryFilter</c> at Read); slice 3.2 the row
 /// paths (<c>FindAsync</c>/<c>UpsertAsync</c>/<c>DeleteAsync</c> ⇒ <c>Authorize</c> at the operation's level —
-/// Find ⇒ Read, Insert/Edit ⇒ Write, Delete ⇒ Delete, D6). Exercised through a <em>real</em> repository over the
-/// EF InMemory provider, in a DI host shaped like production (see <see cref="RepositoryHost"/>); the engine
-/// semantics themselves are pinned at the policy level (2.3/2.4) — what's under test here is the repository's
-/// routing.
+/// Find ⇒ Read, Insert/Edit ⇒ Write, Delete ⇒ Delete, D6); slice 3.3 the denied-View disclosure choice
+/// (<c>WhenDenied</c> ⇒ <see cref="DataLevelDeniedBehavior"/> — 404-shaped invisibility by default, loud 403 on
+/// opt-in, single-row View only). Exercised through a <em>real</em> repository over the EF InMemory provider, in a
+/// DI host shaped like production (see <see cref="RepositoryHost"/>); the engine semantics themselves are pinned at
+/// the policy level (2.3/2.4) — what's under test here is the repository's routing.
 /// </summary>
 public class ShiftRepositoryDataLevelAccessTests
 {
@@ -33,6 +34,14 @@ public class ShiftRepositoryDataLevelAccessTests
     private static void DeclareCompanyOr(ShiftRepositoryOptions<VehicleEntity> options)
         => options.DataLevelAccess(access =>
             access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID));
+
+    /// <summary>The canonical declaration plus the loud denied-View posture (3.3).</summary>
+    private static void DeclareCompanyOrForbidden(ShiftRepositoryOptions<VehicleEntity> options)
+        => options.DataLevelAccess(access =>
+        {
+            access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID);
+            access.WhenDenied(DataLevelDeniedBehavior.Forbidden);
+        });
 
     /// <summary>One canonical sample vehicle (see <see cref="VehicleScenario.SampleVehicles"/>) as a detached entity.</summary>
     private static VehicleEntity Sample(long id) => VehicleEntity.FromSamples().Single(v => v.ID == id);
@@ -202,7 +211,8 @@ public class ShiftRepositoryDataLevelAccessTests
     {
         // An out-of-scope id never reaches the row check: the query path (3.1) already filtered it, the Find comes
         // back empty, and a null entity has nothing to authorize — so the caller gets null (today's 404-shaped
-        // outcome), not a 403. The 404-vs-403 choice proper is slice 3.3's denied-behavior option.
+        // outcome), not a 403. That is the NotFound default of the WhenDenied disclosure choice (D7) — the
+        // Forbidden tests in the 3.3 section below flip it.
         var legacy = new RecordingDefaultDataLevelAccess();
         using var provider = RepositoryHost.Build(legacy: legacy);
         using var scope = provider.CreateScope();
@@ -457,5 +467,112 @@ public class ShiftRepositoryDataLevelAccessTests
             Upsert(repository, new VehicleEntity(), Dto(Companies.Intermediary, null), ActionTypes.Insert));
 
         Assert.Contains("AddShiftEntityDataLevelAccess", exception.Message);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Slice 3.3 — WhenDenied(DataLevelDeniedBehavior): what a denied single-row View surfaces as (D7). NotFound
+    // (the default) keeps the Read-filtered fetch, so an out-of-scope row is invisible — null ⇒ the caller's 404
+    // (pinned above by PolicyDeclared_Find_OutOfScopeId_ReturnsNullInsteadOfDenying). Forbidden fetches the row
+    // UNFILTERED and lets the 3.2 row check deny loudly — 403 discloses that the row exists. View-only: lists
+    // always filter, and Insert/Edit/Delete denials are 403 regardless.
+    // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WhenDeniedForbidden_Find_ExistingOutOfScopeRow_Denies403()
+    {
+        // #1 exists but is DealerA-owned with no intermediary leg — outside the Intermediary's scope. Under
+        // Forbidden the single-row fetch deliberately skips the v2 query filter and the row check at Read denies:
+        // the caller gets the explicit 403 instead of a camouflaging null. Legacy stays out of both arms.
+        var legacy = new RecordingDefaultDataLevelAccess();
+        using var provider = RepositoryHost.Build(legacy: legacy);
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOrForbidden);
+
+        await AssertDenied("Can Not Read Item", () =>
+            repository.FindAsync(1, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false));
+
+        Assert.Equal(0, legacy.ApplyFilterCalls);
+        Assert.Equal(0, legacy.RowCheckCalls);
+    }
+
+    [Fact]
+    public async Task WhenDeniedForbidden_Find_MissingId_StillReturnsNull()
+    {
+        // The disclosure stays honest: a row that genuinely doesn't exist is still null (the caller's 404) under
+        // Forbidden — 403 means "exists but out of scope", never "doesn't exist".
+        using var provider = RepositoryHost.Build();
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOrForbidden);
+
+        Assert.Null(await repository.FindAsync(999, asOf: null,
+            disableDefaultDataLevelAccess: false, disableGlobalFilters: false));
+    }
+
+    [Fact]
+    public async Task WhenDeniedForbidden_Find_InScopeRow_ReturnsIt()
+    {
+        // The happy path is untouched by the unfiltered fetch: an in-scope row — #4, reachable only through the
+        // intermediary leg — passes the row check and comes back exactly as under the default posture.
+        using var provider = RepositoryHost.Build();
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOrForbidden);
+
+        var found = await repository.FindAsync(4, asOf: null,
+            disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+
+        Assert.NotNull(found);
+        Assert.Equal(4, found!.ID);
+    }
+
+    [Fact]
+    public async Task WhenDeniedForbidden_FindByIdempotencyKey_SharesTheSameBehavior()
+    {
+        // FindByIdempotencyKeyAsync shares BaseFindAsync with Find-by-id — the same WhenDenied posture governs it:
+        // an existing out-of-scope row reached by its idempotency key is 403, not an invisible null.
+        using var provider = RepositoryHost.Build();
+        using var scope = provider.CreateScope();
+
+        var db = RepositoryHost.SeededDb(scope);
+        var key = Guid.NewGuid();
+        db.Vehicles.Single(v => v.ID == 1).IdempotencyKey = key; // #1: outside the Intermediary's scope
+        db.SaveChanges();
+
+        var repository = Repository(db, DeclareCompanyOrForbidden);
+
+        await AssertDenied("Can Not Read Item", () =>
+            repository.FindByIdempotencyKeyAsync(key, asOf: null,
+                disableDefaultDataLevelAccess: false, disableGlobalFilters: false));
+    }
+
+    [Fact]
+    public async Task WhenDeniedForbidden_ListsStillFilter()
+    {
+        // The denied behavior is a single-row disclosure choice — it must never widen the list path: GetIQueryable
+        // keeps the Read filter and surfaces exactly the in-scope rows.
+        using var provider = RepositoryHost.Build();
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOrForbidden);
+
+        Assert.Equal(new long[] { 3, 4, 5, 6 }, await VisibleIds(repository));
+    }
+
+    [Fact]
+    public async Task WhenDeniedForbidden_DisableFlag_StillBypassesEntirely()
+    {
+        // The caller's explicit bypass outranks the posture: with disableDefaultDataLevelAccess the out-of-scope
+        // row comes back with no check from either arm (reload-after-save and the controller plumbing depend on it).
+        using var provider = RepositoryHost.Build();
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOrForbidden);
+
+        var found = await repository.FindAsync(1, asOf: null,
+            disableDefaultDataLevelAccess: true, disableGlobalFilters: false);
+
+        Assert.NotNull(found);
     }
 }

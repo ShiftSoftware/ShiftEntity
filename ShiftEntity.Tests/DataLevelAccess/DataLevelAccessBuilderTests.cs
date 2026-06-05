@@ -181,4 +181,63 @@ public class DataLevelAccessBuilderTests
 
         access.Validate(); // must not throw
     }
+
+    [Fact]
+    public void Validate_EmptyDeclaration_Throws()
+    {
+        // Fail-closed: an empty declaration would compile to a policy with no dimensions — no filter at all — on an
+        // entity that CLAIMS to be protected (a silent, total fail-open). Scope something or opt out with Unscoped().
+        Assert.Throws<InvalidOperationException>(() => Access().Validate());
+    }
+
+    [Fact]
+    public void WhenDenied_DefaultsToNotFound()
+    {
+        // The safe disclosure is the default: a denied View is indistinguishable from a missing row (404).
+        var access = Access();
+        access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID);
+
+        Assert.Equal(DataLevelDeniedBehavior.NotFound, access.DeniedBehavior);
+    }
+
+    [Fact]
+    public void WhenDenied_RecordsTheBehavior()
+    {
+        // The 404-vs-403 disclosure choice (D7) is part of the entity's declared posture: Forbidden refuses an
+        // existing out-of-scope row loudly (403) instead of hiding it.
+        var access = Access();
+        access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID);
+        access.WhenDenied(DataLevelDeniedBehavior.Forbidden);
+
+        Assert.Equal(DataLevelDeniedBehavior.Forbidden, access.DeniedBehavior);
+    }
+
+    [Fact]
+    public void WhenDenied_Twice_Throws()
+    {
+        // One posture per entity — a second declaration must not silently flip a security-disclosure choice.
+        var access = Access();
+        access.WhenDenied(DataLevelDeniedBehavior.Forbidden);
+
+        Assert.Throws<InvalidOperationException>(() => access.WhenDenied(DataLevelDeniedBehavior.NotFound));
+    }
+
+    [Fact]
+    public void WhenDenied_AfterUnscoped_Throws()
+    {
+        // An unscoped entity never denies — a denied behavior on it is a contradiction, so fail fast (both orders).
+        var access = Access();
+        access.Unscoped();
+
+        Assert.Throws<InvalidOperationException>(() => access.WhenDenied(DataLevelDeniedBehavior.Forbidden));
+    }
+
+    [Fact]
+    public void Unscoped_AfterWhenDenied_Throws()
+    {
+        var access = Access();
+        access.WhenDenied(DataLevelDeniedBehavior.Forbidden);
+
+        Assert.Throws<InvalidOperationException>(() => access.Unscoped());
+    }
 }

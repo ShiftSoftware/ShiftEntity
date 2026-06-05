@@ -26,14 +26,24 @@ public sealed class DataLevelAccessPolicy<TEntity>
     /// <summary>True when the entity was explicitly declared <see cref="DataLevelAccessBuilder{TEntity}.Unscoped"/>.</summary>
     public bool IsUnscoped { get; }
 
+    /// <summary>
+    /// What a denied single-row View surfaces as (<see cref="DataLevelAccessBuilder{TEntity}.WhenDenied"/>, D7):
+    /// <see cref="DataLevelDeniedBehavior.NotFound"/> keeps the fetch filtered (out-of-scope ⇒ invisible ⇒ 404);
+    /// <see cref="DataLevelDeniedBehavior.Forbidden"/> makes the repository fetch the row unfiltered and let
+    /// <see cref="Authorize"/> deny it loudly (403). Consumed by the repository's Find path — the policy itself
+    /// behaves identically either way.
+    /// </summary>
+    public DataLevelDeniedBehavior DeniedBehavior { get; }
+
     public DataLevelAccessPolicy(DataLevelAccessBuilder<TEntity> builder)
     {
         if (builder is null)
             throw new ArgumentNullException(nameof(builder));
 
-        builder.Validate(); // fail-closed: reject a dimension declared without a predicate
+        builder.Validate(); // fail-closed: reject a predicate-less dimension and an empty (filter-nothing) declaration
         dimensions = builder.Dimensions.ToList();
         IsUnscoped = builder.IsUnscoped;
+        DeniedBehavior = builder.DeniedBehavior;
     }
 
     /// <summary>
