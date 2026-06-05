@@ -174,13 +174,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
         }
 
-        if (!disableDefaultDataLevelAccess && this.defaultDataLevelAccess is not null)
+        if (!disableDefaultDataLevelAccess)
         {
-            var canWrite = this.defaultDataLevelAccess.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-                entity,
-                TypeAuth.Core.Access.Write
-            );
+            // Insert/Edit ⇒ the Write level (D6). The check runs against the MAPPED entity (and, on Insert, after
+            // the claim-default backfill above), so what gets authorized is exactly what would be saved.
+            var canWrite = HasDataLevelAccess(entity, TypeAuth.Core.Access.Write);
 
             if (!canWrite)
             {
@@ -234,11 +232,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (!disableDefaultDataLevelAccess)
         {
-            var canRead = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions!.DefaultDataLevelAccessOptions,
-                entity,
-                TypeAuth.Core.Access.Read
-            );
+            // Find is a View ⇒ the Read level (D6). With a v2 policy the query above is already Read-filtered (3.1),
+            // so an out-of-scope id comes back null — and a null entity passes (nothing to authorize; see
+            // HasDataLevelAccess). The legacy path keeps row-checking even the null entity, exactly as today.
+            var canRead = HasDataLevelAccess(entity, TypeAuth.Core.Access.Read);
 
             if (!canRead)
                 throw new ShiftEntityException(new Message("Forbidden", "Can Not Read Item"), (int)HttpStatusCode.Forbidden);
@@ -297,6 +294,38 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         // Querying is a View ⇒ the Read level (D6); Insert/Edit/Delete pick their own levels on the row paths (3.2).
         return policy.ApplyQueryFilter(query, TypeAuth.Core.Access.Read, GetRequiredDataLevelAccessContext());
+    }
+
+    /// <summary>
+    /// The row-path data-level check — the row twin of <see cref="ApplyDataLevelFilters"/>, with the same routing:
+    /// a declared v2 policy means the verdict is <see cref="DataLevelAccessPolicy{TEntity}.Authorize"/> and the
+    /// legacy row check does <b>not</b> also run (the declaration is the whole truth for the entity); no declaration
+    /// means today's legacy <see cref="IDefaultDataLevelAccess.HasDefaultDataLevelAccess"/> runs unchanged (opt-in
+    /// coexistence, D1). The operation site picks the level (D6): Find/View ⇒ Read, Insert/Edit ⇒ Write,
+    /// Delete ⇒ Delete — so a Read-only grant can View a row but never write or delete it.
+    /// <para>
+    /// An explicit <c>Unscoped()</c> passes without resolving the per-request context, so an unscoped entity works
+    /// on hosts that never registered data-level access. A null entity (a Find that came back empty — with a policy
+    /// declared the query path already filtered it out, 3.1) has nothing to authorize and passes; whether the caller
+    /// surfaces that as 404 or 403 is slice 3.3's denied-behavior choice. The legacy path keeps receiving the null
+    /// entity exactly as today.
+    /// </para>
+    /// </summary>
+    private bool HasDataLevelAccess(EntityType? entity, Access access)
+    {
+        var policy = this.ShiftRepositoryOptions.DataLevelAccessPolicy;
+
+        if (policy is null)
+            return this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
+                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, entity, access);
+
+        if (policy.IsUnscoped)
+            return true;
+
+        if (entity is null)
+            return true;
+
+        return policy.Authorize(entity, access, GetRequiredDataLevelAccessContext());
     }
 
     /// <summary>
@@ -554,11 +583,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         if (!disableDefaultDataLevelAccess)
         {
-            var canDelete = this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
-                this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions,
-                entity,
-                TypeAuth.Core.Access.Delete
-            );
+            // Delete ⇒ the Delete level (D6); denial happens before the soft-delete flag is touched.
+            var canDelete = HasDataLevelAccess(entity, TypeAuth.Core.Access.Delete);
 
             if (!canDelete)
                 throw new ShiftEntityException(new Message("Forbidden", "Can Not Delete Item"), (int)HttpStatusCode.Forbidden);

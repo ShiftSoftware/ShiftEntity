@@ -16,10 +16,17 @@ public class VehicleDbContext : ShiftDbContext
     public VehicleDbContext(DbContextOptions<VehicleDbContext> options) : base(options) { }
 }
 
-/// <summary>Minimal list/view DTO — the repository's type parameters demand one; these tests never map.</summary>
+/// <summary>
+/// Minimal list/view-and-upsert DTO — the repository's type parameters demand one. The query-path tests never map;
+/// the row-path (upsert) tests carry the two company legs through it, applied by <see cref="UpsertVehicleMapper"/>.
+/// Raw longs stand in for what real DTOs store as hashids, the same convention as the rest of the scenario.
+/// </summary>
 public class VehicleListDTO : ShiftEntityDTOBase
 {
     public override string? ID { get; set; }
+    public string Name { get; set; } = "";
+    public long? CompanyID { get; set; }
+    public long? IntermediaryCompanyID { get; set; }
 }
 
 /// <summary>
@@ -35,16 +42,47 @@ public sealed class ThrowingVehicleMapper : IShiftEntityMapper<VehicleEntity, Ve
 }
 
 /// <summary>
+/// Mapper for the row-path (upsert) tests: <see cref="MapToEntity"/> applies the DTO's fields onto the entity — so
+/// what the repository's Write check sees is the <em>mapped</em> values, the point slice 3.2 pins — and returns the
+/// same instance (letting a test hold the reference the check received). Paths the row tests never touch still throw.
+/// </summary>
+public sealed class UpsertVehicleMapper : IShiftEntityMapper<VehicleEntity, VehicleListDTO, VehicleListDTO>
+{
+    public VehicleEntity MapToEntity(VehicleListDTO dto, VehicleEntity existing)
+    {
+        existing.Name = dto.Name;
+        existing.CompanyID = dto.CompanyID;
+        existing.IntermediaryCompanyID = dto.IntermediaryCompanyID;
+        return existing;
+    }
+
+    public VehicleListDTO MapToView(VehicleEntity entity) => throw new NotSupportedException();
+    public IQueryable<VehicleListDTO> MapToList(IQueryable<VehicleEntity> query) => throw new NotSupportedException();
+    public void CopyEntity(VehicleEntity source, VehicleEntity target) => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Recording <see cref="IDefaultDataLevelAccess"/> double — the legacy arm of the Phase 3 routing tests.
-/// <see cref="ApplyDefaultDataLevelFilters{EntityType}"/> records the call (and the options it was handed) and
-/// applies an unmistakable marker filter (matches nothing), so a test can assert both that the repository routed
-/// through the legacy path <em>and</em> that it used the returned query. Members the repository's query path does
-/// not touch throw, to fail loud if a path unexpectedly depends on them.
+/// <see cref="ApplyDefaultDataLevelFilters{EntityType}"/> (the query path) records the call (and the options it was
+/// handed) and applies an unmistakable marker filter (matches nothing), so a test can assert both that the
+/// repository routed through the legacy path <em>and</em> that it used the returned query.
+/// <see cref="HasDefaultDataLevelAccess{EntityType}"/> (the row path) records the call — count, options, entity
+/// (including a null one: legacy row-checks even a missed Find), level — and returns the configurable
+/// <see cref="RowCheckVerdict"/> (permissive by default; a test sets <see langword="false"/> to exercise denial).
+/// Members the repository never touches throw, to fail loud if a path unexpectedly depends on them.
 /// </summary>
 public sealed class RecordingDefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     public int ApplyFilterCalls { get; private set; }
     public DefaultDataLevelAccessOptions? LastOptions { get; private set; }
+
+    public int RowCheckCalls { get; private set; }
+    public DefaultDataLevelAccessOptions? LastRowCheckOptions { get; private set; }
+    public object? LastRowCheckEntity { get; private set; }
+    public Access? LastRowCheckAccess { get; private set; }
+
+    /// <summary>What <see cref="HasDefaultDataLevelAccess{EntityType}"/> answers (default: permissive).</summary>
+    public bool RowCheckVerdict { get; set; } = true;
 
     public IQueryable<EntityType> ApplyDefaultDataLevelFilters<EntityType>(
         DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions, IQueryable<EntityType> query) where EntityType : notnull
@@ -57,7 +95,13 @@ public sealed class RecordingDefaultDataLevelAccess : IDefaultDataLevelAccess
     public bool HasDefaultDataLevelAccess<EntityType>(
         DefaultDataLevelAccessOptions defaultDataLevelAccessOptions, EntityType? entity, Access access)
         where EntityType : ShiftEntity<EntityType>, new()
-        => throw new NotSupportedException(); // the row paths are slice 3.2
+    {
+        RowCheckCalls++;
+        LastRowCheckOptions = defaultDataLevelAccessOptions;
+        LastRowCheckEntity = entity;
+        LastRowCheckAccess = access;
+        return RowCheckVerdict;
+    }
 
     public List<long?>? GetAccessibleCountries() => throw new NotSupportedException();
     public List<long?>? GetAccessibleRegions() => throw new NotSupportedException();
