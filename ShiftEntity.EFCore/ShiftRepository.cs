@@ -163,20 +163,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (actionType == ActionTypes.Insert)
         {
-            if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
-                entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
-
-            if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
-                entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
-
-            if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
-                entityWithCity.CityID = identityClaimProvider.GetCityID();
-
-            if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
-                entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
-
-            if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
-                entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+            SetCreationClaimDefaults(entity);
         }
 
         if (!disableDefaultDataLevelAccess)
@@ -478,6 +465,30 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         entity.AuditFieldsAreSet = true;
     }
 
+    /// <summary>
+    /// Backfills the creation-provenance columns sourced from the acting user's claims (country / region / city /
+    /// company / branch), each only where the entity left it unset. These are insert-only audit columns, so the
+    /// caller invokes this only for newly-inserted rows. The non-generic <c>IEntityHas*</c> seams let it run on any
+    /// entity type, so the SaveChanges sweep can fill rows upsert never touched (cascaded children, unrelated rows).
+    /// </summary>
+    private void SetCreationClaimDefaults(object entity)
+    {
+        if (entity is IEntityHasCountry country && country.CountryID is null)
+            country.CountryID = identityClaimProvider.GetCountryID();
+
+        if (entity is IEntityHasRegion region && region.RegionID is null)
+            region.RegionID = identityClaimProvider.GetRegionID();
+
+        if (entity is IEntityHasCity city && city.CityID is null)
+            city.CityID = identityClaimProvider.GetCityID();
+
+        if (entity is IEntityHasCompany company && company.CompanyID is null)
+            company.CompanyID = identityClaimProvider.GetCompanyID();
+
+        if (entity is IEntityHasCompanyBranch branch && branch.CompanyBranchID is null)
+            branch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+    }
+
     public virtual async Task<int> SaveChangesAsync()
     {
         var now = DateTimeOffset.UtcNow;
@@ -551,11 +562,19 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (!added && !modified)
                 continue;
 
-            // Audit fields are stamped on EVERY changed auditable row in the unit of work — not just this
+            // Audit columns are stamped on EVERY changed auditable row in the unit of work — not just this
             // repository's own entity type. A single SaveChanges flushes the whole ChangeTracker, so cascaded
-            // children and unrelated entities (any ShiftEntity<T>) must be stamped here too.
+            // children and unrelated entities (any ShiftEntity<T>) must be stamped here too. A row already handled
+            // upstream (UpsertAsync sets the guard) is left alone; the rest get the same backfill upsert would do —
+            // dates/user via SetAuditFields, plus the insert-only org/location claims.
             if (entry.Entity is IShiftEntityAudit auditable)
+            {
+                var alreadyStamped = auditable.AuditFieldsAreSet;
                 this.SetAuditFields(auditable, added, userId, now);
+
+                if (added && !alreadyStamped)
+                    this.SetCreationClaimDefaults(entry.Entity);
+            }
 
             // The remaining work below is specific to this repository's own entity type.
             if (entry.Entity is not EntityType entityType)

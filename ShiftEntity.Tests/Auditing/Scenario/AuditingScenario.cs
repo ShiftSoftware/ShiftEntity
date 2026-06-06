@@ -5,6 +5,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 
@@ -13,22 +14,57 @@ namespace ShiftSoftware.ShiftEntity.Tests.Auditing.Scenario;
 // ── Entities ───────────────────────────────────────────────────────────────
 
 /// <summary>
+/// Test-only non-generic accessor for the org/location claim columns, so a single assertion helper can read them
+/// across every (differently-typed) entity. The framework's <c>IEntityHas*</c> flags are generic, so they can't
+/// serve that role directly.
+/// </summary>
+public interface IHasOrgClaims
+{
+    long? CompanyID { get; set; }
+    long? CompanyBranchID { get; set; }
+    long? CountryID { get; set; }
+    long? RegionID { get; set; }
+    long? CityID { get; set; }
+}
+
+/// <summary>
+/// Marker bundling the framework org/location flag interfaces (what a real entity implements) with the test-only
+/// non-generic <see cref="IHasOrgClaims"/> accessor, so the test entities carry both.
+/// </summary>
+public interface IHasOrgClaims<T> : IHasOrgClaims,
+    IEntityHasCompany<T>, IEntityHasCompanyBranch<T>, IEntityHasCountry<T>, IEntityHasRegion<T>, IEntityHasCity<T>
+{ }
+
+/// <summary>
 /// Aggregate root for the audit tests. Owns a collection of <see cref="OrderLineEntity"/> children of a
 /// <em>different</em> <c>ShiftEntity&lt;T&gt;</c> type — the shape that exercises whether
-/// <c>SaveChangesAsync</c> on the parent repository stamps audit fields on cascaded children.
+/// <c>SaveChangesAsync</c> on the parent repository stamps audit fields on cascaded children. Carries the org/location
+/// claim columns so the tests can assert the SaveChanges sweep backfills those too.
 /// </summary>
-public class OrderEntity : ShiftEntity<OrderEntity>
+public class OrderEntity : ShiftEntity<OrderEntity>, IHasOrgClaims<OrderEntity>
 {
     public string Number { get; set; } = "";
     public List<OrderLineEntity> Lines { get; set; } = new();
+
+    public long? CompanyID { get; set; }
+    public long? CompanyBranchID { get; set; }
+    public long? CountryID { get; set; }
+    public long? RegionID { get; set; }
+    public long? CityID { get; set; }
 }
 
 /// <summary>A child row of a <em>different</em> entity type than its parent <see cref="OrderEntity"/>.</summary>
-public class OrderLineEntity : ShiftEntity<OrderLineEntity>
+public class OrderLineEntity : ShiftEntity<OrderLineEntity>, IHasOrgClaims<OrderLineEntity>
 {
     public string Sku { get; set; } = "";
     public int Quantity { get; set; }
     public long OrderID { get; set; }
+
+    public long? CompanyID { get; set; }
+    public long? CompanyBranchID { get; set; }
+    public long? CountryID { get; set; }
+    public long? RegionID { get; set; }
+    public long? CityID { get; set; }
 }
 
 /// <summary>
@@ -36,12 +72,18 @@ public class OrderLineEntity : ShiftEntity<OrderLineEntity>
 /// parent. This is the contrasting case to <see cref="OrderEntity"/> — here a cascaded child <em>is</em> a
 /// <c>ShiftEntity&lt;CategoryEntity&gt;</c>, so the repository's type filter accepts it.
 /// </summary>
-public class CategoryEntity : ShiftEntity<CategoryEntity>
+public class CategoryEntity : ShiftEntity<CategoryEntity>, IHasOrgClaims<CategoryEntity>
 {
     public string Name { get; set; } = "";
     public long? ParentID { get; set; }
     public CategoryEntity? Parent { get; set; }
     public List<CategoryEntity> Children { get; set; } = new();
+
+    public long? CompanyID { get; set; }
+    public long? CompanyBranchID { get; set; }
+    public long? CountryID { get; set; }
+    public long? RegionID { get; set; }
+    public long? CityID { get; set; }
 }
 
 // ── DbContext ───────────────────────────────────────────────────────────────
@@ -142,10 +184,32 @@ public sealed class FakeUserProvider : ICurrentUserProvider
 
     public static FakeUserProvider Anonymous() => new(null);
 
-    public static FakeUserProvider WithUserId(long userId)
+    public static FakeUserProvider WithUserId(long userId) => WithClaims(userId: userId);
+
+    /// <summary>
+    /// A signed-in caller carrying any subset of the audit claims (user id plus the org/location claims the audit
+    /// sweep backfills). Each non-null value becomes a claim that <see cref="IdentityHashIdService"/> decodes back to
+    /// the same number.
+    /// </summary>
+    public static FakeUserProvider WithClaims(
+        long? userId = null, long? companyId = null, long? branchId = null,
+        long? countryId = null, long? regionId = null, long? cityId = null)
     {
         var identity = new ClaimsIdentity(authenticationType: "Test");
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
+
+        void Add(string type, long? value)
+        {
+            if (value is not null)
+                identity.AddClaim(new Claim(type, value.Value.ToString()));
+        }
+
+        Add(ClaimTypes.NameIdentifier, userId);
+        Add(Constants.CompanyIdClaim, companyId);
+        Add(Constants.CompanyBranchIdClaim, branchId);
+        Add(Constants.CountryIdClaim, countryId);
+        Add(Constants.RegionIdClaim, regionId);
+        Add(Constants.CityIdClaim, cityId);
+
         return new FakeUserProvider(new ClaimsPrincipal(identity));
     }
 }
