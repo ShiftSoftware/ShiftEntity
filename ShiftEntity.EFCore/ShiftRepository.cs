@@ -149,6 +149,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         var now = DateTimeOffset.UtcNow;
 
+        // Source the acting user from the current user's claims when the caller didn't pass one — the same
+        // identityClaimProvider the org/location claims below come from. SetAuditFields then stamps CreatedByUserID
+        // (insert) and LastSavedByUserID from it, skipping any value already set on the entity.
+        userId ??= identityClaimProvider.GetUserID();
+
         this.SetAuditFields(entity, actionType == ActionTypes.Insert, userId, now);
 
         if (idempotencyKey != null)
@@ -671,6 +676,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         entity.IsDeleted = true;
+
+        // Record the deleter from the current user's claims when not passed explicitly. There is no dedicated
+        // DeletedByUserID column, so the deleter is captured in LastSavedByUserID by the stamp below.
+        userId ??= identityClaimProvider.GetUserID();
 
         this.SetAuditFields(entity, false, userId, DateTimeOffset.UtcNow);
 
