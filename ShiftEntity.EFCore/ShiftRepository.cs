@@ -431,63 +431,20 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
+    // Audit stamping rules live in AuditStamper, shared with ShiftDbContext's SaveChanges override so both paths
+    // behave identically. The repository can resolve its claim values eagerly — identityClaimProvider is always
+    // registered here (the DbContext fallback resolves them defensively instead).
     private void SetAuditFields(IShiftEntityAudit entity, bool isAdded, long? userId, DateTimeOffset now)
-    {
-        if (entity.AuditFieldsAreSet)
-            return;
+        => AuditStamper.StampAuditFields(entity, isAdded, userId, now);
 
-        if (isAdded)
-        {
-            // Insert: fill each stamp only where the caller left it unset, so a manually-provided value is kept
-            // rather than overwritten (a default DateTimeOffset / a null id counts as "unset").
-            if (entity.CreateDate == default)
-                entity.CreateDate = now;
-
-            if (entity.CreatedByUserID is null)
-                entity.CreatedByUserID = userId;
-
-            entity.IsDeleted = false;
-
-            if (entity.LastSaveDate == default)
-                entity.LastSaveDate = now;
-
-            if (entity.LastSavedByUserID is null)
-                entity.LastSavedByUserID = userId;
-        }
-        else
-        {
-            // Update: always advance the last-save stamps. A manually-set value is indistinguishable from a value
-            // stamped by an earlier save, so there is no reliable way to skip it here.
-            entity.LastSaveDate = now;
-            entity.LastSavedByUserID = userId;
-        }
-
-        entity.AuditFieldsAreSet = true;
-    }
-
-    /// <summary>
-    /// Backfills the creation-provenance columns sourced from the acting user's claims (country / region / city /
-    /// company / branch), each only where the entity left it unset. These are insert-only audit columns, so the
-    /// caller invokes this only for newly-inserted rows. The non-generic <c>IEntityHas*</c> seams let it run on any
-    /// entity type, so the SaveChanges sweep can fill rows upsert never touched (cascaded children, unrelated rows).
-    /// </summary>
     private void SetCreationClaimDefaults(object entity)
-    {
-        if (entity is IEntityHasCountry country && country.CountryID is null)
-            country.CountryID = identityClaimProvider.GetCountryID();
-
-        if (entity is IEntityHasRegion region && region.RegionID is null)
-            region.RegionID = identityClaimProvider.GetRegionID();
-
-        if (entity is IEntityHasCity city && city.CityID is null)
-            city.CityID = identityClaimProvider.GetCityID();
-
-        if (entity is IEntityHasCompany company && company.CompanyID is null)
-            company.CompanyID = identityClaimProvider.GetCompanyID();
-
-        if (entity is IEntityHasCompanyBranch branch && branch.CompanyBranchID is null)
-            branch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
-    }
+        => AuditStamper.StampCreationClaims(
+            entity,
+            identityClaimProvider.GetCountryID(),
+            identityClaimProvider.GetRegionID(),
+            identityClaimProvider.GetCityID(),
+            identityClaimProvider.GetCompanyID(),
+            identityClaimProvider.GetCompanyBranchID());
 
     public virtual async Task<int> SaveChangesAsync()
     {
