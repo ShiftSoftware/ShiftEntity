@@ -15,11 +15,17 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 /// </summary>
 public class StandardScopedEntity : ShiftEntity<StandardScopedEntity>,
     IEntityHasCountry<StandardScopedEntity>,
-    IEntityHasCompany<StandardScopedEntity>
+    IEntityHasRegion<StandardScopedEntity>,
+    IEntityHasCompany<StandardScopedEntity>,
+    IEntityHasCompanyBranch<StandardScopedEntity>,
+    IEntityHasCity<StandardScopedEntity>
 {
     public string Name { get; set; } = "";
     public long? CountryID { get; set; }
+    public long? RegionID { get; set; }
     public long? CompanyID { get; set; }
+    public long? CompanyBranchID { get; set; }
+    public long? CityID { get; set; }
 
     /// <summary>
     /// One row per interesting value of <em>one</em> dimension's column (set via <paramref name="setKey"/>):
