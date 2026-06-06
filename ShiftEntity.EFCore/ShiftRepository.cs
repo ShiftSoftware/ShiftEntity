@@ -439,7 +439,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    private void SetAuditFields(ShiftEntity<EntityType> entity, bool isAdded, long? userId, DateTimeOffset now)
+    private void SetAuditFields(IShiftEntityAudit entity, bool isAdded, long? userId, DateTimeOffset now)
     {
         if (entity.AuditFieldsAreSet)
             return;
@@ -530,14 +530,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (!added && !modified)
                 continue;
 
-            // Type-safe entity check
-            if (entry.Entity is not ShiftEntity<EntityType> entity)
+            // Audit fields are stamped on EVERY changed auditable row in the unit of work — not just this
+            // repository's own entity type. A single SaveChanges flushes the whole ChangeTracker, so cascaded
+            // children and unrelated entities (any ShiftEntity<T>) must be stamped here too.
+            if (entry.Entity is IShiftEntityAudit auditable)
+                this.SetAuditFields(auditable, added, userId, now);
+
+            // The remaining work below is specific to this repository's own entity type.
+            if (entry.Entity is not EntityType entityType)
                 continue;
 
-            this.SetAuditFields(entity, added, userId, now);
-
             // Only process unique hash if the interface is implemented
-            if (_hasUniqueHashInterface && entity is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
+            if (_hasUniqueHashInterface && entityType is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
             {
                 var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
                 if (uniqueHash is not null)
@@ -547,9 +551,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                     entry.Property("UniqueHash").CurrentValue = hashBytes;
                 }
             }
-
-            if (entry.Entity is not EntityType entityType)
-                continue;
 
             var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
 
