@@ -3,8 +3,11 @@ using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftIdentity.Core;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Country;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using Xunit;
@@ -56,6 +59,15 @@ public class StandardProfileParityTests
             (options, value) => options.DisableDefaultCountryFilter = value,
             (entity, value) => entity.CountryID = value),
 
+        ["Region"] = new(
+            "Region",
+            nameof(ShiftIdentityActions.DataLevelAccess.Regions),
+            ShiftIdentityActions.DataLevelAccess.Regions,
+            typeof(RegionDTO),
+            Constants.RegionIdClaim,
+            (options, value) => options.DisableDefaultRegionFilter = value,
+            (entity, value) => entity.RegionID = value),
+
         ["Company"] = new(
             "Company",
             nameof(ShiftIdentityActions.DataLevelAccess.Companies),
@@ -64,6 +76,25 @@ public class StandardProfileParityTests
             Constants.CompanyIdClaim,
             (options, value) => options.DisableDefaultCompanyFilter = value,
             (entity, value) => entity.CompanyID = value),
+
+        // The action is `Branches` while the marker/flag/claim say `CompanyBranch` — legacy's asymmetry, inherited.
+        ["Branch"] = new(
+            "Branch",
+            nameof(ShiftIdentityActions.DataLevelAccess.Branches),
+            ShiftIdentityActions.DataLevelAccess.Branches,
+            typeof(CompanyBranchDTO),
+            Constants.CompanyBranchIdClaim,
+            (options, value) => options.DisableDefaultCompanyBranchFilter = value,
+            (entity, value) => entity.CompanyBranchID = value),
+
+        ["City"] = new(
+            "City",
+            nameof(ShiftIdentityActions.DataLevelAccess.Cities),
+            ShiftIdentityActions.DataLevelAccess.Cities,
+            typeof(CityDTO),
+            Constants.CityIdClaim,
+            (options, value) => options.DisableDefaultCityFilter = value,
+            (entity, value) => entity.CityID = value),
     };
 
     public static TheoryData<string> Dimensions()

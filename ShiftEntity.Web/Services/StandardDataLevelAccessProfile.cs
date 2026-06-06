@@ -2,8 +2,11 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.ShiftIdentity.Core;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Country;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using System;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
@@ -29,8 +32,11 @@ public static class StandardDataLevelAccessProfile
     /// Adds the standard dimension for each marker interface <typeparamref name="TEntity"/> implements (unless the
     /// corresponding <paramref name="options"/> flag disables it), exactly as the legacy default filters would
     /// enforce it — one block per dimension, in the legacy dimension order. Currently covers:
-    /// <b>Country</b> (<see cref="IEntityHasCountry{Entity}"/>, slice 4.2) and
-    /// <b>Company</b> (<see cref="IEntityHasCompany{Entity}"/>, slice 4.1).
+    /// <b>Country</b> (<see cref="IEntityHasCountry{Entity}"/>, slice 4.2),
+    /// <b>Region</b> (<see cref="IEntityHasRegion{Entity}"/>, slice 4.3),
+    /// <b>Company</b> (<see cref="IEntityHasCompany{Entity}"/>, slice 4.1),
+    /// <b>Branch</b> (<see cref="IEntityHasCompanyBranch{Entity}"/>, slice 4.4) and
+    /// <b>City</b> (<see cref="IEntityHasCity{Entity}"/>, slice 4.6).
     /// </summary>
     public static DataLevelAccessBuilder<TEntity> AddStandardDimensions<TEntity>(
         this DataLevelAccessBuilder<TEntity> access, DefaultDataLevelAccessOptions options)
@@ -52,12 +58,34 @@ public static class StandardDataLevelAccessProfile
                 .HashId<CountryDTO>()
                 .Self(Core.Constants.CountryIdClaim);
 
+        // Region (4.3)
+        if (!options.DisableDefaultRegionFilter && typeof(IEntityHasRegion<TEntity>).IsAssignableFrom(typeof(TEntity)))
+            access.On(ShiftIdentityActions.DataLevelAccess.Regions)
+                .Key(x => ((IEntityHasRegion<TEntity>)x!).RegionID)
+                .HashId<RegionDTO>()
+                .Self(Core.Constants.RegionIdClaim);
+
         // Company (4.1)
         if (!options.DisableDefaultCompanyFilter && typeof(IEntityHasCompany<TEntity>).IsAssignableFrom(typeof(TEntity)))
             access.On(ShiftIdentityActions.DataLevelAccess.Companies)
                 .Key(x => ((IEntityHasCompany<TEntity>)x!).CompanyID)
                 .HashId<CompanyDTO>()
                 .Self(Core.Constants.CompanyIdClaim);
+
+        // Branch (4.4) — the action is `Branches` while the marker/flag/claim say `CompanyBranch`, an asymmetry
+        // inherited verbatim from legacy.
+        if (!options.DisableDefaultCompanyBranchFilter && typeof(IEntityHasCompanyBranch<TEntity>).IsAssignableFrom(typeof(TEntity)))
+            access.On(ShiftIdentityActions.DataLevelAccess.Branches)
+                .Key(x => ((IEntityHasCompanyBranch<TEntity>)x!).CompanyBranchID)
+                .HashId<CompanyBranchDTO>()
+                .Self(Core.Constants.CompanyBranchIdClaim);
+
+        // City (4.6) — Brand (4.5) slots between Branch and City when it lands, keeping legacy's order.
+        if (!options.DisableDefaultCityFilter && typeof(IEntityHasCity<TEntity>).IsAssignableFrom(typeof(TEntity)))
+            access.On(ShiftIdentityActions.DataLevelAccess.Cities)
+                .Key(x => ((IEntityHasCity<TEntity>)x!).CityID)
+                .HashId<CityDTO>()
+                .Self(Core.Constants.CityIdClaim);
 
         return access;
     }
