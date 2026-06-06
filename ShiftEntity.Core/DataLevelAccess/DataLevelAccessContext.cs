@@ -39,10 +39,13 @@ public sealed class DataLevelAccessContext
 
     /// <summary>
     /// The value of the caller's first <paramref name="claimType"/> claim, or <see langword="null"/> when there is no
-    /// signed-in user or no such claim. The value is returned verbatim (in whatever encoding the claim stores — e.g. a
-    /// hashed id), to be decoded by the dimension's own converter so the self/owner id lands in the same id-space as
-    /// the dimension's grant ids. An absent claim resolves to <see langword="null"/>, which the policy treats as
-    /// "no self/owner id" — fail closed, never wildcard.
+    /// <em>authenticated</em> user or no such claim. Requiring <c>Identity.IsAuthenticated</c> matches the legacy
+    /// claim reads (<c>ClaimsPrincipalExtensions.GetClaimValues</c>) — claims on an unauthenticated principal must
+    /// never grant data access (4.1 parity alignment; fail closed). The value is returned verbatim (in whatever
+    /// encoding the claim stores — e.g. a hashed id), to be decoded by the dimension's own converter so the
+    /// self/owner id lands in the same id-space as the dimension's grant ids. An absent claim resolves to
+    /// <see langword="null"/>, which the policy treats as "no self/owner id" — fail closed, never wildcard.
     /// </summary>
-    public string? GetClaim(string claimType) => user?.FindFirst(claimType)?.Value;
+    public string? GetClaim(string claimType)
+        => user?.Identity?.IsAuthenticated == true ? user.FindFirst(claimType)?.Value : null;
 }
