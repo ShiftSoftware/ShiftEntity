@@ -145,6 +145,109 @@ public class AuditFieldsTests
         Assert.Equal(1, order.LastSavedByUserID);
     }
 
+    [Fact]
+    public async Task SaveChanges_WithGuardSet_SkipsEvenUnsetFields()
+    {
+        // The guard is the explicit "audit already handled, stamp nothing" signal: with it set, even fields left at
+        // their defaults are skipped (this is distinct from the per-field manual-skip below).
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(99));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = OrderRepo(db);
+
+        var order = new OrderEntity { Number = "A-1", AuditFieldsAreSet = true }; // guard set, everything else default
+        repo.Add(order);
+        await repo.SaveChangesAsync();
+
+        Assert.Equal(default, order.CreateDate);
+        Assert.Equal(default, order.LastSaveDate);
+        Assert.Null(order.CreatedByUserID);
+        Assert.Null(order.LastSavedByUserID);
+    }
+
+    // ── Per-field manual values are preserved (set if unset, skip if set) ──────
+
+    [Fact]
+    public async Task Insert_PreservesManuallySetAuditFields_AndFillsTheUnsetOnes()
+    {
+        // The headline behavior: on insert, each audit column is filled from context ONLY where the caller left it
+        // unset. A manually-assigned CreateDate / CreatedByUserID is kept; the untouched last-save stamps are filled.
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(50));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = OrderRepo(db);
+
+        var manualCreate = new DateTimeOffset(2021, 5, 1, 0, 0, 0, TimeSpan.Zero);
+        var order = new OrderEntity
+        {
+            Number = "A-1",
+            CreateDate = manualCreate,  // set manually
+            CreatedByUserID = 999,      // set manually
+            // LastSaveDate / LastSavedByUserID left unset
+        };
+        repo.Add(order);
+
+        var before = DateTimeOffset.UtcNow;
+        await repo.SaveChangesAsync();
+
+        Assert.Equal(manualCreate, order.CreateDate);   // manual value kept, not overwritten
+        Assert.Equal(999, order.CreatedByUserID);       // manual value kept
+        Assert.True(order.LastSaveDate >= before);      // unset ⇒ filled from context
+        Assert.Equal(50, order.LastSavedByUserID);      // unset ⇒ filled from the signed-in user
+    }
+
+    [Fact]
+    public async Task Insert_PreservesManuallySetLastSaveStamps()
+    {
+        // The same rule applies to the last-save columns on insert: a manually-provided value is kept.
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(50));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = OrderRepo(db);
+
+        var manualLastSave = new DateTimeOffset(2021, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var order = new OrderEntity
+        {
+            Number = "A-1",
+            LastSaveDate = manualLastSave,  // set manually
+            LastSavedByUserID = 888,        // set manually
+        };
+        repo.Add(order);
+
+        var before = DateTimeOffset.UtcNow;
+        await repo.SaveChangesAsync();
+
+        Assert.Equal(manualLastSave, order.LastSaveDate);   // manual value kept
+        Assert.Equal(888, order.LastSavedByUserID);         // manual value kept
+        Assert.True(order.CreateDate >= before);            // unset create stamps filled
+        Assert.Equal(50, order.CreatedByUserID);
+    }
+
+    [Fact]
+    public async Task Update_AlwaysAdvancesLastSave_EvenWhenItWasSetManually()
+    {
+        // On update there is no reliable way to distinguish a manually-set last-save value from a previously-stamped
+        // one, so the update path always advances it (per the agreed semantics).
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(7));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = OrderRepo(db);
+
+        var order = new OrderEntity { Number = "A-1" };
+        repo.Add(order);
+        await repo.SaveChangesAsync();
+
+        order.AuditFieldsAreSet = false;                                       // fresh unit-of-work
+        order.LastSaveDate = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero); // a stale/manual value
+        order.LastSavedByUserID = 123;
+        order.Number = "A-1-edited";
+        var beforeUpdate = DateTimeOffset.UtcNow;
+        await repo.SaveChangesAsync();
+
+        Assert.True(order.LastSaveDate >= beforeUpdate);    // advanced past the manual value
+        Assert.Equal(7, order.LastSavedByUserID);           // set to the current user, not the manual 123
+    }
+
     // ── Delete ───────────────────────────────────────────────────────────────
 
     [Fact]

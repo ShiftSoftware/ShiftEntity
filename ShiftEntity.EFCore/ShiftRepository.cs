@@ -446,13 +446,29 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (isAdded)
         {
-            entity.CreateDate = now;
-            entity.IsDeleted = false;
-            entity.CreatedByUserID = userId;
-        }
+            // Insert: fill each stamp only where the caller left it unset, so a manually-provided value is kept
+            // rather than overwritten (a default DateTimeOffset / a null id counts as "unset").
+            if (entity.CreateDate == default)
+                entity.CreateDate = now;
 
-        entity.LastSaveDate = now;
-        entity.LastSavedByUserID = userId;
+            if (entity.CreatedByUserID is null)
+                entity.CreatedByUserID = userId;
+
+            entity.IsDeleted = false;
+
+            if (entity.LastSaveDate == default)
+                entity.LastSaveDate = now;
+
+            if (entity.LastSavedByUserID is null)
+                entity.LastSavedByUserID = userId;
+        }
+        else
+        {
+            // Update: always advance the last-save stamps. A manually-set value is indistinguishable from a value
+            // stamped by an earlier save, so there is no reliable way to skip it here.
+            entity.LastSaveDate = now;
+            entity.LastSavedByUserID = userId;
+        }
 
         entity.AuditFieldsAreSet = true;
     }
