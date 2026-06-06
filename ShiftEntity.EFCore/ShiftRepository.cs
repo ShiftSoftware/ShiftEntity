@@ -191,6 +191,23 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<EntityType>(entity);
     }
 
+    /// <summary>
+    /// <see cref="UpsertAsync(EntityType, ViewAndUpsertDTO, ActionTypes, long?, Guid?, bool, bool)"/> with the named
+    /// <see cref="RepositoryBypass"/> vocabulary instead of the positional bool pair. Deliberately
+    /// <b>non-virtual</b>: it forwards into the bool-taking virtual, so repositories that override it keep
+    /// receiving every call regardless of which overload the caller used (override the bool overload to customize).
+    /// </summary>
+    public ValueTask<EntityType> UpsertAsync(
+        EntityType entity,
+        ViewAndUpsertDTO dto,
+        ActionTypes actionType,
+        long? userId,
+        Guid? idempotencyKey = null,
+        RepositoryBypass bypass = RepositoryBypass.None)
+        => UpsertAsync(entity, dto, actionType, userId, idempotencyKey,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
+
     public Message? ResponseMessage { get; set; }
     public Dictionary<string, object>? AdditionalResponseData { get; set; }
 
@@ -260,10 +277,32 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return await BaseFindAsync(id, asOf, null, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 
+    /// <summary>
+    /// <see cref="FindAsync(long, DateTimeOffset?, bool, bool)"/> with the named <see cref="RepositoryBypass"/>
+    /// vocabulary instead of the positional bool pair. Deliberately <b>non-virtual</b>: it forwards into the
+    /// bool-taking virtual, so repositories that override it keep receiving every call regardless of which
+    /// overload the caller used (override the bool overload to customize).
+    /// </summary>
+    public Task<EntityType?> FindAsync(long id, DateTimeOffset? asOf = null, RepositoryBypass bypass = RepositoryBypass.None)
+        => FindAsync(id, asOf,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
+
     public virtual async Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey, DateTimeOffset? asOf,bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         return await BaseFindAsync(0, asOf: asOf, idempotencyKey: idempotencyKey, disableDefaultDataLevelAccess: disableDefaultDataLevelAccess, disableGlobalFilters: disableGlobalFilters);
     }
+
+    /// <summary>
+    /// <see cref="FindByIdempotencyKeyAsync(Guid, DateTimeOffset?, bool, bool)"/> with the named
+    /// <see cref="RepositoryBypass"/> vocabulary instead of the positional bool pair. Deliberately
+    /// <b>non-virtual</b>: it forwards into the bool-taking virtual, so repositories that override it keep
+    /// receiving every call regardless of which overload the caller used (override the bool overload to customize).
+    /// </summary>
+    public Task<EntityType?> FindByIdempotencyKeyAsync(Guid idempotencyKey, DateTimeOffset? asOf = null, RepositoryBypass bypass = RepositoryBypass.None)
+        => FindByIdempotencyKeyAsync(idempotencyKey, asOf,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
 
     public virtual async ValueTask<IQueryable<EntityType>> GetIQueryable(DateTimeOffset? asOf, List<string>? includes, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
@@ -283,6 +322,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         return query;
     }
+
+    /// <summary>
+    /// <see cref="GetIQueryable(DateTimeOffset?, List{string}?, bool, bool)"/> with the named
+    /// <see cref="RepositoryBypass"/> vocabulary instead of the positional bool pair. Deliberately
+    /// <b>non-virtual</b>: it forwards into the bool-taking virtual, so repositories that override it keep
+    /// receiving every call regardless of which overload the caller used (override the bool overload to customize).
+    /// </summary>
+    public ValueTask<IQueryable<EntityType>> GetIQueryable(
+        DateTimeOffset? asOf = null, List<string>? includes = null, RepositoryBypass bypass = RepositoryBypass.None)
+        => GetIQueryable(asOf, includes,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
 
     /// <summary>
     /// The query-path data-level filter: when a v2 policy was declared via
@@ -582,7 +633,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             foreach (var trackedEntity in entitiesToReload)
             {
-                var freshEntity = await FindAsync(trackedEntity.ID, null, disableDefaultDataLevelAccess: true, disableGlobalFilters: true);
+                var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
                     entityMapper.CopyEntity(freshEntity, trackedEntity);
             }
@@ -608,6 +659,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         return new ValueTask<EntityType>(entity);
     }
+
+    /// <summary>
+    /// <see cref="DeleteAsync(EntityType, bool, long?, bool, bool)"/> with the named <see cref="RepositoryBypass"/>
+    /// vocabulary instead of the positional bool pair. Deliberately <b>non-virtual</b>: it forwards into the
+    /// bool-taking virtual, so repositories that override it keep receiving every call regardless of which
+    /// overload the caller used (override the bool overload to customize).
+    /// </summary>
+    public ValueTask<EntityType> DeleteAsync(
+        EntityType entity, bool isHardDelete, long? userId, RepositoryBypass bypass = RepositoryBypass.None)
+        => DeleteAsync(entity, isHardDelete, userId,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
 
     public virtual Task<Stream> PrintAsync(string id)
     {

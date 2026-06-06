@@ -53,7 +53,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = await repository.GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
@@ -88,7 +88,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf);
         }
         catch (ShiftEntityException ex)
         {
@@ -143,7 +143,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                     idempotencyKey = Guid.Parse(header);
             }
 
-            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey);
         }
         catch (ShiftEntityException ex)
         {
@@ -158,7 +158,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
         catch (DuplicateIdempotencyKeyException)
         {
-            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
 
             var existingDto = await repository.ViewAsync(existingItem!);
 
@@ -207,7 +207,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
         }
         catch (ShiftEntityException ex)
         {
@@ -235,7 +235,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 );
             }
 
-            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID(), idempotencyKey: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -268,7 +268,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         if (item == null)
             return (CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -283,7 +283,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID(), disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -300,7 +300,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
 
         if (item.ReloadAfterSave)
-            item = await repository.FindAsync(item.ID, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(item.ID);
 
         var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item!))
         {
@@ -339,11 +339,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var found = await repository.FindAsync(
-            hashIdService.Decode<ViewAndUpsertDTO>(key),
-            asOf: null,
-            disableDefaultDataLevelAccess: false,
-            disableGlobalFilters: false);
+        var found = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         if (found is null)
             return CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
