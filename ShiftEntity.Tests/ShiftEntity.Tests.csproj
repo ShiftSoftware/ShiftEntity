@@ -28,6 +28,9 @@
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
+		<!-- Phase 4 (standard-profile parity): the profile + the real legacy DefaultDataLevelAccess live in Web;
+		     ShiftIdentity.Core (the actions + DTO type-keys) flows transitively. Leaf ref only — nothing ships it. -->
+		<ProjectReference Include="..\ShiftEntity.Web\ShiftEntity.Web.csproj" />
 	</ItemGroup>
 
 </Project>
