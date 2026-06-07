@@ -149,6 +149,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         var now = DateTimeOffset.UtcNow;
 
+        // Source the acting user from the current user's claims when the caller didn't pass one — the same
+        // identityClaimProvider the org/location claims below come from. SetAuditFields then stamps CreatedByUserID
+        // (insert) and LastSavedByUserID from it, skipping any value already set on the entity.
+        userId ??= identityClaimProvider.GetUserID();
+
         this.SetAuditFields(entity, actionType == ActionTypes.Insert, userId, now);
 
         if (idempotencyKey != null)
@@ -158,20 +163,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (actionType == ActionTypes.Insert)
         {
-            if (entity is IEntityHasCountry<EntityType> entityWithCountry && entityWithCountry.CountryID is null)
-                entityWithCountry.CountryID = identityClaimProvider.GetCountryID();
-
-            if (entity is IEntityHasRegion<EntityType> entityWithRegion && entityWithRegion.RegionID is null)
-                entityWithRegion.RegionID = identityClaimProvider.GetRegionID();
-
-            if (entity is IEntityHasCity<EntityType> entityWithCity && entityWithCity.CityID is null)
-                entityWithCity.CityID = identityClaimProvider.GetCityID();
-
-            if (entity is IEntityHasCompany<EntityType> entityWithCompany && entityWithCompany.CompanyID is null)
-                entityWithCompany.CompanyID = identityClaimProvider.GetCompanyID();
-
-            if (entity is IEntityHasCompanyBranch<EntityType> entityWithCompanyBranch && entityWithCompanyBranch.CompanyBranchID is null)
-                entityWithCompanyBranch.CompanyBranchID = identityClaimProvider.GetCompanyBranchID();
+            SetCreationClaimDefaults(entity);
         }
 
         if (!disableDefaultDataLevelAccess)
@@ -439,23 +431,20 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    private void SetAuditFields(ShiftEntity<EntityType> entity, bool isAdded, long? userId, DateTimeOffset now)
-    {
-        if (entity.AuditFieldsAreSet)
-            return;
+    // Audit stamping rules live in AuditStamper, shared with ShiftDbContext's SaveChanges override so both paths
+    // behave identically. The repository can resolve its claim values eagerly — identityClaimProvider is always
+    // registered here (the DbContext fallback resolves them defensively instead).
+    private void SetAuditFields(IShiftEntityAudit entity, bool isAdded, long? userId, DateTimeOffset now)
+        => AuditStamper.StampAuditFields(entity, isAdded, userId, now);
 
-        if (isAdded)
-        {
-            entity.CreateDate = now;
-            entity.IsDeleted = false;
-            entity.CreatedByUserID = userId;
-        }
-
-        entity.LastSaveDate = now;
-        entity.LastSavedByUserID = userId;
-
-        entity.AuditFieldsAreSet = true;
-    }
+    private void SetCreationClaimDefaults(object entity)
+        => AuditStamper.StampCreationClaims(
+            entity,
+            identityClaimProvider.GetCountryID(),
+            identityClaimProvider.GetRegionID(),
+            identityClaimProvider.GetCityID(),
+            identityClaimProvider.GetCompanyID(),
+            identityClaimProvider.GetCompanyBranchID());
 
     public virtual async Task<int> SaveChangesAsync()
     {
@@ -563,14 +552,26 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             if (!added && !modified)
                 continue;
 
-            // Type-safe entity check
-            if (entry.Entity is not ShiftEntity<EntityType> entity)
+            // Audit columns are stamped on EVERY changed auditable row in the unit of work — not just this
+            // repository's own entity type. A single SaveChanges flushes the whole ChangeTracker, so cascaded
+            // children and unrelated entities (any ShiftEntity<T>) must be stamped here too. A row already handled
+            // upstream (UpsertAsync sets the guard) is left alone; the rest get the same backfill upsert would do —
+            // dates/user via SetAuditFields, plus the insert-only org/location claims.
+            if (entry.Entity is IShiftEntityAudit auditable)
+            {
+                var alreadyStamped = auditable.AuditFieldsAreSet;
+                this.SetAuditFields(auditable, added, userId, now);
+
+                if (added && !alreadyStamped)
+                    this.SetCreationClaimDefaults(entry.Entity);
+            }
+
+            // The remaining work below is specific to this repository's own entity type.
+            if (entry.Entity is not EntityType entityType)
                 continue;
 
-            this.SetAuditFields(entity, added, userId, now);
-
             // Only process unique hash if the interface is implemented
-            if (_hasUniqueHashInterface && entity is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
+            if (_hasUniqueHashInterface && entityType is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
             {
                 var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
                 if (uniqueHash is not null)
@@ -580,9 +581,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                     entry.Property("UniqueHash").CurrentValue = hashBytes;
                 }
             }
-
-            if (entry.Entity is not EntityType entityType)
-                continue;
 
             var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
 
@@ -717,6 +715,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         entity.IsDeleted = true;
+
+        // Record the deleter from the current user's claims when not passed explicitly. There is no dedicated
+        // DeletedByUserID column, so the deleter is captured in LastSavedByUserID by the stamp below.
+        userId ??= identityClaimProvider.GetUserID();
 
         this.SetAuditFields(entity, false, userId, DateTimeOffset.UtcNow);
 
