@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.ShiftEntity.Tests.Auditing.Scenario;
 using Xunit;
 
@@ -202,5 +203,66 @@ public class ClaimBackfillTests
 
         Assert.Equal(42, order.CreatedByUserID); // the present claim still resolves
         AssertNoOrgStamps(order);                // the absent org claims ⇒ null, not 0
+    }
+
+    // ── Accessor mechanics ────────────────────────────────────────────────────
+    // The markers are generic-only; the stamper reaches the columns through per-type compiled accessors. These pin
+    // the two accessor edges: a marker implemented explicitly (no public class property), and no markers at all.
+
+    [Fact]
+    public async Task Insert_BackfillsExplicitlyImplementedMarker()
+    {
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var entity = new ExplicitCompanyEntity { Name = "explicit" };
+        db.Add(entity);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(ActorCompany, ((IEntityHasCompany<ExplicitCompanyEntity>)entity).CompanyID);
+    }
+
+    [Fact]
+    public async Task Insert_UnmarkedEntity_IsLeftAlone()
+    {
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var note = new PlainNoteEntity { Text = "no org markers" };
+        db.Add(note);
+        await db.SaveChangesAsync();
+
+        Assert.True(note.AuditFieldsAreSet); // the audit sweep ran; there were just no claim columns to fill
+    }
+
+    [Fact]
+    public async Task Insert_TwoActors_EachRowGetsItsOwnClaims()
+    {
+        // The accessor cache is static, but it holds type → property METADATA only — never claim values. Two
+        // different actors inserting rows of the SAME entity type (cache warm for the second) must each land
+        // their own claims; a value spilling across requests/users would surface here.
+        using (var providerA = AuditingHost.Build(() => FakeUserProvider.WithClaims(userId: 1, companyId: 100)))
+        using (var scopeA = providerA.CreateScope())
+        {
+            var db = scopeA.ServiceProvider.GetRequiredService<OrderingDbContext>();
+            var order = new OrderEntity { Number = "A" };
+            db.Add(order);
+            await db.SaveChangesAsync();
+
+            Assert.Equal(100, order.CompanyID);
+        }
+
+        using (var providerB = AuditingHost.Build(() => FakeUserProvider.WithClaims(userId: 2, companyId: 999)))
+        using (var scopeB = providerB.CreateScope())
+        {
+            var db = scopeB.ServiceProvider.GetRequiredService<OrderingDbContext>();
+            var order = new OrderEntity { Number = "B" };
+            db.Add(order);
+            await db.SaveChangesAsync();
+
+            Assert.Equal(999, order.CompanyID); // actor B's own claim — not actor A's leftover
+        }
     }
 }

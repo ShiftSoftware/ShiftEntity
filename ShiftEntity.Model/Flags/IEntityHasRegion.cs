@@ -1,11 +1,10 @@
-﻿namespace ShiftSoftware.ShiftEntity.Model.Flags;
+namespace ShiftSoftware.ShiftEntity.Model.Flags;
 
-/// <summary>Non-generic seam carrying <c>RegionID</c> so the repository can stamp it on any entity, regardless of its closed generic type.</summary>
-public interface IEntityHasRegion
+/// <summary>
+/// Org/location claim marker: <c>RegionID</c> drives the standard region data-level access dimension and is
+/// backfilled on insert from the acting user's claim by the audit-stamping sweep.
+/// </summary>
+public interface IEntityHasRegion<Entity>
 {
     long? RegionID { get; set; }
-}
-
-public interface IEntityHasRegion<Entity> : IEntityHasRegion
-{
 }

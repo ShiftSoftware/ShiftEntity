@@ -86,6 +86,23 @@ public class CategoryEntity : ShiftEntity<CategoryEntity>, IHasOrgClaims<Categor
     public long? CityID { get; set; }
 }
 
+/// <summary>
+/// Implements its single org claim marker <em>explicitly</em> — the column is reachable only through the interface,
+/// never as a public class property. Pins that the claim backfill reads/writes the marker's own property (as the
+/// old pattern-match-and-cast did), so explicit implementations keep getting stamped.
+/// </summary>
+public class ExplicitCompanyEntity : ShiftEntity<ExplicitCompanyEntity>, IEntityHasCompany<ExplicitCompanyEntity>
+{
+    public string Name { get; set; } = "";
+    long? IEntityHasCompany<ExplicitCompanyEntity>.CompanyID { get; set; }
+}
+
+/// <summary>Carries no org claim markers at all — pins that unmarked entities flow through the sweep untouched.</summary>
+public class PlainNoteEntity : ShiftEntity<PlainNoteEntity>
+{
+    public string Text { get; set; } = "";
+}
+
 // ── DbContext ───────────────────────────────────────────────────────────────
 
 /// <summary>EF context for the auditing tests — a parent/child aggregate and a self-referencing tree.</summary>
@@ -94,6 +111,8 @@ public class OrderingDbContext : ShiftDbContext
     public DbSet<OrderEntity> Orders { get; set; } = default!;
     public DbSet<OrderLineEntity> OrderLines { get; set; } = default!;
     public DbSet<CategoryEntity> Categories { get; set; } = default!;
+    public DbSet<ExplicitCompanyEntity> ExplicitCompanies { get; set; } = default!;
+    public DbSet<PlainNoteEntity> PlainNotes { get; set; } = default!;
 
     public OrderingDbContext(DbContextOptions<OrderingDbContext> options) : base(options) { }
 

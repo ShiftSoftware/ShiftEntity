@@ -1,11 +1,10 @@
-﻿namespace ShiftSoftware.ShiftEntity.Model.Flags;
+namespace ShiftSoftware.ShiftEntity.Model.Flags;
 
-/// <summary>Non-generic seam carrying <c>CityID</c> so the repository can stamp it on any entity, regardless of its closed generic type.</summary>
-public interface IEntityHasCity
+/// <summary>
+/// Org/location claim marker: <c>CityID</c> drives the standard city data-level access dimension and is
+/// backfilled on insert from the acting user's claim by the audit-stamping sweep.
+/// </summary>
+public interface IEntityHasCity<Entity>
 {
     long? CityID { get; set; }
-}
-
-public interface IEntityHasCity<Entity> : IEntityHasCity
-{
 }
