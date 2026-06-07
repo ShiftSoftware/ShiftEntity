@@ -185,4 +185,22 @@ public class ClaimBackfillTests
 
         AssertNoOrgStamps(order); // no claims ⇒ nothing to backfill
     }
+
+    [Fact]
+    public async Task Insert_AuthenticatedUserMissingOrgClaims_LeavesThemNull_NotZero()
+    {
+        // Authenticated (NameIdentifier present) but carrying NO org claims. An absent claim must resolve to null,
+        // not 0 — so the columns stay null rather than being stamped with a bogus 0 id.
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(42));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = OrderRepo(db);
+
+        var order = new OrderEntity { Number = "A-1" };
+        repo.Add(order);
+        await repo.SaveChangesAsync();
+
+        Assert.Equal(42, order.CreatedByUserID); // the present claim still resolves
+        AssertNoOrgStamps(order);                // the absent org claims ⇒ null, not 0
+    }
 }

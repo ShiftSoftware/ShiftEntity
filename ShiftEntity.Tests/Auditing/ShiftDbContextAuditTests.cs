@@ -168,6 +168,22 @@ public class ShiftDbContextAuditTests
         AssertNoOrgStamps(order);
     }
 
+    [Fact]
+    public async Task DirectSave_AuthenticatedUserMissingOrgClaims_LeavesThemNull_NotZero()
+    {
+        // Service registered, user authenticated, but no org claims present: absent claims resolve to null, not 0.
+        using var provider = AuditingHost.Build(() => FakeUserProvider.WithUserId(42));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var order = new OrderEntity { Number = "A-1" };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(42, order.CreatedByUserID);
+        AssertNoOrgStamps(order);
+    }
+
     // ── Defensive resolution: no claim services registered ────────────────────
 
     [Fact]
