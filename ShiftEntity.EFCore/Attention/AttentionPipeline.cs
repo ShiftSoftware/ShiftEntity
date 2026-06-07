@@ -25,6 +25,33 @@ internal sealed class PendingIndexedSignal
 }
 
 /// <summary>
+/// Outcome of <see cref="AttentionPipeline.ProcessEntity"/> for one entity that raised at
+/// least one new signal: the newly-raised (post-dedup) signals — the set that becomes
+/// <see cref="AttentionRaised"/> events once the save commits — plus, in indexed mode on
+/// Insert, the signals still awaiting a database ID.
+/// </summary>
+internal sealed class AttentionEntityOutcome
+{
+    /// <summary>CLR type name of the entity that raised the signals.</summary>
+    public required string EntityTypeName { get; init; }
+
+    /// <summary>
+    /// EF Core change-tracker entry; the repository reads the entity ID from it after save
+    /// (Insert entities only receive their ID then) when materializing events.
+    /// </summary>
+    public required EntityEntry Entry { get; init; }
+
+    /// <summary>Newly-raised (post-dedup) signals — one event each, published after commit.</summary>
+    public required List<StoredAttentionSignal> NewSignals { get; init; }
+
+    /// <summary>
+    /// Indexed-mode signals pending entity ID assignment (Insert path), flushed via
+    /// <see cref="AttentionPipeline.FlushPendingSignals"/>. <c>null</c> when none.
+    /// </summary>
+    public List<PendingIndexedSignal>? PendingIndexed { get; init; }
+}
+
+/// <summary>
 /// Core evaluation and persistence engine for the attention system. Invoked by
 /// <c>ShiftRepository.ProcessEntriesAndSave</c> for each <see cref="IHasAttention"/> entity.
 /// Discovers evaluators, runs them, deduplicates signals, persists results, and updates
@@ -37,10 +64,13 @@ internal static class AttentionPipeline
     /// persists new signals in the entity's storage mode, and updates summary columns.
     /// </summary>
     /// <returns>
-    /// Pending indexed signals for Insert entities (flushed via <see cref="FlushPendingSignals"/>
-    /// after <c>SaveChangesAsync</c> assigns database IDs), or <c>null</c> when no work was done.
+    /// The outcome carrying the newly-raised (post-dedup) signals — the repository turns
+    /// them into <see cref="AttentionRaised"/> events after the save commits — and any
+    /// pending indexed signals for Insert entities (flushed via
+    /// <see cref="FlushPendingSignals"/> after <c>SaveChangesAsync</c> assigns database
+    /// IDs). <c>null</c> when no new signal was raised.
     /// </returns>
-    internal static async Task<List<PendingIndexedSignal>?> ProcessEntity<TEntity>(
+    internal static async Task<AttentionEntityOutcome?> ProcessEntity<TEntity>(
         ShiftDbContext db,
         EntityEntry entry,
         TEntity entity,
@@ -134,37 +164,49 @@ internal static class AttentionPipeline
         List<PendingIndexedSignal>? pendingIndexed = null;
         var allSignals = existingSignals.Concat(newStoredSignals).ToList();
 
-        if (isIndexed)
+        if (newStoredSignals.Count > 0)
         {
-            foreach (var stored in newStoredSignals)
+            if (isIndexed)
             {
-                if (isInsert)
+                foreach (var stored in newStoredSignals)
                 {
-                    pendingIndexed ??= [];
-                    pendingIndexed.Add(new PendingIndexedSignal
+                    if (isInsert)
                     {
-                        EntityTypeName = entityTypeName,
-                        Entry = entry,
-                        Signal = stored,
-                    });
-                }
-                else
-                {
-                    db.Set<AttentionSignalEntry>().Add(
-                        AttentionSignalEntry.FromStoredSignal(stored, entityTypeName, entityId));
+                        pendingIndexed ??= [];
+                        pendingIndexed.Add(new PendingIndexedSignal
+                        {
+                            EntityTypeName = entityTypeName,
+                            Entry = entry,
+                            Signal = stored,
+                        });
+                    }
+                    else
+                    {
+                        db.Set<AttentionSignalEntry>().Add(
+                            AttentionSignalEntry.FromStoredSignal(stored, entityTypeName, entityId));
+                    }
                 }
             }
-        }
-        else
-        {
-            entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue =
-                AttentionSignalJsonHelper.Serialize(allSignals);
+            else
+            {
+                entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue =
+                    AttentionSignalJsonHelper.Serialize(allSignals);
+            }
         }
 
         // Update summary columns
         UpdateSummaryColumns(attentionEntity, allSignals);
 
-        return pendingIndexed;
+        if (newStoredSignals.Count == 0)
+            return null;
+
+        return new AttentionEntityOutcome
+        {
+            EntityTypeName = entityTypeName,
+            Entry = entry,
+            NewSignals = newStoredSignals,
+            PendingIndexed = pendingIndexed,
+        };
     }
 
     /// <summary>
