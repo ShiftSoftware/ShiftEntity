@@ -213,7 +213,14 @@ internal static class AttentionPipeline
     /// Marks all active signals for the specified entity as cleared, resets the entity's
     /// summary columns, and saves. Works against both JSON-shadow and indexed storage modes.
     /// </summary>
-    internal static async Task ClearSignals(
+    /// <returns>
+    /// The entity's <c>LastSaveDate</c> after the save — the save updates the entity row, so
+    /// the audit sweep advances the stamp, which doubles as the optimistic-concurrency version.
+    /// Endpoints return it (<see cref="ClearAttentionResponse"/>) so clients holding a
+    /// pre-clear DTO can patch it instead of hitting a version conflict on their next save.
+    /// <c>null</c> when the entity doesn't carry audit fields.
+    /// </returns>
+    internal static async Task<DateTimeOffset?> ClearSignals(
         ShiftDbContext db,
         string entityTypeName,
         long entityId,
@@ -270,6 +277,10 @@ internal static class AttentionPipeline
         }
 
         await db.SaveChangesAsync();
+
+        // Read AFTER the save: the audit sweep stamps LastSaveDate during SaveChanges when
+        // the row was modified (and leaves it unchanged when the clear was a no-op).
+        return (entity as IShiftEntityAudit)?.LastSaveDate;
     }
 
     /// <summary>

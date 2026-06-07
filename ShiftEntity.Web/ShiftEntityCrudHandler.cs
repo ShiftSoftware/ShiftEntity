@@ -454,8 +454,12 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
-            return CrudResult.Ok(null);
+            var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+
+            // The clear advanced the entity's audit stamp (= the optimistic-concurrency
+            // version). Return it so a client holding the pre-clear DTO can patch its
+            // LastSaveDate instead of conflicting on the next save.
+            return CrudResult.Ok(new ClearAttentionResponse { LastSaveDate = lastSaveDate });
         }
         catch (InvalidOperationException ex)
         {

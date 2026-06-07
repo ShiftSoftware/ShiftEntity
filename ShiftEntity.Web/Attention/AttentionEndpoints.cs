@@ -59,8 +59,11 @@ public static class AttentionEndpoints
 
             try
             {
-                await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId);
-                return Results.Ok();
+                var lastSaveDate = await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId);
+
+                // Same contract as the per-entity controller endpoint: return the post-clear
+                // audit stamp so clients can keep their loaded DTO's concurrency version current.
+                return Results.Ok(new Core.Attention.ClearAttentionResponse { LastSaveDate = lastSaveDate });
             }
             catch (InvalidOperationException ex)
             {
