@@ -631,38 +631,48 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             await Task.WhenAll(beforeSaveTasks.Select(vt => vt.AsTask()));
         }
 
-        // Proceed with database save
+        // The sweep above already stamped every tracked auditable row, so suppress the context's SaveChanges override
+        // for these repository-initiated saves — otherwise it would run the identical sweep a second time. (The
+        // AuditFieldsAreSet guard already prevents double-writing; this also avoids the redundant second pass.)
         int result;
+        db.AuditStampingSuppressed = true;
         try
         {
-            result = await db.SaveChangesAsync();
-        }
-        catch (DbUpdateException dbUpdateException)
-        {
-            if (dbUpdateException.InnerException is SqlException sqlException)
+            try
             {
-                var error = sqlException.Errors
-                    .OfType<SqlError>()
-                    .FirstOrDefault(se => se.Number == 2601);
+                result = await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException dbUpdateException)
+            {
+                if (dbUpdateException.InnerException is SqlException sqlException)
+                {
+                    var error = sqlException.Errors
+                        .OfType<SqlError>()
+                        .FirstOrDefault(se => se.Number == 2601);
 
-                if (error?.Message?.Contains(nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey)) ?? false)
-                    throw new DuplicateIdempotencyKeyException(error.Message);
+                    if (error?.Message?.Contains(nameof(IEntityHasIdempotencyKey<EntityType>.IdempotencyKey)) ?? false)
+                        throw new DuplicateIdempotencyKeyException(error.Message);
 
-                if (error?.Message?.Contains(nameof(IEntityHasUniqueHash.UniqueHash)) ?? false)
-                    throw new ShiftEntityException(
-                        new Message("Conflict", "An item with the same Unique Fields already exists."),
-                        (int)HttpStatusCode.Conflict
-                    );
+                    if (error?.Message?.Contains(nameof(IEntityHasUniqueHash.UniqueHash)) ?? false)
+                        throw new ShiftEntityException(
+                            new Message("Conflict", "An item with the same Unique Fields already exists."),
+                            (int)HttpStatusCode.Conflict
+                        );
+                }
+
+                throw;
             }
 
-            throw;
+            // Flush pending indexed attention signals (INSERT case — entity IDs now available)
+            if (allPendingSignals is { Count: > 0 })
+            {
+                AttentionPipeline.FlushPendingSignals(db, allPendingSignals);
+                await db.SaveChangesAsync();
+            }
         }
-
-        // Flush pending indexed attention signals (INSERT case — entity IDs now available)
-        if (allPendingSignals is { Count: > 0 })
+        finally
         {
-            AttentionPipeline.FlushPendingSignals(db, allPendingSignals);
-            await db.SaveChangesAsync();
+            db.AuditStampingSuppressed = false;
         }
 
         // Materialize AttentionRaised events now that every entity has its database ID.

@@ -56,6 +56,14 @@ public abstract class ShiftDbContext : DbContext
         base.OnConfiguring(optionsBuilder);
     }
 
+    /// <summary>
+    /// Set by <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/> around its own save: the
+    /// repository has already stamped the tracked entries, so the context's SaveChanges override skips its (identical)
+    /// audit sweep instead of running it a second time for the same, repository-initiated save. Saves that don't go
+    /// through a repository leave this <see langword="false"/>, so the fallback backfill still runs for them.
+    /// </summary>
+    internal bool AuditStampingSuppressed { get; set; }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         StampAuditColumns();
@@ -70,8 +78,9 @@ public abstract class ShiftDbContext : DbContext
 
     /// <summary>
     /// Backfills the audit columns on every changed auditable row that has not already been stamped — the fallback
-    /// for entities saved directly through the context rather than through a repository. A repository sets the
-    /// <c>AuditFieldsAreSet</c> guard, so repository-routed saves pass through here untouched (no double-stamping).
+    /// for entities saved directly through the context rather than through a repository. A repository both stamps the
+    /// rows and sets <see cref="AuditStampingSuppressed"/> around its save, so repository-routed saves skip this
+    /// entirely (and the <c>AuditFieldsAreSet</c> guard skips any individually pre-stamped row).
     ///
     /// <para>Every value is resolved <b>defensively</b>: if the claim service isn't registered, or a value is absent
     /// or can't be read, it is treated as null/default rather than throwing — a bare context (migrations, a unit test
@@ -79,6 +88,9 @@ public abstract class ShiftDbContext : DbContext
     /// </summary>
     private void StampAuditColumns()
     {
+        if (AuditStampingSuppressed)
+            return; // a repository already stamped these rows; don't run the identical sweep again
+
         var now = DateTimeOffset.UtcNow;
 
         var resolved = false;

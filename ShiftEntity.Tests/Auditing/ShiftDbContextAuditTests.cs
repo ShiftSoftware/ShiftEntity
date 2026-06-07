@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Tests.Auditing.Scenario;
 using Xunit;
 
@@ -63,6 +64,31 @@ public class ShiftDbContextAuditTests
         Assert.Equal(ActorUser, order.CreatedByUserID);
         Assert.Equal(ActorUser, order.LastSavedByUserID);
         AssertActorOrgStamps(order);
+    }
+
+    [Fact]
+    public async Task RepositorySave_SuppressesContextSweep_ButResetsIt_SoLaterDirectSaveStillStamps()
+    {
+        // A repository save stamps the rows itself and suppresses the context's (identical) sweep for that save. The
+        // suppression must be reset afterwards: a later DIRECT save on the SAME context must still be stamped. (If the
+        // flag leaked, `direct` would come back unstamped — null user/org — and this would fail.)
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+        var repo = new ShiftRepository<OrderingDbContext, OrderEntity, OrderListDTO, OrderListDTO>(
+            db, new ThrowingMapper<OrderEntity, OrderListDTO>());
+
+        var viaRepo = new OrderEntity { Number = "via-repo" };
+        repo.Add(viaRepo);
+        await repo.SaveChangesAsync();           // repository-initiated: context sweep suppressed, then reset
+        Assert.Equal(ActorUser, viaRepo.CreatedByUserID);
+        AssertActorOrgStamps(viaRepo);
+
+        var direct = new OrderEntity { Number = "direct" };
+        db.Orders.Add(direct);
+        await db.SaveChangesAsync();             // direct on the same context: must still be stamped
+        Assert.Equal(ActorUser, direct.CreatedByUserID);
+        AssertActorOrgStamps(direct);
     }
 
     [Fact]
