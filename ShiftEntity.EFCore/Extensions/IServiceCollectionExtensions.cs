@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
@@ -7,6 +9,48 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class IServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the attention emission dispatcher: an in-memory channel
+    /// (<see cref="IAttentionDispatcher"/>) plus the background service that drains it and
+    /// invokes the registered <see cref="IAttentionConsumer"/>s. Once registered, every
+    /// committed save that raises attention signals publishes one
+    /// <see cref="AttentionRaised"/> event per newly-raised signal. Apps that never call
+    /// this (or <see cref="AddAttentionConsumer{TConsumer}"/>) get no dispatcher in their
+    /// graph and the save pipeline skips publishing entirely.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent — safe to call multiple times. To substitute a custom transport, register
+    /// your own <see cref="IAttentionDispatcher"/> instead of calling this; the save
+    /// pipeline publishes through whatever implementation is registered.
+    /// </remarks>
+    public static IServiceCollection AddAttentionEmission(this IServiceCollection services)
+    {
+        services.TryAddSingleton<ChannelAttentionDispatcher>();
+        services.TryAddSingleton<IAttentionDispatcher>(sp => sp.GetRequiredService<ChannelAttentionDispatcher>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AttentionDispatcherService>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IAttentionConsumer"/> (scoped — resolved in a fresh DI scope
+    /// per event) and ensures the emission dispatcher is registered, so a single call is
+    /// enough to start receiving <see cref="AttentionRaised"/> events. Register as many
+    /// consumers as needed; all of them receive every event.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent per consumer type — registering the same <typeparamref name="TConsumer"/>
+    /// twice keeps a single registration.
+    /// </remarks>
+    public static IServiceCollection AddAttentionConsumer<TConsumer>(this IServiceCollection services)
+        where TConsumer : class, IAttentionConsumer
+    {
+        services.AddAttentionEmission();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAttentionConsumer, TConsumer>());
+
+        return services;
+    }
+
     public static IServiceCollection AddAttentionEvaluator<TEntity, TEvaluator>(this IServiceCollection services)
         where TEntity : class
         where TEvaluator : class, IAttentionEvaluator<TEntity>
