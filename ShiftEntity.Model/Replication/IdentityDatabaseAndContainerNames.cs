@@ -10,4 +10,5 @@ public class IdentityDatabaseAndContainerNames
     public const string DepartmentContainerName = "Departments";
     public const string BrandContainerName = "Brands";
     public const string TeamContainerName = "Teams";
+    public const string UserContainerName = "Users";
 }

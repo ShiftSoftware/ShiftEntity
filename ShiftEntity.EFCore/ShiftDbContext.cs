@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
@@ -16,6 +17,8 @@ public abstract class ShiftDbContext : DbContext
     }
 
     private readonly IServiceProvider? _applicationServiceProvider;
+
+    internal IServiceProvider? ApplicationServiceProvider => _applicationServiceProvider;
 
     public ShiftDbContext(DbContextOptions options) : base(options)
     {
@@ -51,5 +54,91 @@ public abstract class ShiftDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
+    }
+
+    /// <summary>
+    /// Set by <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/> around its own save: the
+    /// repository has already stamped the tracked entries, so the context's SaveChanges override skips its (identical)
+    /// audit sweep instead of running it a second time for the same, repository-initiated save. Saves that don't go
+    /// through a repository leave this <see langword="false"/>, so the fallback backfill still runs for them.
+    /// </summary>
+    internal bool AuditStampingSuppressed { get; set; }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampAuditColumns();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampAuditColumns();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Backfills the audit columns on every changed auditable row that has not already been stamped — the fallback
+    /// for entities saved directly through the context rather than through a repository. A repository both stamps the
+    /// rows and sets <see cref="AuditStampingSuppressed"/> around its save, so repository-routed saves skip this
+    /// entirely (and the <c>AuditFieldsAreSet</c> guard skips any individually pre-stamped row).
+    ///
+    /// <para>Every value is resolved <b>defensively</b>: if the claim service isn't registered, or a value is absent
+    /// or can't be read, it is treated as null/default rather than throwing — a bare context (migrations, a unit test
+    /// without DI) still saves, just without a user/org stamp.</para>
+    /// </summary>
+    private void StampAuditColumns()
+    {
+        if (AuditStampingSuppressed)
+            return; // a repository already stamped these rows; don't run the identical sweep again
+
+        var now = DateTimeOffset.UtcNow;
+
+        var resolved = false;
+        long? userId = null, countryId = null, regionId = null, cityId = null, companyId = null, branchId = null;
+
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State != EntityState.Added && entry.State != EntityState.Modified)
+                continue;
+
+            if (entry.Entity is not IShiftEntityAudit auditable || auditable.AuditFieldsAreSet)
+                continue; // not auditable, or already stamped upstream (e.g. by the repository)
+
+            // Resolve the acting user's claims once, only when there is actually a row to stamp.
+            if (!resolved)
+            {
+                var claims = TryResolveClaims();
+                userId = SafeClaim(claims, c => c.GetUserID());
+                countryId = SafeClaim(claims, c => c.GetCountryID());
+                regionId = SafeClaim(claims, c => c.GetRegionID());
+                cityId = SafeClaim(claims, c => c.GetCityID());
+                companyId = SafeClaim(claims, c => c.GetCompanyID());
+                branchId = SafeClaim(claims, c => c.GetCompanyBranchID());
+                resolved = true;
+            }
+
+            var added = entry.State == EntityState.Added;
+
+            AuditStamper.StampAuditFields(auditable, added, userId, now);
+
+            if (added)
+                AuditStamper.StampCreationClaims(entry.Entity, countryId, regionId, cityId, companyId, branchId);
+        }
+    }
+
+    /// <summary>Resolves <see cref="IdentityClaimProvider"/> if available, returning null instead of throwing.</summary>
+    private IdentityClaimProvider? TryResolveClaims()
+    {
+        try { return this.GetService<IdentityClaimProvider>(); }
+        catch { return null; }
+    }
+
+    private static long? SafeClaim(IdentityClaimProvider? claims, Func<IdentityClaimProvider, long?> get)
+    {
+        if (claims is null)
+            return null;
+
+        try { return get(claims); }
+        catch { return null; }
     }
 }

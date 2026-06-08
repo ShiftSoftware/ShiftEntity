@@ -2,7 +2,7 @@
 
 public class CountryHashIdConverter : JsonHashIdConverterAttribute<CountryHashIdConverter>
 {
-    public CountryHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public CountryHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

@@ -1,18 +1,20 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Model.HashIds;
-using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ShiftSoftware.ShiftEntity.Web;
@@ -410,37 +412,26 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
     [HttpGet("print-token/{key}")]
     public virtual async Task<ActionResult> PrintToken(string key)
     {
-        var found = await this.HttpContext.RequestServices.GetRequiredService<Repository>().FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
-
-        if (found is null)
-            return NotFound();
-
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
-        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
         if (action is not null && !typeAuthService.CanRead(action))
             return Forbid();
 
         var url = Url.Action(nameof(PrintToken), new { key = key });
 
-        var (token, expires) = TokenService.GenerateSASToken(url!, key,
-            DateTime.UtcNow.AddSeconds(options.TokenExpirationInSeconds), options.SASTokenKey);
-
-        return Ok($"expires={expires}&token={token}");
+        return await base.PrintTokenNonAction(key, url!);
     }
 
     [HttpGet("print/{key}")]
     [AllowAnonymous]
     public virtual async Task<ActionResult> Print(string key, [FromQuery] string? expires = null, [FromQuery] string? token = null)
     {
-        var options = this.HttpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
-
         var url = Url.Action(nameof(PrintToken), new { key = key });
 
-        if (!TokenService.ValidateSASToken(url!, key, expires!, token!, options.SASTokenKey))
+        if (!base.ValidatePrintSASTokenNonAction(key, url!, expires, token))
             return Forbid();
 
-        return (await base.PrintNonAction(key));
+        return await base.PrintNonAction(key);
     }
 
     [Authorize]
@@ -547,6 +538,31 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         );
 
         return result.ActionResult;
+    }
+
+    [Authorize]
+    [HttpGet("{key}/attention")]
+    public virtual async Task<ActionResult> GetAttentionSignals(string key)
+    {
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (action is not null && !typeAuthService.CanRead(action))
+            return Forbid();
+
+        // The fetch/clear logic lives in the shared ShiftEntityCrudHandler so this controller and
+        // the minimal-API MapShiftEntitySecureCrud endpoint can't drift. Auth stays here (the
+        // surface concern); the handler owns the data logic and the opt-in decision.
+        return ToActionResult(await _handler.GetAttentionSignalsAsync(HttpContext, key));
+    }
+
+    [Authorize]
+    [HttpPost("{key}/attention/clear")]
+    public virtual async Task<ActionResult> ClearAttentionSignals(string key)
+    {
+        var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (action is not null && !typeAuthService.CanWrite(action))
+            return Forbid();
+
+        return ToActionResult(await _handler.ClearAttentionSignalsAsync(HttpContext, key));
     }
 
     [NonAction]

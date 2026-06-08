@@ -1,91 +1,44 @@
-﻿using HashidsNet;
+using HashidsNet;
 
 namespace ShiftSoftware.ShiftEntity.Model.HashIds;
-public static class HashId
-{
-    internal static bool acceptUnencodedIds;
-    internal static bool Enabled;
-
-    internal static bool IdentityHashIdEnabled = false;
-    internal static string IdentityHashIdSalt = "";
-    internal static int IdentityHashIdMinLength;
-    internal static string? IdentityHashIdAlphabet;
-
-    public static void RegisterHashId(bool acceptUnencodedIds = false)
-    {
-        HashId.acceptUnencodedIds = acceptUnencodedIds;
-
-        HashId.Enabled = true;
-    }
-
-    public static void RegisterUserIdsHasher(string salt = "", int minHashLength = 0, string? alphabet = null)
-    {
-        HashId.IdentityHashIdSalt = salt;
-        HashId.IdentityHashIdMinLength = minHashLength;
-        HashId.IdentityHashIdAlphabet = alphabet;
-
-        HashId.IdentityHashIdEnabled = true;
-    }
-}
 
 public class ShiftEntityHashId
 {
-    Hashids hashids;
-    internal bool IsIdentityHasher = false;
+    private readonly Hashids hashids;
+    private readonly bool acceptUnencodedIds;
 
-    public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null)
+    public ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool acceptUnencodedIds = false)
     {
         if (alphabet == null)
             hashids = new Hashids(salt, minHashLength);
         else
             hashids = new Hashids(salt, minHashLength, alphabet);
-    }
 
-    internal ShiftEntityHashId(string salt, int minHashLength = 0, string? alphabet = null, bool userIdsHasher = false)
-        : this(salt, minHashLength, alphabet)
-    {
-        this.IsIdentityHasher = userIdsHasher;
+        this.acceptUnencodedIds = acceptUnencodedIds;
     }
 
     public long Decode(string hash)
     {
-        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
+        try
         {
-            try
+            return hashids.DecodeSingleLong(hash);
+        }
+        catch
+        {
+            if (acceptUnencodedIds)
             {
-                return hashids.DecodeSingleLong(hash);
-            }
-            catch
-            {
-                if (HashId.acceptUnencodedIds)
+                try
                 {
-                    try
-                    {
-                        return long.Parse(hash);
-                    }
-                    catch
-                    {
-                    }
+                    return long.Parse(hash);
                 }
-
-                return default;
+                catch
+                {
+                }
             }
-        }
-        else
-        {
-            return long.Parse(hash);
+
+            return default;
         }
     }
 
-    public string Encode(long id)
-    {
-        if ((HashId.Enabled && !this.IsIdentityHasher) || (HashId.IdentityHashIdEnabled && this.IsIdentityHasher))
-        {
-            return hashids.EncodeLong(id);
-        }
-        else
-        {
-            return id.ToString();
-        }
-    }
+    public string Encode(long id) => hashids.EncodeLong(id);
 }

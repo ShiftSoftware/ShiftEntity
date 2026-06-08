@@ -2,7 +2,7 @@
 
 public class CityHashIdConverter : JsonHashIdConverterAttribute<CityHashIdConverter>
 {
-    public CityHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public CityHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

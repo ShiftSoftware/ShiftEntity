@@ -15,7 +15,6 @@ public static class IServiceCollectionExtensions
         services.AddDbContext<TDbContext>((sp, options) => options.UseTriggers());
 
         services.AddTransient(typeof(IAfterSaveTrigger<>), typeof(ReplicateToCosmosDbAfterSaveTrigger<>));
-        services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(PreventChangePartitionKeyValueTrigger<>));
         services.AddTransient(typeof(IBeforeSaveTrigger<>), typeof(LogDeletedRowsTrigger<>));
         services.AddScoped(x =>
         {
@@ -27,8 +26,10 @@ public static class IServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddShiftEntityCosmosDbReplication(this IServiceCollection services)
+    public static IServiceCollection AddShiftEntityCosmosDbReplication<TDbContext>(this IServiceCollection services)
+        where TDbContext : ShiftDbContext
     {
+        services.AddDbContext<TDbContext>((sp, options) => options.UseTriggers());
         services.AddScoped<CosmosDBReplication>();
         return services;
     }

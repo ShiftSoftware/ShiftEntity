@@ -2,7 +2,7 @@
 
 public class RegionHashIdConverter : JsonHashIdConverterAttribute<RegionHashIdConverter>
 {
-    public RegionHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public RegionHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

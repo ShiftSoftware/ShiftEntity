@@ -1,22 +1,37 @@
-﻿using ShiftSoftware.ShiftEntity.Model.HashIds;
+using System;
+using System.Collections.Generic;
+using ShiftSoftware.ShiftEntity.Model.HashIds;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
+public sealed record HashIdConfiguration(string? Salt, int MinHashLength, string? Alphabet, bool AcceptUnencodedIds = false);
+
 public class HashIdOptions
 {
+    public IDictionary<string, HashIdConfiguration> Configurations { get; }
+        = new Dictionary<string, HashIdConfiguration>(StringComparer.Ordinal);
+
     public HashIdOptions RegisterHashId(bool acceptUnencodedIds)
     {
-        HashId.RegisterHashId(acceptUnencodedIds);
+        // Default registration with no explicit salt: enables unnamed attributes via the
+        // service.IsConfigurationRegistered("Default") gate while letting them keep using the
+        // salt/min/alphabet supplied to the attribute constructor.
+        this.Configurations[JsonHashIdConverterAttribute.DefaultConfigurationName]
+            = new HashIdConfiguration(Salt: null, MinHashLength: 0, Alphabet: null, AcceptUnencodedIds: acceptUnencodedIds);
+
         return this;
     }
 
-    public HashIdOptions RegisterIdentityHashId(string salt = "", int minHashLength = 0, string? alphabet = null)
+    public HashIdOptions RegisterHashId(string name, string salt, int minHashLength = 0, string? alphabet = null, bool acceptUnencodedIds = false)
     {
-        HashId.IdentityHashIdSalt = salt;
-        HashId.IdentityHashIdMinLength = minHashLength;
-        HashId.IdentityHashIdAlphabet = alphabet;
+        this.Configurations[name] = new HashIdConfiguration(salt, minHashLength, alphabet, acceptUnencodedIds);
+        return this;
+    }
 
-        HashId.IdentityHashIdEnabled = true;
+    public HashIdOptions RegisterIdentityHashId(string salt = "", int minHashLength = 0, string? alphabet = null, bool acceptUnencodedIds = false)
+    {
+        this.Configurations[JsonHashIdConverterAttribute.IdentityConfigurationName]
+            = new HashIdConfiguration(salt, minHashLength, alphabet, acceptUnencodedIds);
 
         return this;
     }

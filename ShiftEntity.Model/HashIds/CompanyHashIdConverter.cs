@@ -2,7 +2,7 @@
 
 public class CompanyHashIdConverter : JsonHashIdConverterAttribute<CompanyHashIdConverter>
 {
-    public CompanyHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public CompanyHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

@@ -1,13 +1,9 @@
-﻿using EntityFrameworkCore.Triggered;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Model;
-using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Linq;
-
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -19,9 +15,9 @@ public static class IMvcBuilderExtensions
     /// </summary>
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder, Action<ShiftEntityOptions> configure)
     {
-        builder.Services.Configure(configure);
+        builder.Services.AddShiftEntity(configure);
 
-        return AddShiftEntityWeb(builder);
+        return AddShiftEntityWebCore(builder);
     }
 
     /// <summary>
@@ -30,28 +26,27 @@ public static class IMvcBuilderExtensions
     /// </summary>
     public static IMvcBuilder AddShiftEntityWeb(this IMvcBuilder builder)
     {
-        builder.Services
-            .AddHttpContextAccessor()
-            .AddLocalization()
-            .AddShiftEntity();
+        builder.Services.AddShiftEntity();
 
-        // Configure JSON options from resolved ShiftEntityOptions
-        builder.Services.AddSingleton<IConfigureOptions<JsonOptions>>(p =>
-        {
-            var shiftEntityOptions = p.GetRequiredService<ShiftEntityOptions>();
+        return AddShiftEntityWebCore(builder);
+    }
 
-            Action<JsonOptions> options = (o) =>
-            {
-                o.JsonSerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
+    private static IMvcBuilder AddShiftEntityWebCore(IMvcBuilder builder)
+    {
+        // Core registration runs first via AddShiftEntity (called by the public overloads above).
+        // The shared web/functions plumbing (HashId JSON middleware, JsonOptions naming policy,
+        // HTTP context, localization, identity/data-level providers) is applied through
+        // AddShiftEntityWebSharedCore so the Functions Worker entry point reuses exactly the
+        // same wiring. Everything that remains here is MVC-controller-pipeline specific.
+        // OData middleware registration lives in the consumer's composition root (the
+        // commented-out AddShiftEntityOdata sample further down shows the shape) since EDM
+        // model construction is application-specific.
 
-                if (shiftEntityOptions.azureStorageOptions.Count > 0)
-                    o.RegisterAzureStorageServiceConverters(p.GetService<AzureStorageService>());
-            };
+        builder.Services.AddShiftEntityWebSharedCore();
 
-            return new ConfigureNamedOptions<JsonOptions>(Options.Options.DefaultName, options);
-        });
-
-        // Configure validation error wrapping from resolved ShiftEntityOptions
+        // MVC-only: wraps [ApiController] model-state 400 responses in ShiftEntityResponse.
+        // Functions Worker doesn't run through this pipeline, so this stays out of the shared
+        // helper.
         builder.Services.AddSingleton<IConfigureOptions<ApiBehaviorOptions>>(sp =>
         {
             var shiftEntityOptions = sp.GetRequiredService<ShiftEntityOptions>();
@@ -73,10 +68,6 @@ public static class IMvcBuilderExtensions
                 }
             });
         });
-
-        builder.Services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
-        builder.Services.AddScoped<IdentityClaimProvider>();
-        builder.Services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
         return builder;
     }

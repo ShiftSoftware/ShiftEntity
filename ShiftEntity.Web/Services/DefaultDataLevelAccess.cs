@@ -11,10 +11,10 @@ using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
+using ShiftSoftware.TypeAuth.Core.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
 
@@ -22,24 +22,20 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
 {
     private readonly ITypeAuthService typeAuthService;
     private readonly IdentityClaimProvider identityClaimProvider;
+    private readonly IHashIdService hashIdService;
 
-    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider)
+    public DefaultDataLevelAccess(ITypeAuthService typeAuthService, IdentityClaimProvider identityClaimProvider, IHashIdService hashIdService)
     {
         this.typeAuthService = typeAuthService;
         this.identityClaimProvider = identityClaimProvider;
+        this.hashIdService = hashIdService;
     }
 
     private List<long?>? GetAccessibleItems<TDto>(DynamicReadWriteDeleteAction claim, params string[]? selfId)
     {
-        var accessibleItemsTypeAuth = typeAuthService.GetAccessibleItems(claim, x => x == TypeAuth.Core.Access.Read, selfId!);
-
-        List<long?>? accessibleItems = accessibleItemsTypeAuth.WildCard ? null :
-            accessibleItemsTypeAuth
-            .AccessibleIds
-            .Select(x => x == TypeAuthContext.EmptyOrNullKey ? null : (long?)ShiftEntityHashIdService.Decode<TDto>(x))
-            .ToList();
-
-        return accessibleItems;
+        return typeAuthService
+            .GetReadableItems(claim, selfId!)
+            .ConvertIds<long>(x => hashIdService.Decode<TDto>(x));
     }
 
     public List<long?>? GetAccessibleCountries()
@@ -115,7 +111,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Countries,
                     access,
-                    entityWithCountry?.CountryID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CountryDTO>(entityWithCountry.CountryID.Value),
+                    entityWithCountry?.CountryID is null ? null : hashIdService.Encode<CountryDTO>(entityWithCountry.CountryID.Value),
                     this.identityClaimProvider.GetHashedCountryID()!
                 ))
                 {
@@ -131,7 +127,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Regions,
                     access,
-                    entityWithRegion?.RegionID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
+                    entityWithRegion?.RegionID is null ? null : hashIdService.Encode<RegionDTO>(entityWithRegion.RegionID.Value),
                     this.identityClaimProvider.GetHashedRegionID()!
                 ))
                 {
@@ -147,7 +143,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Companies,
                     access,
-                    entityWithCompany?.CompanyID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
+                    entityWithCompany?.CompanyID is null ? null : hashIdService.Encode<CompanyDTO>(entityWithCompany.CompanyID.Value),
                     this.identityClaimProvider.GetHashedCompanyID()!
                 ))
                 {
@@ -163,7 +159,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Branches,
                     access,
-                    entityWithCompanyBranch?.CompanyBranchID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
+                    entityWithCompanyBranch?.CompanyBranchID is null ? null : hashIdService.Encode<CompanyBranchDTO>(entityWithCompanyBranch.CompanyBranchID.Value),
                     this.identityClaimProvider.GetHashedCompanyBranchID()!
                 ))
                 {
@@ -179,7 +175,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Brands,
                     access,
-                    entityWithBrand?.BrandID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<BrandDTO>(entityWithBrand.BrandID.Value)
+                    entityWithBrand?.BrandID is null ? null : hashIdService.Encode<BrandDTO>(entityWithBrand.BrandID.Value)
                 ))
                 {
                     return false;
@@ -194,7 +190,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Cities,
                     access,
-                    entityWithCity?.CityID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<CityDTO>(entityWithCity.CityID.Value),
+                    entityWithCity?.CityID is null ? null : hashIdService.Encode<CityDTO>(entityWithCity.CityID.Value),
                     this.identityClaimProvider.GetHashedCityID()!
                 ))
                 {
@@ -210,7 +206,7 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
                 if (!typeAuthService.Can(
                     ShiftIdentityActions.DataLevelAccess.Teams,
                     access,
-                    entityWithTeam?.TeamID is null ? TypeAuthContext.EmptyOrNullKey : ShiftEntityHashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
+                    entityWithTeam?.TeamID is null ? null : hashIdService.Encode<TeamDTO>(entityWithTeam.TeamID.Value),
                     this.identityClaimProvider.GetHashedTeamIDs()?.ToArray()
                 ))
                 {
@@ -220,21 +216,6 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         }
 
         return true;
-    }
-
-    private IQueryable<T> ApplyFilter<T>(List<long?>? data, IQueryable<T> query, Expression<Func<T, long?>> valueSelector)
-    {
-        if (data is null)
-            return query;
-
-        return query.Where(Expression.Lambda<Func<T, bool>>(
-            Expression.Call(
-                Expression.Constant(data),
-                typeof(List<long?>).GetMethod("Contains", new[] { typeof(long?) })!,
-                valueSelector.Body
-            ),
-            valueSelector.Parameters
-        ));
     }
 
     public IQueryable<EntityType> ApplyDefaultDataLevelFilters<EntityType>(DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions, IQueryable<EntityType> query) where EntityType : notnull
@@ -256,61 +237,61 @@ public class DefaultDataLevelAccess : IDefaultDataLevelAccess
         var entityHasTeam = typeof(EntityType).GetInterfaces().Any(x => x.IsAssignableFrom(typeof(IEntityHasTeam<EntityType>)));
 
         if (entityHasCountry && !disableDefaultCountryFilter)
-            query = ApplyFilter(this.GetAccessibleCountries(), query, x => ((IEntityHasCountry<EntityType>)x).CountryID);
+            query = query.WhereIn(this.GetAccessibleCountries(), x => ((IEntityHasCountry<EntityType>)x).CountryID);
 
         if (entityHasRegion && !disableDefaultRegionFilter)
-            query = ApplyFilter(this.GetAccessibleRegions(), query, x => ((IEntityHasRegion<EntityType>)x).RegionID);
+            query = query.WhereIn(this.GetAccessibleRegions(), x => ((IEntityHasRegion<EntityType>)x).RegionID);
 
         if (entityHasCompany && !disableDefaultCompanyFilter)
-            query = ApplyFilter(this.GetAccessibleCompanies(), query, x => ((IEntityHasCompany<EntityType>)x).CompanyID);
+            query = query.WhereIn(this.GetAccessibleCompanies(), x => ((IEntityHasCompany<EntityType>)x).CompanyID);
 
         if (entityHasCompanyBranch && !disableDefaultCompanyBranchFilter)
-            query = ApplyFilter(this.GetAccessibleBranches(), query, x => ((IEntityHasCompanyBranch<EntityType>)x).CompanyBranchID);
+            query = query.WhereIn(this.GetAccessibleBranches(), x => ((IEntityHasCompanyBranch<EntityType>)x).CompanyBranchID);
 
         if (entityHasBrand && !disableDefaultBrandFilter)
-            query = ApplyFilter(this.GetAccessibleBrands(), query, x => ((IEntityHasBrand<EntityType>)x).BrandID);
+            query = query.WhereIn(this.GetAccessibleBrands(), x => ((IEntityHasBrand<EntityType>)x).BrandID);
 
         if (entityHasCity && !disableDefaultCityFilter)
-            query = ApplyFilter(this.GetAccessibleCities(), query, x => ((IEntityHasCity<EntityType>)x).CityID);
+            query = query.WhereIn(this.GetAccessibleCities(), x => ((IEntityHasCity<EntityType>)x).CityID);
 
         if (entityHasTeam && !disableDefaultTeamFilter)
-            query = ApplyFilter(this.GetAccessibleTeams(), query, x => ((IEntityHasTeam<EntityType>)x).TeamID);
+            query = query.WhereIn(this.GetAccessibleTeams(), x => ((IEntityHasTeam<EntityType>)x).TeamID);
 
         return query;
     }
 
     public IQueryable<EntityType> ApplyDefaultCountryFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCountry<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleCountries(), query, x => x.CountryID);
+        return query.WhereIn(this.GetAccessibleCountries(), x => x.CountryID);
     }
 
     public IQueryable<EntityType> ApplyDefaultRegionFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasRegion<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleRegions(), query, x => x.RegionID);
+        return query.WhereIn(this.GetAccessibleRegions(), x => x.RegionID);
     }
 
     public IQueryable<EntityType> ApplyDefaultCompanyFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompany<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleCompanies(), query, x => x.CompanyID);
+        return query.WhereIn(this.GetAccessibleCompanies(), x => x.CompanyID);
     }
 
     public IQueryable<EntityType> ApplyDefaultBranchFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCompanyBranch<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleBranches(), query, x => x.CompanyBranchID);
+        return query.WhereIn(this.GetAccessibleBranches(), x => x.CompanyBranchID);
     }
 
     public IQueryable<EntityType> ApplyDefaultBrandFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasBrand<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleBrands(), query, x => x.BrandID);
+        return query.WhereIn(this.GetAccessibleBrands(), x => x.BrandID);
     }
 
     public IQueryable<EntityType> ApplyDefaultCityFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasCity<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleCities(), query, x => x.CityID);
+        return query.WhereIn(this.GetAccessibleCities(), x => x.CityID);
     }
 
     public IQueryable<EntityType> ApplyDefaultTeamFilter<EntityType>(IQueryable<EntityType> query) where EntityType : IEntityHasTeam<EntityType>
     {
-        return ApplyFilter(this.GetAccessibleTeams(), query, x => x.TeamID);
+        return query.WhereIn(this.GetAccessibleTeams(), x => x.TeamID);
     }
 }

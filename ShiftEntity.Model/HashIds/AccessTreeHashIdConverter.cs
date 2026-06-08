@@ -2,7 +2,7 @@
 
 public class AccessTreeHashIdConverter : JsonHashIdConverterAttribute<AccessTreeHashIdConverter>
 {
-    public AccessTreeHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public AccessTreeHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

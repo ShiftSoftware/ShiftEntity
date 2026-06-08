@@ -3,7 +3,22 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShiftSoftware.ShiftEntity.Core;
 
-public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType> where EntityType : class
+/// <summary>
+/// Non-generic seam exposing the audit fields the repository's SaveChanges sweep stamps. Implemented by
+/// <see cref="ShiftEntity{EntityType}"/> so the sweep can stamp EVERY changed auditable row in a unit of work —
+/// cascaded children and unrelated entities alike — without needing each one's closed generic type.
+/// </summary>
+public interface IShiftEntityAudit
+{
+    DateTimeOffset CreateDate { get; set; }
+    DateTimeOffset LastSaveDate { get; set; }
+    long? CreatedByUserID { get; set; }
+    long? LastSavedByUserID { get; set; }
+    bool IsDeleted { get; set; }
+    bool AuditFieldsAreSet { get; set; }
+}
+
+public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType>, IShiftEntityAudit where EntityType : class
 {
     public DateTimeOffset CreateDate { get; set; }
     public DateTimeOffset LastSaveDate { get; set; }

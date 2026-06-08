@@ -1,4 +1,4 @@
-﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using System;
 using System.Collections.Generic;
@@ -18,16 +18,19 @@ public class ClaimValuesFilter<Entity> :
     private string? ClaimIdForClaimValuesProvider { get; set; }
 
     private readonly ICurrentUserProvider? CurrentUserProvider;
+    private readonly IHashIdService? HashIdService;
 
     public ClaimValuesFilter(
         Expression<Func<ClaimValuesFilterContext<Entity>, bool>> keySelector,
         ICurrentUserProvider? currentUserProvider,
+        IHashIdService? hashIdService,
         Guid id
     )
     {
         this.ID = id;
         this.KeySelector = keySelector;
         this.CurrentUserProvider = currentUserProvider;
+        this.HashIdService = hashIdService;
     }
 
     public ClaimValuesFilter<Entity> ValueProvider(string claimId)
@@ -60,10 +63,10 @@ public class ClaimValuesFilter<Entity> :
                 .Select(x => x.Value)?
                 .ToList();
 
-            if (claimValues is not null && DTOTypeForHashId is not null)
+            if (claimValues is not null && DTOTypeForHashId is not null && this.HashIdService is not null)
             {
                 claimValues = claimValues
-                    .Select(x => ShiftEntityHashIdService.Decode(x, DTOTypeForHashId).ToString())
+                    .Select(x => this.HashIdService.Decode(x, DTOTypeForHashId).ToString())
                     .ToList();
             }
         }

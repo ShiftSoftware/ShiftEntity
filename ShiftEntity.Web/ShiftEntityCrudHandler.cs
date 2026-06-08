@@ -6,10 +6,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Core.HashIds;
+using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
+using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using System;
 using System.Collections.Generic;
@@ -46,7 +53,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = await repository.GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
@@ -62,8 +69,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         ODataQueryOptions<RevisionDTO> oDataQueryOptions)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var data = repository.GetRevisionsAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key));
+        var data = repository.GetRevisionsAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         return await data.ToOdataDTO(oDataQueryOptions, httpContext.Request, applySoftDeleteFilter: false);
     }
@@ -74,12 +82,13 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         DateTimeOffset? asOf)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
         Entity? item;
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf);
         }
         catch (ShiftEntityException ex)
         {
@@ -134,7 +143,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                     idempotencyKey = Guid.Parse(header);
             }
 
-            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey);
         }
         catch (ShiftEntityException ex)
         {
@@ -149,7 +158,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
         catch (DuplicateIdempotencyKeyException)
         {
-            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
 
             var existingDto = await repository.ViewAsync(existingItem!);
 
@@ -174,7 +183,8 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             Additional = repository.AdditionalResponseData
         };
 
-        var createdKey = ShiftEntityHashIdService.Encode<ViewAndUpsertDTO>(newItem.ID);
+        var hashIdServiceForKey = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var createdKey = hashIdServiceForKey.Encode<ViewAndUpsertDTO>(newItem.ID);
 
         return (CrudResult.Created(createdBody, createdKey), newItem);
     }
@@ -186,6 +196,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         IReadOnlyDictionary<string, string[]>? validationErrors = null)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
         if (validationErrors is not null && validationErrors.Count > 0)
         {
@@ -196,7 +207,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
         }
         catch (ShiftEntityException ex)
         {
@@ -224,7 +235,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 );
             }
 
-            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID(), idempotencyKey: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -255,8 +266,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         bool isHardDelete)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var item = await repository.FindAsync(ShiftEntityHashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         if (item == null)
             return (CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -271,7 +283,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID(), disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -288,7 +300,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
 
         if (item.ReloadAfterSave)
-            item = await repository.FindAsync(item.ID, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(item.ID);
 
         var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item!))
         {
@@ -314,6 +326,144 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 Message = ex.Message,
                 Additional = ex.AdditionalData,
             });
+        }
+    }
+
+    /// <summary>
+    /// Generates a SAS token for the print endpoint. <paramref name="urlDescriptor"/> must
+    /// be the same string used by the print endpoint when validating the token (typically
+    /// the absolute path of the print-token route).
+    /// </summary>
+    public async Task<CrudResult> PrintTokenAsync(HttpContext httpContext, string key, string urlDescriptor)
+    {
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+
+        var found = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
+
+        if (found is null)
+            return CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
+            {
+                Message = new Message
+                {
+                    Title = "Not Found",
+                    Body = $"Can't find entity with ID '{key}'"
+                },
+                Additional = repository.AdditionalResponseData
+            });
+
+        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+
+        var (token, expires) = TokenService.GenerateSASToken(
+            urlDescriptor,
+            key,
+            DateTime.UtcNow.AddSeconds(options.TokenExpirationInSeconds),
+            options.SASTokenKey);
+
+        return CrudResult.Ok($"expires={expires}&token={token}");
+    }
+
+    /// <summary>
+    /// Validates a SAS token against <paramref name="urlDescriptor"/> (must match the
+    /// descriptor used by <see cref="PrintTokenAsync"/>) and returns true if valid.
+    /// </summary>
+    public bool ValidatePrintSASToken(HttpContext httpContext, string key, string urlDescriptor, string? expires, string? token)
+    {
+        if (string.IsNullOrEmpty(expires) || string.IsNullOrEmpty(token))
+            return false;
+
+        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+
+        return TokenService.ValidateSASToken(urlDescriptor, key, expires, token, options.SASTokenKey);
+    }
+
+    // ---- Attention ----
+
+    /// <summary>
+    /// Returns the stored attention signals for one entity. Single source of truth shared by the
+    /// controller (<c>ShiftEntitySecureControllerAsync.GetAttentionSignals</c>) and the minimal-API
+    /// <c>MapShiftEntitySecureCrud</c> endpoint, so the two surfaces can't drift.
+    /// <para>
+    /// Returns an empty list (200) when the entity hasn't opted into attention — the route is
+    /// exposed on every surface, so a 404 there reads as a real error in the browser; an empty
+    /// list is indistinguishable to the client from an opted-in entity with no signals yet.
+    /// </para>
+    /// </summary>
+    public async Task<CrudResult> GetAttentionSignalsAsync(HttpContext httpContext, string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return CrudResult.Ok(new List<StoredAttentionSignal>());
+
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+        var isIndexed = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(Entity));
+
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return CrudResult.Status(500, null);
+
+        List<StoredAttentionSignal> signals;
+
+        if (isIndexed)
+        {
+            var entries = await db.Set<AttentionSignalEntry>()
+                .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
+                .OrderByDescending(x => x.Severity)
+                .ThenByDescending(x => x.RaisedAt)
+                .ToListAsync();
+
+            signals = entries.Select(x => x.ToStoredSignal() with
+            {
+                EntityId = hashIdService.Encode<ViewAndUpsertDTO>(x.EntityId),
+            }).ToList();
+        }
+        else
+        {
+            var entity = await db.FindAsync(typeof(Entity), entityId);
+            if (entity is null)
+                return CrudResult.NotFound(null);
+
+            var entry = db.Entry(entity);
+            var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
+            signals = AttentionSignalJsonHelper.Deserialize(json);
+        }
+
+        return CrudResult.Ok(signals);
+    }
+
+    /// <summary>
+    /// Clears all active attention signals for one entity. Single source of truth shared by the
+    /// controller and the minimal-API endpoint. No-op (200) when the entity hasn't opted in.
+    /// </summary>
+    public async Task<CrudResult> ClearAttentionSignalsAsync(HttpContext httpContext, string key)
+    {
+        if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
+            return CrudResult.Ok(null);
+
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        var entityId = hashIdService.Decode<ViewAndUpsertDTO>(key);
+        var entityTypeName = typeof(Entity).Name;
+
+        var identityClaimProvider = httpContext.RequestServices.GetRequiredService<IdentityClaimProvider>();
+        long? userId = identityClaimProvider.GetUserID();
+
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        if ((repository as ShiftRepositoryBase)?.GetDbContext() is not ShiftDbContext db)
+            return CrudResult.Status(500, null);
+
+        try
+        {
+            var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+
+            // The clear advanced the entity's audit stamp (= the optimistic-concurrency
+            // version). Return it so a client holding the pre-clear DTO can patch its
+            // LastSaveDate instead of conflicting on the next save.
+            return CrudResult.Ok(new ClearAttentionResponse { LastSaveDate = lastSaveDate });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CrudResult.NotFound(ex.Message);
         }
     }
 
@@ -369,8 +519,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     {
         if (oDataQueryOptions?.Filter is not null)
         {
+            var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+
             var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression
-                .Accept(new HashIdQueryNodeVisitor<ListDTO>());
+                .Accept(new HashIdQueryNodeVisitor<ListDTO>(hashIdService));
 
             // Build a throwaway ODataQueryOptions carrying the rewritten filter,
             // without mutating the live request (the controller base used to mutate

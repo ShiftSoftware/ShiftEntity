@@ -23,17 +23,20 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
 
     private readonly ICurrentUserProvider? CurrentUserProvider;
     private readonly ITypeAuthService? TypeAuthService;
+    private readonly IHashIdService? HashIdService;
 
     public TypeAuthValuesFilter(
             Expression<Func<TypeAuthValuesFilterContext<Entity>, bool>> keySelector,
             ICurrentUserProvider? currentUserProvider,
             ITypeAuthService? TypeAuthService,
+            IHashIdService? hashIdService,
             Guid id
     )
     {
         this.KeySelector = keySelector;
         this.CurrentUserProvider = currentUserProvider;
         this.TypeAuthService = TypeAuthService;
+        this.HashIdService = hashIdService;
         this.ID = id;
     }
 
@@ -52,28 +55,18 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
         return this;
     }
 
-    private (List<string>? AccessibleIds, bool WildCard) GetTypeAuthValues(DynamicAction? dynamicAction, Access access, Type? dtoTypeForHashId, string[]? selfIds)
+    private (List<string>? AccessibleIds, bool WildCard) TransformResult(AccessibleItemsResult result, Type? dtoTypeForHashId)
     {
-        if (dynamicAction is not null)
+        var accessibleIds = result.AccessibleIds.ToList();
+
+        if (dtoTypeForHashId is not null && this.HashIdService is not null)
         {
-            var accessibleItems = this.TypeAuthService!.GetAccessibleItems(
-                dynamicAction,
-                x => x == access,
-                selfIds
-            );
-
-            if (accessibleItems.AccessibleIds is not null && dtoTypeForHashId is not null)
-            {
-                accessibleItems.AccessibleIds = accessibleItems
-                    .AccessibleIds
-                    .Select(x => ShiftEntityHashIdService.Decode(x, dtoTypeForHashId).ToString())
-                    .ToList();
-            }
-
-            return (accessibleItems.AccessibleIds, accessibleItems.WildCard);
+            accessibleIds = accessibleIds
+                .Select(x => this.HashIdService.Decode(x, dtoTypeForHashId).ToString())
+                .ToList();
         }
 
-        return (null, false);
+        return (accessibleIds, result.WildCard);
     }
 
     public ValueTask<Expression<Func<T, bool>>?> GetFilterExpression<T>() where T : ShiftEntity<T>
@@ -106,10 +99,12 @@ public class TypeAuthValuesFilter<Entity> : IGlobalRepositoryFilter
                    .ToArray();
             }
 
-            (readableTypeAuthValues, wildCardRead) = GetTypeAuthValues(this.DynamicAction, Access.Read, this.TypeAuthDTOTypeForHashId, selfIds);
-            (writableTypeAuthValues, wildCardWrite) = GetTypeAuthValues(this.DynamicAction, Access.Write, this.TypeAuthDTOTypeForHashId, selfIds);
-            (deletableTypeAuthValues, wildCardDelete) = GetTypeAuthValues(this.DynamicAction, Access.Delete, this.TypeAuthDTOTypeForHashId, selfIds);
-            (maxAccessTypeAuthValues, wildCardMaxAccess) = GetTypeAuthValues(this.DynamicAction, Access.Maximum, this.TypeAuthDTOTypeForHashId, selfIds);
+            var byAccess = this.TypeAuthService!.GetAccessibleItemsByAccess(this.DynamicAction, selfIds);
+
+            (readableTypeAuthValues, wildCardRead) = TransformResult(byAccess.Read, this.TypeAuthDTOTypeForHashId);
+            (writableTypeAuthValues, wildCardWrite) = TransformResult(byAccess.Write, this.TypeAuthDTOTypeForHashId);
+            (deletableTypeAuthValues, wildCardDelete) = TransformResult(byAccess.Delete, this.TypeAuthDTOTypeForHashId);
+            (maxAccessTypeAuthValues, wildCardMaxAccess) = TransformResult(byAccess.Maximum, this.TypeAuthDTOTypeForHashId);
         }
 
         var entityParam = Expression.Parameter(typeof(T), "entity");

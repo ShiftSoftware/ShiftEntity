@@ -2,7 +2,7 @@
 
 public class TeamHashIdConverter : JsonHashIdConverterAttribute<TeamHashIdConverter>
 {
-    public TeamHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public TeamHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

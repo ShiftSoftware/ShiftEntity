@@ -2,7 +2,7 @@
 
 public class DepartmentHashIdConverter : JsonHashIdConverterAttribute<DepartmentHashIdConverter>
 {
-    public DepartmentHashIdConverter() : base(HashId.IdentityHashIdMinLength, HashId.IdentityHashIdSalt, HashId.IdentityHashIdAlphabet, true)
+    public DepartmentHashIdConverter() : base(configurationName: IdentityConfigurationName)
     {
     }
 }

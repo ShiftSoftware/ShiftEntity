@@ -1,6 +1,6 @@
-﻿
-namespace ShiftSoftware.ShiftEntity.Core;
+﻿namespace ShiftSoftware.ShiftEntity.Core;
 
 public class ShiftRepositoryBase
 {
+    public virtual object? GetDbContext() => null;
 }

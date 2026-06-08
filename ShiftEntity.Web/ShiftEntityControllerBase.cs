@@ -21,7 +21,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     // Single source of truth for CRUD/revisions/print/selection logic.
     // Every *NonAction method in this file is a thin adapter over the handler
     // that converts CrudResult → ActionResult and ModelState → validation dict.
-    private readonly ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDTO> _handler = new();
+    protected readonly ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDTO> _handler = new();
 
     [NonAction]
     internal Task<ODataDTO<ListDTO>> GetOdataListingNonAction(ODataQueryOptions<ListDTO> oDataQueryOptions, System.Linq.Expressions.Expression<Func<Entity, bool>>? where = null)
@@ -80,6 +80,21 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         return StatusCode(result.StatusCode, result.Body);
     }
 
+    [NonAction]
+    internal async Task<ActionResult> PrintTokenNonAction(string key, string urlDescriptor)
+    {
+        var result = await _handler.PrintTokenAsync(HttpContext, key, urlDescriptor);
+
+        if (result.StatusCode == 200)
+            return Ok(result.Body);
+
+        return StatusCode(result.StatusCode, result.Body);
+    }
+
+    [NonAction]
+    internal bool ValidatePrintSASTokenNonAction(string key, string urlDescriptor, string? expires, string? token)
+        => _handler.ValidatePrintSASToken(HttpContext, key, urlDescriptor, expires, token);
+
     internal Task<List<ListDTO>> GetSelectedListDTOsAsyncBase(
         ODataQueryOptions<ListDTO> oDataQueryOptions,
         bool disableDefaultDataLevelAccess = false,
@@ -118,7 +133,7 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
                 : x.Value.Errors.Select(e => e.ErrorMessage).ToArray());
     }
 
-    private ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ToActionResult(CrudResult result)
+    protected ActionResult ToActionResult(CrudResult result)
     {
         return result.StatusCode switch
         {
