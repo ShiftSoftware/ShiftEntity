@@ -3,6 +3,7 @@ using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model.Enums;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
@@ -55,6 +56,48 @@ internal static class Utility
             builder.Add(Double.Parse(value));
         else if (type == PartitionKeyTypes.Boolean)
             builder.Add(Boolean.Parse(value));
+    }
+
+    /// <summary>
+    /// Serialize the partition-key levels (value + type) into a stable string for persistence on the entity.
+    /// Deterministic: equal partition keys produce equal strings, so a plain string comparison detects changes.
+    /// Returns null when there are no levels.
+    /// </summary>
+    internal static string? SerializePartitionKeyLevels(
+        (string? value, PartitionKeyTypes type)? level1,
+        (string? value, PartitionKeyTypes type)? level2,
+        (string? value, PartitionKeyTypes type)? level3)
+    {
+        var levels = new List<PartitionKeyLevel>();
+        if (level1.HasValue) levels.Add(new PartitionKeyLevel { Value = level1.Value.value, Type = level1.Value.type });
+        if (level2.HasValue) levels.Add(new PartitionKeyLevel { Value = level2.Value.value, Type = level2.Value.type });
+        if (level3.HasValue) levels.Add(new PartitionKeyLevel { Value = level3.Value.value, Type = level3.Value.type });
+
+        if (levels.Count == 0)
+            return null;
+
+        return JsonSerializer.Serialize(levels);
+    }
+
+    /// <summary>
+    /// Rebuild a <see cref="PartitionKey"/> from a string produced by <see cref="SerializePartitionKeyLevels"/>,
+    /// so the stale document can be deleted under its previous key.
+    /// </summary>
+    internal static PartitionKey BuildPartitionKey(string serializedLevels)
+    {
+        var levels = JsonSerializer.Deserialize<List<PartitionKeyLevel>>(serializedLevels) ?? new();
+
+        var builder = new PartitionKeyBuilder();
+        foreach (var level in levels)
+            AddPrtitionKey(builder, level.Value, level.Type);
+
+        return builder.Build();
+    }
+
+    private sealed class PartitionKeyLevel
+    {
+        public string? Value { get; set; }
+        public PartitionKeyTypes Type { get; set; }
     }
 
     internal static (PartitionKey? partitionKey,
