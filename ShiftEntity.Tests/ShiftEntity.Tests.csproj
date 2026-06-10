@@ -26,6 +26,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+		<ProjectReference Include="..\ShiftEntity.CosmosDbReplication\ShiftEntity.CosmosDbReplication.csproj" />
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 		<!-- Phase 4 (standard-profile parity): the profile + the real legacy DefaultDataLevelAccess live in Web;

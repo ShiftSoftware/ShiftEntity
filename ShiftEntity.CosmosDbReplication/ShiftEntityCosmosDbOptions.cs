@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model.Enums;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
@@ -138,7 +139,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     internal Func<EntityWrapper<Entity>, object>? ReplicateMapping { get; private set; }
     internal Type ReplicateComsomsDbItemType { get; private set; }
 
-    private Func<Entity, IServiceProvider, Database, Task<bool>> replicateAction;
+    private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp)>> replicateAction;
     private Func<Entity, Entity, IServiceProvider, Database, Task<bool>> deletePreviousPartitionKeyAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
@@ -197,12 +198,21 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var response = await container.UpsertItemAsync(item);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.OK ||
+            bool success = response.StatusCode == System.Net.HttpStatusCode.OK ||
                     response.StatusCode == System.Net.HttpStatusCode.Created ||
-                    response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                return true;
+                    response.StatusCode == System.Net.HttpStatusCode.NoContent;
 
-            return false;
+            //On success, capture the id + partition key this row was replicated under so RunAsync can persist it on
+            //the entity — only for entities that opt into IHasLastReplicationStamp. The catch-up function later reads
+            //this stamp to detect an id/partition-key change and delete the stale document under its OLD id + key.
+            string? stamp = null;
+            if (success && entity is IHasLastReplicationStamp)
+            {
+                var containerResponse = await container.ReadContainerAsync();
+                stamp = Utility.BuildStamp(containerResponse, item!).Serialize();
+            }
+
+            return (success, stamp);
         };
 
         this.deletePreviousPartitionKeyAction = async (entity, unmodifiedEntity, services, db) =>
@@ -222,7 +232,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 oldItem = autoMapper.Map<CosmosDbItem>(unmodifiedEntity);
             }
 
-            if (!PartitionKeyChanged(newItem!, oldItem!))
+            if (!ReplicationKeyChanged(newItem!, oldItem!))
                 return true;
 
             var container = db.GetContainer(cosmosContainerId);
@@ -289,8 +299,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             };
     }
 
-    private bool PartitionKeyChanged(object newItem, object oldItem)
+    private bool ReplicationKeyChanged(object newItem, object oldItem)
     {
+        //A Cosmos document is addressed by its id + partition key; either changing means the old document must be
+        //deleted under its old coordinates before the new one is written.
+        if (!ValuesEqual(newItem.GetProperty("id"), oldItem.GetProperty("id")))
+            return true;
+
         if (PartitionKeyLevel1Action is not null && !ValuesEqual(PartitionKeyLevel1Action(newItem)?.value, PartitionKeyLevel1Action(oldItem)?.value))
             return true;
 
@@ -596,6 +611,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails,
             bool isSucceeded) replicateDeleteItemInfo = new();
         bool? isSucceeded = null;
+        string? replicationStamp = null;
 
         //Do the mapping if not null
         if (setupMapping is not null)
@@ -638,7 +654,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var result = await this.replicateAction(entity, serviceProvider, db);
 
-            isSucceeded = isSucceeded.GetValueOrDefault(true) && result;
+            isSucceeded = isSucceeded.GetValueOrDefault(true) && result.success;
+            replicationStamp = result.stamp;
         }
 
         if (changeType == ChangeType.Modified)
@@ -676,18 +693,25 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
 
         if (isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
-            UpdateLastReplicationDateAsync(dbContext, entity);
+            UpdateLastReplicationDateAsync(dbContext, entity, replicationStamp);
         else if (isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
             await UpdateDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
 
         await dbContext.SaveChangesWithoutTriggersAsync();
     }
 
-    private void UpdateLastReplicationDateAsync(ShiftDbContext dbContext, Entity entity)
+    private void UpdateLastReplicationDateAsync(ShiftDbContext dbContext, Entity entity, string? stamp)
     {
         entity.UpdateReplicationDate();
         dbContext.Attach(entity);
         dbContext.Entry(entity).Property(nameof(ShiftEntity<object>.LastReplicationDate)).IsModified = true;
+
+        //Persist the stamp only for entities that opt into the interface; others have no such column.
+        if (entity is IHasLastReplicationStamp stampHolder)
+        {
+            stampHolder.LastReplicationStamp = stamp;
+            dbContext.Entry(entity).Property(nameof(IHasLastReplicationStamp.LastReplicationStamp)).IsModified = true;
+        }
     }
 
     private async Task UpdateDeleteRowAsync(ShiftDbContext dbContext, Entity entity, long rowId, (PartitionKey? partitionKey,

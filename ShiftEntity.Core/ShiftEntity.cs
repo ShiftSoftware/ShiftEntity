@@ -23,13 +23,6 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType>, ISh
     public DateTimeOffset CreateDate { get; set; }
     public DateTimeOffset LastSaveDate { get; set; }
     public DateTimeOffset? LastReplicationDate { get; internal set; }
-
-    /// <summary>
-    /// The Cosmos partition key (serialized) this row was last replicated under. Persisted by the replication
-    /// pipeline so the next sync can detect a partition-key change and delete the stale document under the OLD
-    /// key before upserting under the new one — without reconstructing the previous entity from temporal history.
-    /// </summary>
-    public string? LastReplicationPartitionKey { get; internal set; }
     public long? CreatedByUserID { get; set; }
     public long? LastSavedByUserID { get; set; }
     public bool IsDeleted { get; set; }
@@ -56,13 +49,5 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType>, ISh
     public void UpdateReplicationDate()
     {
         LastReplicationDate = LastSaveDate;
-    }
-
-    /// <summary>
-    /// Record the Cosmos partition key (serialized) this row was last replicated under.
-    /// </summary>
-    public void SetLastReplicationPartitionKey(string? partitionKey)
-    {
-        LastReplicationPartitionKey = partitionKey;
     }
 }

@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Net;
@@ -120,10 +121,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     ConcurrentDictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
     ConcurrentDictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
-    //Keyed by entity ID, holds the partition key (serialized) computed during this sync. Written back to each
-    //entity's LastReplicationPartitionKey after a successful upsert so the NEXT sync can detect a partition-key
-    //change and delete the stale Cosmos document under the OLD key before upserting the new one.
-    Dictionary<long, string?> pendingPartitionKeys = new();
+    //Keyed by entity ID, holds the serialized LastReplicationStamp (document id + partition-key levels) computed
+    //during this sync. Written back to each entity's LastReplicationPartitionKey column after a successful upsert so
+    //the NEXT sync can detect an id or partition-key change and delete the stale Cosmos document under the OLD id +
+    //key before upserting the new one.
+    Dictionary<long, string> pendingStamps = new();
 
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
@@ -183,37 +185,42 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                 var entityId = entity.ID;
 
-                //Detect a partition-key change since the last successful sync and remove the stale Cosmos
-                //document under the OLD key before upserting under the new one (Cosmos can't mutate a document's
-                //PK, so a naive upsert would orphan the old doc). The old key is the one we persisted on the
-                //entity at the previous sync (LastReplicationPartitionKey) — no temporal-history lookup, and the
-                //mapping only ever runs on the fully loaded current entity, so navigation-derived keys/fields are
-                //always populated.
-                var newKeyDetails = Utility.GetPartitionKeyDetails(containerResponse, newItem!);
-                var newPartitionKey = Utility.SerializePartitionKeyLevels(newKeyDetails.level1, newKeyDetails.level2, newKeyDetails.level3);
-                var oldPartitionKeySerialized = entity.LastReplicationPartitionKey;
-
+                //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
+                //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
+                //id or PK, so a naive upsert would orphan the old doc). Only entities that opt into
+                //IHasLastReplicationStamp track this — others skip the stamp steps and just upsert. The mapping only
+                //ever runs on the fully loaded current entity, so navigation-derived keys/fields are always populated.
+                string? deleteId = null;
                 PartitionKey? oldPartitionKey = null;
-                if (oldPartitionKeySerialized is not null && oldPartitionKeySerialized != newPartitionKey)
-                    oldPartitionKey = Utility.BuildPartitionKey(oldPartitionKeySerialized);
 
-                this.pendingPartitionKeys[entityId] = newPartitionKey;
+                if (entity is IHasLastReplicationStamp stampHolder)
+                {
+                    var newStamp = Utility.BuildStamp(containerResponse, newItem!);
+                    var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
 
-                cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, oldPartitionKey));
+                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                    {
+                        deleteId = oldStamp.Id;
+                        oldPartitionKey = oldStamp.BuildPartitionKey();
+                    }
+
+                    this.pendingStamps[entityId] = newStamp.Serialize();
+                }
+
+                cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
             }
 
             await Task.WhenAll(cosmosTasks);
 
-            async Task UpsertWithPartitionKeyChangeHandlingAsync(Microsoft.Azure.Cosmos.Container c, CosmosDBItem item, long id, PartitionKey? deletePk)
+            async Task UpsertWithPartitionKeyChangeHandlingAsync(Microsoft.Azure.Cosmos.Container c, CosmosDBItem item, long id, string? deleteId, PartitionKey? deletePk)
             {
                 bool success = true;
 
-                if (deletePk.HasValue)
+                if (deletePk.HasValue && deleteId is not null)
                 {
-                    var idString = Convert.ToString(item!.GetProperty("id"));
                     try
                     {
-                        await c.DeleteItemAsync<CosmosDBItem>(idString, deletePk.Value);
+                        await c.DeleteItemAsync<CosmosDBItem>(deleteId, deletePk.Value);
                     }
                     catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                     {
@@ -598,8 +605,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             {
                 entity.UpdateReplicationDate();
 
-                if (this.pendingPartitionKeys.TryGetValue(entity.ID, out var partitionKey))
-                    entity.SetLastReplicationPartitionKey(partitionKey);
+                if (entity is IHasLastReplicationStamp stampHolder && this.pendingStamps.TryGetValue(entity.ID, out var stamp))
+                    stampHolder.LastReplicationStamp = stamp;
             }
     }
 
@@ -641,7 +648,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.cosmosDeleteSuccesses = null!;
         this.cosmosUpsertSuccesses = null!;
 
-        this.pendingPartitionKeys = null!;
+        this.pendingStamps = null!;
 
         this.cosmosDatabase = null!;
     }
