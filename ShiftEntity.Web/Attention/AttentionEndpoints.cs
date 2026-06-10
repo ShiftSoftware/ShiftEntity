@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
@@ -48,6 +50,7 @@ public static class AttentionEndpoints
             TDbContext db,
             IHashIdService hashIdService,
             IdentityClaimProvider identityClaimProvider,
+            IServiceProvider serviceProvider,
             [FromBody] ClearAttentionRequest request) =>
         {
             var dtoType = entityDtoMap.GetDtoType(request.EntityType);
@@ -60,6 +63,18 @@ public static class AttentionEndpoints
             try
             {
                 var lastSaveDate = await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId);
+
+                // Clearing raises no AttentionRaised event — push a real-time hint so other
+                // sessions drop the indicator. Best-effort + opt-in (skipped when the hub isn't
+                // registered; a failed send never fails the clear).
+                var broadcaster = serviceProvider.GetService<IAttentionRealtimeBroadcaster>();
+                if (broadcaster is not null)
+                {
+                    // Exclude the window that performed the clear — it already dropped its own banner.
+                    var origin = serviceProvider.GetService<IAttentionOriginProvider>()?.OriginConnectionId;
+                    try { await broadcaster.BroadcastClearedAsync(request.EntityType, entityId, origin); }
+                    catch { /* realtime hint is best-effort */ }
+                }
 
                 // Same contract as the per-entity controller endpoint: return the post-clear
                 // audit stamp so clients can keep their loaded DTO's concurrency version current.
@@ -93,5 +108,16 @@ public static class AttentionEndpoints
 
         return endpoints;
     }
+
+    /// <summary>
+    /// Maps the <see cref="AttentionHub"/> SignalR endpoint (default route
+    /// <see cref="AttentionRealtime.DefaultHubRoute"/>). The hub itself requires authentication
+    /// (<c>[Authorize]</c>). Call alongside <c>services.AddAttentionHub()</c>; apps that do
+    /// neither expose no hub.
+    /// </summary>
+    public static HubEndpointConventionBuilder MapAttentionHub(
+        this IEndpointRouteBuilder endpoints,
+        string pattern = AttentionRealtime.DefaultHubRoute)
+        => endpoints.MapHub<AttentionHub>(pattern);
 
 }

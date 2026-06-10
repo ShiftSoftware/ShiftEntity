@@ -41,4 +41,19 @@ public sealed record AttentionRaised
     /// <see cref="EntityType"/> and <see cref="EntityId"/> are the authoritative identity.
     /// </remarks>
     public required StoredAttentionSignal Signal { get; init; }
+
+    /// <summary>
+    /// The <c>AttentionHub</c> connection id of the window that performed the save, when it was
+    /// supplied (the client stamps it via <see cref="AttentionRealtime.OriginHeader"/>). A
+    /// real-time consumer that fans the event out over SignalR excludes this connection so the
+    /// originating window isn't notified about its own change. <c>null</c> for saves with no
+    /// originating hub connection — a background job, a timer, or a client not on the hub — in
+    /// which case the hint goes to the whole group.
+    /// </summary>
+    /// <remarks>
+    /// Captured during the save (while the request context is still current) and carried on the
+    /// event because the real-time fan-out runs later on a background drain loop, detached from
+    /// the originating request — the connection id can't be recovered at broadcast time.
+    /// </remarks>
+    public string? OriginConnectionId { get; init; }
 }
