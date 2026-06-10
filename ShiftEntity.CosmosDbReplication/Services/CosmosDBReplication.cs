@@ -29,7 +29,7 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
     {
         return new CosmosDbReplicationOperation<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
@@ -37,7 +37,7 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
     {
         return new CosmosDbReplicationOperation<DB, Entity>(client, cosmosDataBaseId, services, query);
     }

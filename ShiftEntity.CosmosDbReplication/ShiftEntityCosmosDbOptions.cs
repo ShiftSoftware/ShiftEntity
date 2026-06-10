@@ -29,7 +29,7 @@ public class ShiftEntityCosmosDbOptions
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
         where DB : ShiftDbContext
     {
         return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
@@ -37,7 +37,7 @@ public class ShiftEntityCosmosDbOptions
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
         where DB : ShiftDbContext
     {
         return new(client, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
