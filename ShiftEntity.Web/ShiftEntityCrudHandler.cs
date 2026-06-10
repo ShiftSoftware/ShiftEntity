@@ -456,6 +456,19 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         {
             var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
 
+            // Clearing raises no AttentionRaised event, so push a real-time hint here too —
+            // otherwise other sessions with this entity's list/form open would keep showing the
+            // (now-cleared) indicator until their next manual refresh. Best-effort + opt-in:
+            // absent when the hub isn't registered, and a failed send never fails the clear.
+            var broadcaster = httpContext.RequestServices.GetService<Attention.IAttentionRealtimeBroadcaster>();
+            if (broadcaster is not null)
+            {
+                // Exclude the window that performed the clear — it already dropped its own banner.
+                var origin = httpContext.RequestServices.GetService<IAttentionOriginProvider>()?.OriginConnectionId;
+                try { await broadcaster.BroadcastClearedAsync(entityTypeName, entityId, origin); }
+                catch { /* realtime hint is best-effort — never fail the clear over it */ }
+            }
+
             // The clear advanced the entity's audit stamp (= the optimistic-concurrency
             // version). Return it so a client holding the pre-clear DTO can patch its
             // LastSaveDate instead of conflicting on the next save.

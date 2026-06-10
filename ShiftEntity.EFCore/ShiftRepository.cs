@@ -683,6 +683,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             raisedAttention = [];
 
+            // The originating window's hub connection id (stamped on the request via
+            // AttentionRealtime.OriginHeader), captured now while the request context is current —
+            // the real-time fan-out runs later on a background loop where it can no longer be
+            // read. Carried on each event so the notifier can exclude that window. Null when the
+            // hub isn't wired or the save has no originating hub connection (background/timer).
+            var attentionServiceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
+            var originConnectionId = attentionServiceProvider.GetService<IAttentionOriginProvider>()?.OriginConnectionId;
+
             foreach (var outcome in attentionOutcomes)
             {
                 var attentionEntityId = (long)outcome.Entry.Property("ID").CurrentValue!;
@@ -694,6 +702,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                         EntityType = outcome.EntityTypeName,
                         EntityId = attentionEntityId,
                         Signal = signal,
+                        OriginConnectionId = originConnectionId,
                     });
                 }
             }
