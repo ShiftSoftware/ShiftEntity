@@ -9,8 +9,13 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 
+//Registered as an open generic for every entity type; the DI container only materializes it for types that
+//satisfy the constraints (it already skips the base/interface closures Triggered probes), so saves of entities
+//that don't implement IShiftEntityReplication never enter this trigger — they can't be set up for replication
+//in the first place. The operations-null check below covers the remaining case: an entity that implements the
+//interface but has no SetUpReplication registration.
 internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : ShiftEntity<EntityType>, IShiftEntityReplication
 {
     private readonly IServiceProvider serviceProvider;
     private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;

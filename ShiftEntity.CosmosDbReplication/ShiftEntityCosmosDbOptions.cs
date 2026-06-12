@@ -29,7 +29,7 @@ public class ShiftEntityCosmosDbOptions
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
-        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
         where DB : ShiftDbContext
     {
         return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB));
@@ -37,7 +37,7 @@ public class ShiftEntityCosmosDbOptions
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
-        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
         where DB : ShiftDbContext
     {
         return new(client, cosmosDataBaseId, mapper, this.internalServices, typeof(DB));
@@ -45,7 +45,7 @@ public class ShiftEntityCosmosDbOptions
 }
 
 public class CosmosDbTriggerReplicateOperation<Entity>
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
 
@@ -122,7 +122,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
 }
 
 public class CosmosDbTriggerReferenceOperations<Entity>
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string cosmosDbConnectionString;
     private readonly string cosmosDataBaseId;
@@ -191,24 +191,20 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             //re-mapping the pre-save entity snapshot: a mapping that leaves a partition-key component unset (or
             //derives values from navigations) reconstructs coordinates that don't match the stored document, so
             //such a delete silently misses (404) and the old document is orphaned.
-            string? stamp = null;
             string? staleId = null;
             PartitionKey? stalePartitionKey = null;
 
-            if (entity is IHasLastReplicationStamp stampHolder)
+            var containerResponse = await container.ReadContainerAsync();
+            var newStamp = Utility.BuildStamp(containerResponse, item!);
+            var oldStamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+
+            if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
             {
-                var containerResponse = await container.ReadContainerAsync();
-                var newStamp = Utility.BuildStamp(containerResponse, item!);
-                var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
-
-                if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
-                {
-                    staleId = oldStamp.Id;
-                    stalePartitionKey = oldStamp.BuildPartitionKey();
-                }
-
-                stamp = newStamp.Serialize();
+                staleId = oldStamp.Id;
+                stalePartitionKey = oldStamp.BuildPartitionKey();
             }
+
+            string stamp = newStamp.Serialize();
 
             if (staleId is not null && stalePartitionKey.HasValue)
             {
@@ -436,7 +432,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
 
         if (isSucceeded.GetValueOrDefault(false))
-            UpdateLastReplicationDateAsync(dbContext, entity, replicationStamp);
+            ApplyReplicationBookkeeping(dbContext, entity, replicationStamp);
 
         //A replication-bookkeeping save: only the replication columns marked modified above may be written. No
         //triggers, and no audit backfill — explicit suppression rather than relying on the attached entity's
@@ -445,18 +441,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             await dbContext.SaveChangesWithoutTriggersAsync();
     }
 
-    private void UpdateLastReplicationDateAsync(ShiftDbContext dbContext, Entity entity, string? stamp)
+    private void ApplyReplicationBookkeeping(ShiftDbContext dbContext, Entity entity, string? stamp)
     {
-        entity.UpdateReplicationDate();
-        dbContext.Attach(entity);
-        dbContext.Entry(entity).Property(nameof(ShiftEntity<object>.LastReplicationDate)).IsModified = true;
+        entity.MarkReplicated(stamp);
 
-        //Persist the stamp only for entities that opt into the interface; others have no such column.
-        if (entity is IHasLastReplicationStamp stampHolder)
-        {
-            stampHolder.LastReplicationStamp = stamp;
-            dbContext.Entry(entity).Property(nameof(IHasLastReplicationStamp.LastReplicationStamp)).IsModified = true;
-        }
+        dbContext.Attach(entity);
+        dbContext.Entry(entity).Property(nameof(IShiftEntityReplication.LastReplicationDate)).IsModified = true;
+        dbContext.Entry(entity).Property(nameof(IShiftEntityReplication.LastReplicationStamp)).IsModified = true;
     }
 
 }

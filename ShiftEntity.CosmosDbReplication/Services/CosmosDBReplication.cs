@@ -29,7 +29,7 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
     {
         return new CosmosDbReplicationOperation<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
@@ -37,14 +37,14 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
     {
         return new CosmosDbReplicationOperation<DB, Entity>(client, cosmosDataBaseId, services, query);
     }
 }
 public class CosmosDbReplicationOperation<DB, Entity>
     where DB : ShiftDbContext
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string? cosmosDbConnectionString;
     private readonly string cosmosDbDatabaseId;
@@ -98,7 +98,7 @@ public class CosmosDbReplicationOperation<DB, Entity>
 
 public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     where DB : ShiftDbContext
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string cosmosDbConnectionString;
     private CosmosClient client;
@@ -186,25 +186,21 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                     //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
                     //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
-                    //id or PK, so a naive upsert would orphan the old doc). Only entities that opt into
-                    //IHasLastReplicationStamp track this — others skip the stamp steps and just upsert. The mapping only
-                    //ever runs on the fully loaded current entity, so navigation-derived keys/fields are always populated.
+                    //id or PK, so a naive upsert would orphan the old doc). The mapping only ever runs on the fully
+                    //loaded current entity, so navigation-derived keys/fields are always populated.
                     string? deleteId = null;
                     PartitionKey? oldPartitionKey = null;
 
-                    if (entity is IHasLastReplicationStamp stampHolder)
+                    var newStamp = Utility.BuildStamp(containerResponse, newItem!);
+                    var oldStamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+
+                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
                     {
-                        var newStamp = Utility.BuildStamp(containerResponse, newItem!);
-                        var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
-
-                        if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
-                        {
-                            deleteId = oldStamp.Id;
-                            oldPartitionKey = oldStamp.BuildPartitionKey();
-                        }
-
-                        this.pendingStamps[entityId] = newStamp.Serialize();
+                        deleteId = oldStamp.Id;
+                        oldPartitionKey = oldStamp.BuildPartitionKey();
                     }
+
+                    this.pendingStamps[entityId] = newStamp.Serialize();
 
                     cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
                 }
@@ -430,7 +426,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await action.Invoke();
         }
 
-        UpdateLastReplicationDatesAsync();
+        ApplyReplicationBookkeeping();
 
         //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
         //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
@@ -441,16 +437,16 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.Dispose();
     }
 
-    private void UpdateLastReplicationDatesAsync()
+    private void ApplyReplicationBookkeeping()
     {
+        //Success implies a pending stamp exists: the upsert action records it before queueing the Cosmos call,
+        //and rows whose mapping or stamp computation threw are marked unsuccessful. The TryGetValue keeps the
+        //unreachable missing-stamp case on the safe side — the row stays dirty and is retried, rather than being
+        //marked clean with stale coordinates.
         foreach (var entity in this.entities)
-            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get())
-            {
-                entity.UpdateReplicationDate();
-
-                if (entity is IHasLastReplicationStamp stampHolder && this.pendingStamps.TryGetValue(entity.ID, out var stamp))
-                    stampHolder.LastReplicationStamp = stamp;
-            }
+            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get() &&
+                this.pendingStamps.TryGetValue(entity.ID, out var stamp))
+                entity.MarkReplicated(stamp);
     }
 
     private void ResetUpsertSuccess()
