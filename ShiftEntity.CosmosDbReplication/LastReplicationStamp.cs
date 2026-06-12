@@ -26,7 +26,10 @@ public class LastReplicationStamp
 
     /// <summary>
     /// Deserialize a stamp previously produced by <see cref="Serialize"/>. Returns <see langword="null"/> for a
-    /// missing/blank value or any content that isn't a valid stamp (so a never-synced row simply has no old stamp).
+    /// missing/blank value, any content that isn't a valid stamp, or a stamp whose levels cannot be rebuilt into a
+    /// partition key (e.g. a Numeric level holding "" or garbage) — all degrade to "this row has no old stamp", so
+    /// the sync skips the stale-delete, upserts, and persists a fresh correct stamp instead of throwing. The stamp
+    /// is data read from a database column; one malformed row must not poison a whole sync run.
     /// </summary>
     public static LastReplicationStamp? Deserialize(string? serialized)
     {
@@ -35,12 +38,29 @@ public class LastReplicationStamp
 
         try
         {
-            return JsonSerializer.Deserialize<LastReplicationStamp>(serialized);
+            var stamp = JsonSerializer.Deserialize<LastReplicationStamp>(serialized);
+
+            return stamp is not null && LevelIsRebuildable(stamp.Level1) && LevelIsRebuildable(stamp.Level2)
+                && LevelIsRebuildable(stamp.Level3) ? stamp : null;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static bool LevelIsRebuildable(PartitionKeyLevelStamp? level)
+    {
+        if (level is null || level.Value is null)
+            return true; // an absent level, or a recorded null component — both rebuild fine
+
+        return level.Type switch
+        {
+            PartitionKeyTypes.String => true,
+            PartitionKeyTypes.Numeric => double.TryParse(level.Value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out _),
+            PartitionKeyTypes.Boolean => bool.TryParse(level.Value, out _),
+            _ => false, // an unknown level type cannot be rebuilt into a key component
+        };
     }
 
     /// <summary>

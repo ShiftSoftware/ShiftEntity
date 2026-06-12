@@ -171,37 +171,48 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             foreach (var entity in this.entities)
             {
-                CosmosDBItem newItem;
-                if (mapping is not null)
-                    newItem = mapping(entity);
-                else
-                    newItem = this.mapper.Map<CosmosDBItem>(entity);
-
-                var entityId = entity.ID;
-
-                //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
-                //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
-                //id or PK, so a naive upsert would orphan the old doc). Only entities that opt into
-                //IHasLastReplicationStamp track this — others skip the stamp steps and just upsert. The mapping only
-                //ever runs on the fully loaded current entity, so navigation-derived keys/fields are always populated.
-                string? deleteId = null;
-                PartitionKey? oldPartitionKey = null;
-
-                if (entity is IHasLastReplicationStamp stampHolder)
+                //One bad row (a mapping that throws, a stamp that defeats even Deserialize's validation) must fail
+                //THAT row — marked unsuccessful below so it stays dirty and is retried — never abort the whole
+                //catch-up run for every other entity.
+                try
                 {
-                    var newStamp = Utility.BuildStamp(containerResponse, newItem!);
-                    var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
+                    CosmosDBItem newItem;
+                    if (mapping is not null)
+                        newItem = mapping(entity);
+                    else
+                        newItem = this.mapper.Map<CosmosDBItem>(entity);
 
-                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                    var entityId = entity.ID;
+
+                    //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
+                    //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
+                    //id or PK, so a naive upsert would orphan the old doc). Only entities that opt into
+                    //IHasLastReplicationStamp track this — others skip the stamp steps and just upsert. The mapping only
+                    //ever runs on the fully loaded current entity, so navigation-derived keys/fields are always populated.
+                    string? deleteId = null;
+                    PartitionKey? oldPartitionKey = null;
+
+                    if (entity is IHasLastReplicationStamp stampHolder)
                     {
-                        deleteId = oldStamp.Id;
-                        oldPartitionKey = oldStamp.BuildPartitionKey();
+                        var newStamp = Utility.BuildStamp(containerResponse, newItem!);
+                        var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
+
+                        if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                        {
+                            deleteId = oldStamp.Id;
+                            oldPartitionKey = oldStamp.BuildPartitionKey();
+                        }
+
+                        this.pendingStamps[entityId] = newStamp.Serialize();
                     }
 
-                    this.pendingStamps[entityId] = newStamp.Serialize();
+                    cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
                 }
-
-                cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
+                catch
+                {
+                    this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(false),
+                        (key, oldValue) => oldValue.Set(false));
+                }
             }
 
             await Task.WhenAll(cosmosTasks);

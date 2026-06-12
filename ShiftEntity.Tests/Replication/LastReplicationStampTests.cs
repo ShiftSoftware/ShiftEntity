@@ -195,6 +195,43 @@ public class LastReplicationStampTests
         Assert.Equal(expected, stamp.BuildPartitionKey());
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-number")]
+    public void Deserialize_NumericLevelWithUnrebuildableValue_ReturnsNull(string value)
+    {
+        // A stamp is data read from a database column. Builds prior to the null-component fix recorded null
+        // numeric components as "" (e.g. a Country row's null RegionID), and BuildPartitionKey would throw on
+        // them, poisoning the whole sync run. Such content must instead degrade to "no old stamp": the sync skips
+        // the stale-delete, upserts, and persists a fresh correct stamp — self-healing.
+        var serialized = Stamp("doc-1",
+            Level("1", PartitionKeyTypes.Numeric),
+            Level(value, PartitionKeyTypes.Numeric)).Serialize();
+
+        Assert.Null(LastReplicationStamp.Deserialize(serialized));
+    }
+
+    [Fact]
+    public void Deserialize_BooleanLevelWithUnrebuildableValue_ReturnsNull()
+    {
+        var serialized = Stamp("doc-1", Level("maybe", PartitionKeyTypes.Boolean)).Serialize();
+
+        Assert.Null(LastReplicationStamp.Deserialize(serialized));
+    }
+
+    [Fact]
+    public void Deserialize_EmptyStringOnAStringLevel_IsValid()
+    {
+        // "" is a legitimate STRING key component (only numeric/boolean levels can't rebuild from it), so these
+        // stamps stay usable — the ""-vs-null difference is what drives their self-healing delete-and-rewrite.
+        var serialized = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level("", PartitionKeyTypes.String)).Serialize();
+
+        var restored = LastReplicationStamp.Deserialize(serialized);
+
+        Assert.NotNull(restored);
+        Assert.Equal("", restored!.Level2!.Value);
+    }
+
     [Fact]
     public void DiffersFrom_EmptyStringVersusNull_OnALevel_ReturnsTrue()
     {
