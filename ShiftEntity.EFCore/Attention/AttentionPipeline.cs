@@ -214,8 +214,9 @@ internal static class AttentionPipeline
     /// summary columns, and saves. Works against both JSON-shadow and indexed storage modes.
     /// </summary>
     /// <returns>
-    /// The entity's <c>LastSaveDate</c> after the save — the save updates the entity row, so
-    /// the audit sweep advances the stamp, which doubles as the optimistic-concurrency version.
+    /// The entity's <c>LastSaveDate</c> after the save — when the clear modifies the entity row,
+    /// this method stamps the last-save columns itself (the context's SaveChanges backfill is
+    /// insert-only), and the stamp doubles as the optimistic-concurrency version.
     /// Endpoints return it (<see cref="ClearAttentionResponse"/>) so clients holding a
     /// pre-clear DTO can patch it instead of hitting a version conflict on their next save.
     /// <c>null</c> when the entity doesn't carry audit fields.
@@ -276,10 +277,14 @@ internal static class AttentionPipeline
             attentionEntity.ActiveSignalCount = 0;
         }
 
+        // Stamp the last-save columns explicitly — the context's SaveChanges backfill is insert-only — but only
+        // when the clear actually modified the entity row: a no-op clear must keep the current stamp, since the
+        // returned value doubles as the client's optimistic-concurrency version.
+        if (entity is IShiftEntityAudit auditable && db.Entry(entity).State == EntityState.Modified)
+            AuditStamper.StampAuditFields(auditable, isAdded: false, userId, now);
+
         await db.SaveChangesAsync();
 
-        // Read AFTER the save: the audit sweep stamps LastSaveDate during SaveChanges when
-        // the row was modified (and leaves it unchanged when the clear was a no-op).
         return (entity as IShiftEntityAudit)?.LastSaveDate;
     }
 

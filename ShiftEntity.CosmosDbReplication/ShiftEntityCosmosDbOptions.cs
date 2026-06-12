@@ -697,7 +697,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         else if (isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
             await UpdateDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
 
-        await dbContext.SaveChangesWithoutTriggersAsync();
+        //A replication-bookkeeping save: only the replication columns marked modified above may be written. No
+        //triggers, and no audit backfill — explicit suppression rather than relying on the attached entity's
+        //in-memory AuditFieldsAreSet flag happening to be set from the user's original save.
+        using (dbContext.SuppressAuditStamping())
+            await dbContext.SaveChangesWithoutTriggersAsync();
     }
 
     private void UpdateLastReplicationDateAsync(ShiftDbContext dbContext, Entity entity, string? stamp)

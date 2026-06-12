@@ -593,7 +593,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         else
             UpdateReplicatedDeletedRowLogs();
 
-        await this.db.SaveChangesWithoutTriggersAsync();
+        //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
+        //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
+        //sweep would treat this infrastructure save as a real edit.
+        using (this.db.SuppressAuditStamping())
+            await this.db.SaveChangesWithoutTriggersAsync();
 
         this.Dispose();
     }

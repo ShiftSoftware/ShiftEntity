@@ -6,9 +6,11 @@ using System.Reflection;
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
 /// <summary>
-/// The shared audit-stamping rules, used by both <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/>
-/// (its SaveChanges sweep) and <see cref="ShiftDbContext"/> (its SaveChanges override — the fallback for saves that
-/// do not go through a repository). Centralizing them keeps the two paths stamping identically.
+/// The shared audit-stamping rules, used by <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/>
+/// (its SaveChanges sweep, inserts and updates alike), by <see cref="ShiftDbContext"/> (its SaveChanges override —
+/// the insert-only fallback for rows added outside a repository), and by any non-repository update path that opts
+/// into stamping explicitly (e.g. <c>AttentionPipeline.ClearSignals</c>). Centralizing them keeps every path
+/// stamping identically.
 /// </summary>
 internal static class AuditStamper
 {

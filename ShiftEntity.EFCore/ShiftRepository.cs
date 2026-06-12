@@ -632,11 +632,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         // The sweep above already stamped every tracked auditable row, so suppress the context's SaveChanges override
-        // for these repository-initiated saves — otherwise it would run the identical sweep a second time. (The
-        // AuditFieldsAreSet guard already prevents double-writing; this also avoids the redundant second pass.)
+        // for these repository-initiated saves — otherwise it would run its (insert-only) backfill a second time.
+        // (The AuditFieldsAreSet guard already prevents double-writing; this also avoids the redundant second pass.)
         int result;
-        db.AuditStampingSuppressed = true;
-        try
+        using (db.SuppressAuditStamping())
         {
             try
             {
@@ -669,10 +668,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 AttentionPipeline.FlushPendingSignals(db, allPendingSignals);
                 await db.SaveChangesAsync();
             }
-        }
-        finally
-        {
-            db.AuditStampingSuppressed = false;
         }
 
         // Materialize AttentionRaised events now that every entity has its database ID.

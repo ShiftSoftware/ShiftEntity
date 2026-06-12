@@ -7,10 +7,16 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Auditing;
 
 /// <summary>
-/// The audit backfill also runs in <c>ShiftDbContext.SaveChanges</c>/<c>SaveChangesAsync</c> — the fallback for rows
-/// saved <em>directly</em> through the context (no repository, no <c>repository.SaveChangesAsync()</c>). It stamps the
-/// same columns with the same rules (set only where unset; create stamps + org claims are insert-only; last-save
-/// always advances) and skips rows a repository already stamped via the <c>AuditFieldsAreSet</c> guard.
+/// The audit backfill also runs in <c>ShiftDbContext.SaveChanges</c>/<c>SaveChangesAsync</c> — the <em>insert-only</em>
+/// fallback for rows added directly through the context (no repository, no <c>repository.SaveChangesAsync()</c>).
+/// It stamps the same columns with the same fill-only-unset rules (audit dates, user ids and org claims alike) and
+/// skips rows a repository already stamped via the <c>AuditFieldsAreSet</c> guard.
+///
+/// <para>Rows merely <em>modified</em> through a bare context are deliberately left untouched: direct-context updates
+/// are in practice system writes (sync jobs, enrichment, replication bookkeeping) where advancing
+/// <c>LastSaveDate</c> / overwriting <c>LastSavedByUserID</c> would destroy real audit information. User-facing
+/// updates go through <c>ShiftRepository</c>, whose own sweep stamps them. Infrastructure saves can opt out of even
+/// the insert backfill with <c>SuppressAuditStamping()</c>.</para>
 ///
 /// <para>Crucially, the context resolves the acting user defensively: if the claim services aren't registered (a bare
 /// context, a migration, a DI-less unit test) or a value is absent, the columns are left null/default — the save must
@@ -121,8 +127,11 @@ public class ShiftDbContextAuditTests
     }
 
     [Fact]
-    public async Task DirectSave_Update_AdvancesLastSave_PreservesCreateAndOrg()
+    public async Task DirectSave_Update_LeavesAuditColumnsUntouched()
     {
+        // The context backfill is INSERT-only. A row merely modified through a bare context — the shape of every
+        // sync/enrichment/bookkeeping save — keeps its audit columns exactly as they were: a direct update must not
+        // advance LastSaveDate or rewrite LastSavedByUserID.
         using var provider = AuditingHost.Build(Actor);
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
@@ -132,14 +141,47 @@ public class ShiftDbContextAuditTests
         await db.SaveChangesAsync();
 
         var createdAt = order.CreateDate;
+        var stampedSave = order.LastSaveDate;
+        var stampedUser = order.LastSavedByUserID;
+
         order.AuditFieldsAreSet = false; // mimic a reload (the [NotMapped] guard is not persisted)
         order.Number = "A-1-edited";
-        var beforeUpdate = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 
-        Assert.Equal(createdAt, order.CreateDate);       // create stamp untouched
-        Assert.True(order.LastSaveDate >= beforeUpdate); // last-save advanced
-        AssertActorOrgStamps(order);                     // org provenance unchanged
+        Assert.Equal(createdAt, order.CreateDate);          // create stamp untouched
+        Assert.Equal(stampedSave, order.LastSaveDate);      // last-save NOT advanced by a bare-context update
+        Assert.Equal(stampedUser, order.LastSavedByUserID); // editor NOT rewritten
+        AssertActorOrgStamps(order);                        // org provenance unchanged
+    }
+
+    [Fact]
+    public async Task DirectSave_Update_InBackgroundScope_PreservesTheRealEditorsStamp()
+    {
+        // The regression shape that motivated insert-only: a background scope (no signed-in user) loads a row a
+        // real user last saved, tweaks a bookkeeping column, and saves directly on the context. The editor's stamp
+        // must survive — the old update sweep overwrote it with null/now.
+        using var provider = AuditingHost.Build(); // anonymous — a background job's scope
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var editedByRealUser = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var order = new OrderEntity
+        {
+            Number = "A-1",
+            CreateDate = editedByRealUser,
+            LastSaveDate = editedByRealUser,
+            CreatedByUserID = 42,
+            LastSavedByUserID = 42, // what the real editor left behind
+        };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(); // insert keeps the manual values (fill-only-unset)
+
+        order.AuditFieldsAreSet = false; // fresh unit-of-work
+        order.Number = "A-1-synced";
+        await db.SaveChangesAsync();
+
+        Assert.Equal(editedByRealUser, order.LastSaveDate);
+        Assert.Equal(42, order.LastSavedByUserID);
     }
 
     [Fact]
@@ -255,5 +297,60 @@ public class ShiftDbContextAuditTests
         Assert.True(order.CreateDate >= before);
         Assert.True(order.AuditFieldsAreSet);
         Assert.Null(order.CreatedByUserID);
+    }
+
+    // ── SuppressAuditStamping: the explicit opt-out for infrastructure saves ──
+
+    [Fact]
+    public async Task SuppressAuditStamping_SkipsInsertBackfill_WhileActive_AndRestoresAfterDispose()
+    {
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var silent = new OrderEntity { Number = "silent" };
+        using (db.SuppressAuditStamping())
+        {
+            db.Orders.Add(silent);
+            await db.SaveChangesAsync(); // an infrastructure save: writes only what the caller set
+        }
+
+        Assert.Equal(default, silent.CreateDate);
+        Assert.Equal(default, silent.LastSaveDate);
+        Assert.Null(silent.CreatedByUserID);
+        Assert.False(silent.AuditFieldsAreSet);
+        AssertNoOrgStamps(silent);
+
+        var normal = new OrderEntity { Number = "normal" };
+        db.Orders.Add(normal);
+        await db.SaveChangesAsync(); // scope disposed: the backfill is active again
+
+        Assert.Equal(ActorUser, normal.CreatedByUserID);
+        Assert.True(normal.AuditFieldsAreSet);
+        AssertActorOrgStamps(normal);
+    }
+
+    [Fact]
+    public async Task SuppressAuditStamping_NestedScopes_RestorePreviousState_NotFalse()
+    {
+        // Disposal restores the PREVIOUS state rather than force-clearing, so an inner scope ending cannot
+        // un-suppress the outer one.
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        using (db.SuppressAuditStamping())
+        {
+            using (db.SuppressAuditStamping())
+            {
+            }
+
+            var order = new OrderEntity { Number = "still-suppressed" };
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(); // the outer scope must still be in effect
+
+            Assert.Equal(default, order.CreateDate);
+            Assert.False(order.AuditFieldsAreSet);
+        }
     }
 }
