@@ -48,23 +48,17 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
 
         var entity = context.Entity;
-        var unmodifiedEntity = context.ChangeType == ChangeType.Modified ? context.UnmodifiedEntity : null;
         var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
 
         if (prepareForReplication is not null)
-        {
             entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
-
-            if (unmodifiedEntity is not null)
-                unmodifiedEntity = await prepareForReplication.PrepareForReplicationAsync(unmodifiedEntity, changeType);
-        }
 
         this.logger.LogInformation("CosmosDB Syncing is starting to Sync {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
         _ = Task.Run(async () =>
         {
             this.logger.LogInformation("CosmosDB Syncing Task is Running {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
 
-            await operations.RunAsync(entity, serviceProvider, context.ChangeType, unmodifiedEntity);
+            await operations.RunAsync(entity, serviceProvider, context.ChangeType);
         }).ContinueWith(t =>
         {
             if (t.IsFaulted)

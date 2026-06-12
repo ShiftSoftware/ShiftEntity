@@ -122,9 +122,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     ConcurrentDictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
     //Keyed by entity ID, holds the serialized LastReplicationStamp (document id + partition-key levels) computed
-    //during this sync. Written back to each entity's LastReplicationPartitionKey column after a successful upsert so
-    //the NEXT sync can detect an id or partition-key change and delete the stale Cosmos document under the OLD id +
-    //key before upserting the new one.
+    //during this sync. Written back to each entity's LastReplicationStamp column after a successful upsert so
+    //the NEXT sync — trigger or catch-up — can detect an id or partition-key change and delete the stale Cosmos
+    //document under the OLD id + key before upserting the new one.
     Dictionary<long, string> pendingStamps = new();
 
     public CosmosDbReferenceOperation(

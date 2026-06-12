@@ -137,4 +137,74 @@ public class LastReplicationStampTests
     {
         Assert.Null(LastReplicationStamp.Deserialize(serialized));
     }
+
+    // ── Null partition-key components (the lossy-mapping shape) ───────────────
+    //
+    // A consumer's mapping may leave a partition-key component unset (e.g. it never assigns ItemType). The stamp is
+    // the record of what was ACTUALLY written to Cosmos, so it must represent, round-trip, compare, and rebuild null
+    // components faithfully — the stale-document delete targets these exact coordinates.
+
+    [Fact]
+    public void Serialize_Deserialize_RoundTrips_NullLevelValue()
+    {
+        var original = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level(null, PartitionKeyTypes.String));
+
+        var restored = LastReplicationStamp.Deserialize(original.Serialize());
+
+        Assert.NotNull(restored);
+        Assert.Null(restored!.Level2!.Value);
+        Assert.Equal(PartitionKeyTypes.String, restored.Level2.Type);
+        Assert.False(restored.DiffersFrom(original));
+    }
+
+    [Fact]
+    public void DiffersFrom_NullVersusValue_OnALevel_ReturnsTrue()
+    {
+        // The stored document was written with ItemType "Region"; the mapping then stopped setting it (null).
+        // The stamps must compare as different, so the old document gets deleted under its STORED coordinates
+        // instead of being orphaned by a delete aimed at a reconstructed (and wrong) key.
+        var stored = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level("Region", PartitionKeyTypes.String));
+        var current = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level(null, PartitionKeyTypes.String));
+
+        Assert.True(current.DiffersFrom(stored));
+        Assert.True(stored.DiffersFrom(current));
+    }
+
+    [Fact]
+    public void BuildPartitionKey_NullStringLevel_BuildsNullComponent()
+    {
+        // Deleting a document that was stored under a null component must target exactly that key. Verified against
+        // a real Cosmos container: a document whose key path holds JSON null is HIT by a key built with a null
+        // component and MISSED by "", 0, false, or Undefined — they are all distinct partition-key values.
+        var stamp = Stamp("doc-1", Level("5", PartitionKeyTypes.Numeric), Level(null, PartitionKeyTypes.String));
+
+        var expected = new PartitionKeyBuilder().Add(5d).AddNullValue().Build();
+
+        Assert.Equal(expected, stamp.BuildPartitionKey());
+    }
+
+    [Fact]
+    public void BuildPartitionKey_NullNumericLevel_BuildsNullComponent_InsteadOfThrowing()
+    {
+        // A nullable numeric key column (e.g. a CountryID that is null for some rows) must rebuild as the JSON-null
+        // component — double.Parse(null) used to throw here, killing the sync of any such row.
+        var stamp = Stamp("doc-1", Level(null, PartitionKeyTypes.Numeric), Level("2", PartitionKeyTypes.Numeric));
+
+        var expected = new PartitionKeyBuilder().AddNullValue().Add(2d).Build();
+
+        Assert.Equal(expected, stamp.BuildPartitionKey());
+    }
+
+    [Fact]
+    public void DiffersFrom_EmptyStringVersusNull_OnALevel_ReturnsTrue()
+    {
+        // "" and null are DIFFERENT partition-key values. This also self-heals stamps recorded by builds that
+        // coerced null components to "" (Convert.ToString(null)): the first sync after the fix sees the stamps
+        // differ, attempts the stale delete (a swallowed 404 at the ""-key), upserts in place, and persists a
+        // correct null-component stamp.
+        var corrupt = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level("", PartitionKeyTypes.String));
+        var correct = Stamp("doc-1", Level("1", PartitionKeyTypes.Numeric), Level(null, PartitionKeyTypes.String));
+
+        Assert.True(correct.DiffersFrom(corrupt));
+    }
 }

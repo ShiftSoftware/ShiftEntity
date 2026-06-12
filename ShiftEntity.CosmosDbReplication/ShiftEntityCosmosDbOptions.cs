@@ -140,7 +140,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     internal Type ReplicateComsomsDbItemType { get; private set; }
 
     private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp)>> replicateAction;
-    private Func<Entity, Entity, IServiceProvider, Database, Task<bool>> deletePreviousPartitionKeyAction;
     private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,
@@ -196,66 +195,59 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             var container = db.GetContainer(cosmosContainerId);
 
+            //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
+            //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
+            //id or PK, so a naive upsert would orphan the old doc). The OLD coordinates come from the entity's
+            //persisted LastReplicationStamp — what was actually written to Cosmos last time — never from
+            //re-mapping the pre-save entity snapshot: a mapping that leaves a partition-key component unset (or
+            //derives values from navigations) reconstructs coordinates that don't match the stored document, so
+            //such a delete silently misses (404) and the old document is orphaned.
+            string? stamp = null;
+            string? staleId = null;
+            PartitionKey? stalePartitionKey = null;
+
+            if (entity is IHasLastReplicationStamp stampHolder)
+            {
+                var containerResponse = await container.ReadContainerAsync();
+                var newStamp = Utility.BuildStamp(containerResponse, item!);
+                var oldStamp = LastReplicationStamp.Deserialize(stampHolder.LastReplicationStamp);
+
+                if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                {
+                    staleId = oldStamp.Id;
+                    stalePartitionKey = oldStamp.BuildPartitionKey();
+                }
+
+                stamp = newStamp.Serialize();
+            }
+
+            if (staleId is not null && stalePartitionKey.HasValue)
+            {
+                try
+                {
+                    await container.DeleteItemAsync<CosmosDbItem>(staleId, stalePartitionKey.Value);
+                }
+                catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    //already gone; treat as success and proceed to upsert
+                }
+                catch
+                {
+                    //Report failure WITHOUT upserting: the stamp/replication date stay untouched, the row stays
+                    //dirty, and the catch-up sync retries the delete + upsert later.
+                    return (false, null);
+                }
+            }
+
             var response = await container.UpsertItemAsync(item);
 
             bool success = response.StatusCode == System.Net.HttpStatusCode.OK ||
                     response.StatusCode == System.Net.HttpStatusCode.Created ||
                     response.StatusCode == System.Net.HttpStatusCode.NoContent;
 
-            //On success, capture the id + partition key this row was replicated under so RunAsync can persist it on
-            //the entity — only for entities that opt into IHasLastReplicationStamp. The catch-up function later reads
-            //this stamp to detect an id/partition-key change and delete the stale document under its OLD id + key.
-            string? stamp = null;
-            if (success && entity is IHasLastReplicationStamp)
-            {
-                var containerResponse = await container.ReadContainerAsync();
-                stamp = Utility.BuildStamp(containerResponse, item!).Serialize();
-            }
-
-            return (success, stamp);
-        };
-
-        this.deletePreviousPartitionKeyAction = async (entity, unmodifiedEntity, services, db) =>
-        {
-            CosmosDbItem newItem;
-            CosmosDbItem oldItem;
-
-            if (mapping is not null)
-            {
-                newItem = mapping(new EntityWrapper<Entity>(entity, services));
-                oldItem = mapping(new EntityWrapper<Entity>(unmodifiedEntity, services));
-            }
-            else
-            {
-                var autoMapper = services.GetRequiredService<IMapper>();
-                newItem = autoMapper.Map<CosmosDbItem>(entity);
-                oldItem = autoMapper.Map<CosmosDbItem>(unmodifiedEntity);
-            }
-
-            if (!ReplicationKeyChanged(newItem!, oldItem!))
-                return true;
-
-            var container = db.GetContainer(cosmosContainerId);
-            var containerResponse = await container.ReadContainerAsync();
-            var oldPartitionKey = Utility.GetPartitionKey(containerResponse, oldItem!);
-            var idString = Convert.ToString(oldItem.GetProperty("id"));
-
-            bool isSucceeded = false;
-
-            await container.DeleteItemAsync<CosmosDbItem>(idString, oldPartitionKey)
-                .ContinueWith(x =>
-                {
-                    CosmosException ex = null;
-
-                    if (x.Exception != null)
-                        foreach (var innerException in x.Exception.InnerExceptions)
-                            if (innerException is CosmosException customException)
-                                ex = customException;
-
-                    isSucceeded = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-                }).WaitAsync(new CancellationToken());
-
-            return isSucceeded;
+            //On success, RunAsync persists the new stamp (the id + partition key this row now lives under in
+            //Cosmos) on the entity, so the NEXT sync — trigger or catch-up — can detect the next change.
+            return (success, success ? stamp : null);
         };
 
         this.replicateDeleteAction = async (entity, services, db) =>
@@ -297,32 +289,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 return (id, partitionKeyDetails, isSucceeded);
             };
-    }
-
-    private bool ReplicationKeyChanged(object newItem, object oldItem)
-    {
-        //A Cosmos document is addressed by its id + partition key; either changing means the old document must be
-        //deleted under its old coordinates before the new one is written.
-        if (!ValuesEqual(newItem.GetProperty("id"), oldItem.GetProperty("id")))
-            return true;
-
-        if (PartitionKeyLevel1Action is not null && !ValuesEqual(PartitionKeyLevel1Action(newItem)?.value, PartitionKeyLevel1Action(oldItem)?.value))
-            return true;
-
-        if (PartitionKeyLevel2Action is not null && !ValuesEqual(PartitionKeyLevel2Action(newItem)?.value, PartitionKeyLevel2Action(oldItem)?.value))
-            return true;
-
-        if (PartitionKeyLevel3Action is not null && !ValuesEqual(PartitionKeyLevel3Action(newItem)?.value, PartitionKeyLevel3Action(oldItem)?.value))
-            return true;
-
-        return false;
-    }
-
-    private static bool ValuesEqual(object? a, object? b)
-    {
-        if (a is null && b is null) return true;
-        if (a is null || b is null) return false;
-        return a.Equals(b);
     }
 
     private void SetPartitonKeyActions<CosmosDbItem>(
@@ -602,8 +568,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         return items;
     }
 
-    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType,
-        Entity? unmodifiedEntity = null)
+    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
     {
         (long id, (PartitionKey? partitionKey,
             (string? value, PartitionKeyTypes type)? level1,
@@ -633,20 +598,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         var db = client.GetDatabase(this.cosmosDataBaseId);
 
-        //If the change type is modified and an unmodified snapshot is available,
-        //detect partition key changes and remove the stale document under the old partition key
-        //before upserting under the new one (Cosmos does not allow mutating a document's partition key).
-        if (changeType == ChangeType.Modified && unmodifiedEntity is not null && this.deletePreviousPartitionKeyAction is not null)
-        {
-            //Reset the isSucceeded flag
-            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
-
-            var deleteResult = await this.deletePreviousPartitionKeyAction(entity, unmodifiedEntity, serviceProvider, db);
-
-            isSucceeded = isSucceeded.GetValueOrDefault(true) && deleteResult;
-        }
-
         //If the change type is added or modified, then do the upsert action
+        //(it removes the stale document first when the persisted stamp shows the id/partition key changed)
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
         {
             //Reset the isSucceeded flag

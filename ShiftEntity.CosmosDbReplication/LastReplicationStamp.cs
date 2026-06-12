@@ -76,16 +76,25 @@ public class LastReplicationStamp
         if (level is null)
             return;
 
+        //A recorded null component rebuilds as the JSON-null key value regardless of its declared type: null is a
+        //distinct partition-key value ("" / 0 / false / Undefined all address DIFFERENT partitions), and the whole
+        //point of the stamp is to hit the exact key the document was stored under.
+        if (level.Value is null)
+        {
+            builder.AddNullValue();
+            return;
+        }
+
         switch (level.Type)
         {
             case PartitionKeyTypes.String:
                 builder.Add(level.Value);
                 break;
             case PartitionKeyTypes.Numeric:
-                builder.Add(double.Parse(level.Value!, CultureInfo.InvariantCulture));
+                builder.Add(double.Parse(level.Value, CultureInfo.InvariantCulture));
                 break;
             case PartitionKeyTypes.Boolean:
-                builder.Add(bool.Parse(level.Value!));
+                builder.Add(bool.Parse(level.Value));
                 break;
         }
     }
