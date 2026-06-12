@@ -394,6 +394,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         var queryable = this.dbSet.AsQueryable();
 
         if (!updateAll)
+            //Dirty = the replicated-version watermark is behind the row's save date (or absent: never replicated).
+            //LastReplicationDate is that watermark — the save date of the replicated version, not a run timestamp.
             queryable = queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
 
         if (this.query is not null)

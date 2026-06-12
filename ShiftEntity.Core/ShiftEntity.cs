@@ -22,6 +22,20 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType>, ISh
 {
     public DateTimeOffset CreateDate { get; set; }
     public DateTimeOffset LastSaveDate { get; set; }
+
+    /// <summary>
+    /// The replication <b>watermark</b>, not a timestamp — despite the name, this does not record when replication
+    /// ran. It holds the <see cref="LastSaveDate"/> of the row version that was last replicated to Cosmos: exact
+    /// equality with <see cref="LastSaveDate"/> means "in sync", a later save moves <see cref="LastSaveDate"/>
+    /// past the watermark and the row becomes due for replication again, and <see langword="null"/> means never
+    /// replicated. (The two columns therefore always show identical values for in-sync rows.)
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT the wall-clock time replication ran (it briefly was, at the feature's birth — fixed in
+    /// 815f606): stamping "now" loses concurrent edits. When replication loads version T and a user saves T+1
+    /// while the sync is in flight, writing the loaded version's save date (T) keeps the row dirty for the next
+    /// sync, while writing "now" (&gt; T+1) would mark it clean and the edit would never reach Cosmos.
+    /// </remarks>
     public DateTimeOffset? LastReplicationDate { get; internal set; }
     public long? CreatedByUserID { get; set; }
     public long? LastSavedByUserID { get; set; }
@@ -44,7 +58,9 @@ public abstract class ShiftEntity<EntityType> : ShiftEntityBase<EntityType>, ISh
     }
 
     /// <summary>
-    /// Set LastReplicationDate to LastSaveDate
+    /// Marks the currently-loaded version of this row as replicated: copies <see cref="LastSaveDate"/> into
+    /// <see cref="LastReplicationDate"/>. See that property's remarks for why this must copy the loaded
+    /// version's save date and never stamp the current time.
     /// </summary>
     public void UpdateReplicationDate()
     {
