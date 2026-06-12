@@ -511,14 +511,14 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     [Authorize]
     [HttpDelete("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
 
         if (action is not null && !typeAuthService.CanDelete(action))
             return Forbid();
 
-        var result = await base.DeleteItemNonAction(key, isHardDelete
+        var result = await base.DeleteItemNonAction(key
             //,entity =>
             //{
             //    var expression = GetDynamicActionExpression(typeAuthService, Access.Delete, this.HttpContext.GetUserID());

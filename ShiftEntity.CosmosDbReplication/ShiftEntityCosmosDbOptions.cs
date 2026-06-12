@@ -28,19 +28,19 @@ public class ShiftEntityCosmosDbOptions
     }
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
         where DB : ShiftDbContext
     {
-        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
+        return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB));
     }
 
     public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null, bool removeDeleteRowLog = true)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>, IHasLastReplicationStamp
         where DB : ShiftDbContext
     {
-        return new(client, cosmosDataBaseId, mapper, this.internalServices, typeof(DB), removeDeleteRowLog);
+        return new(client, cosmosDataBaseId, mapper, this.internalServices, typeof(DB));
     }
 }
 
@@ -50,20 +50,20 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
 
     public CosmosDbTriggerReplicateOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType, bool removeDeleteRowLog)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
     {
         this.cosmosDbTriggerReferenceOperations =
             new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping,
-            dbContextType, removeDeleteRowLog);
+            dbContextType);
         services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
     }
 
     public CosmosDbTriggerReplicateOperation(CosmosClient client, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType, bool removeDeleteRowLog)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
     {
         this.cosmosDbTriggerReferenceOperations =
             new CosmosDbTriggerReferenceOperations<Entity>(client, cosmosDataBaseId, setupMapping,
-            dbContextType, removeDeleteRowLog);
+            dbContextType);
         services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
     }
 
@@ -128,43 +128,28 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private readonly string cosmosDataBaseId;
     private readonly Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping;
     internal readonly Type dbContextType;
-    private readonly bool removeDeleteRowLog;
     private CosmosClient? client;
     private List<string> cosmosContainerIds = new();
 
-    internal string ReplicateContainerId { get; private set; }
-    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel1Action { get; private set; }
-    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel2Action { get; private set; }
-    internal Func<object,(object? value, Type type, string? propertyName)?>? PartitionKeyLevel3Action { get; private set; }
-    internal Func<EntityWrapper<Entity>, object>? ReplicateMapping { get; private set; }
-    internal Type ReplicateComsomsDbItemType { get; private set; }
-
     private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp)>> replicateAction;
-    private Func<Entity, IServiceProvider, Database, Task<(long id, (PartitionKey? partitionKey,
-        (string? value, PartitionKeyTypes type)? level1,
-        (string? value, PartitionKeyTypes type)? level2,
-        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails, bool isSucceeded)>> replicateDeleteAction;
-    private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> deleteReferenceActions = new();
     private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType, bool removeDeleteRowLog)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDataBaseId = cosmosDataBaseId;
         this.setupMapping = setupMapping;
         this.dbContextType = dbContextType;
-        this.removeDeleteRowLog = removeDeleteRowLog;
     }
 
     internal CosmosDbTriggerReferenceOperations(CosmosClient client, string cosmosDataBaseId,
-        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType, bool removeDeleteRowLog)
+        Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
         this.client = client;
         this.cosmosDataBaseId = cosmosDataBaseId;
         this.setupMapping = setupMapping;
         this.dbContextType = dbContextType;
-        this.removeDeleteRowLog = removeDeleteRowLog;
     }
 
     internal void Replicate<CosmosDbItem>(
@@ -175,11 +160,15 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
-        this.ReplicateContainerId = cosmosContainerId;
 
-        SetPartitonKeyActions(partitionKeyLevel1Expression, partitionKeyLevel2Expression, partitionKeyLevel3Expression);
-        this.ReplicateMapping = mapping is not null ? new Func<EntityWrapper<Entity>, object>(x => mapping(x)!) : null;
-        this.ReplicateComsomsDbItemType = typeof(CosmosDbItem);
+        //The partition-key expressions document the container's key shape and are validated up front; the actual
+        //key values always come from the mapped item itself (the document JSON defines the partition key).
+        if (partitionKeyLevel1Expression is not null)
+            CheckPartitionKeyType(partitionKeyLevel1Expression);
+        if (partitionKeyLevel2Expression is not null)
+            CheckPartitionKeyType(partitionKeyLevel2Expression);
+        if (partitionKeyLevel3Expression is not null)
+            CheckPartitionKeyType(partitionKeyLevel3Expression);
 
         this.replicateAction = async (entity, services, db) =>
         {
@@ -250,90 +239,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             return (success, success ? stamp : null);
         };
 
-        this.replicateDeleteAction = async (entity, services, db) =>
-            {
-                bool isSucceeded = false;
-                CosmosDbItem item;
-
-                if (mapping is not null)
-                    item = mapping(new EntityWrapper<Entity>(entity, services));
-                else
-                {
-                    var autoMapper = services.GetRequiredService<IMapper>();
-                    item = autoMapper.Map<CosmosDbItem>(entity);
-                }
-
-                var container = db.GetContainer(cosmosContainerId);
-
-                var containerResponse = await container.ReadContainerAsync();
-                var partitionKeyDetails = Utility.GetPartitionKeyDetails(containerResponse, item!);
-
-                //Get item id
-                var idString = Convert.ToString(item.GetProperty("id"));
-                long id = 0;
-                long.TryParse(idString, out id);
-
-                await container.DeleteItemAsync<CosmosDbItem>(idString,
-                    partitionKeyDetails.partitionKey ?? PartitionKey.None)
-                    .ContinueWith(x =>
-                    {
-                        CosmosException ex = null;
-
-                        if (x.Exception != null)
-                            foreach (var innerException in x.Exception.InnerExceptions)
-                                if (innerException is CosmosException customException)
-                                    ex = customException;
-
-                        isSucceeded = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-                    }).WaitAsync(new CancellationToken());
-
-                return (id, partitionKeyDetails, isSucceeded);
-            };
-    }
-
-    private void SetPartitonKeyActions<CosmosDbItem>(
-        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel1Expression,
-        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel2Expression,
-        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel3Expression)
-    {
-        if (partitionKeyLevel1Expression is not null)
-        {
-            this.PartitionKeyLevel1Action = o => GetPartitionKey(o, partitionKeyLevel1Expression);
-            CheckPartitionKeyType(partitionKeyLevel1Expression);
-        }
-
-        if (partitionKeyLevel2Expression is not null)
-        {
-            this.PartitionKeyLevel2Action = o => GetPartitionKey(o, partitionKeyLevel2Expression);
-            CheckPartitionKeyType(partitionKeyLevel2Expression);
-        }
-
-        if (partitionKeyLevel3Expression is not null)
-        {
-            this.PartitionKeyLevel3Action = o => GetPartitionKey(o, partitionKeyLevel3Expression);
-            CheckPartitionKeyType(partitionKeyLevel3Expression);
-        }
-    }
-
-    private (object? value, Type type, string? propertyName)? GetPartitionKey<CosmosDbItem>(object data, 
-        Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
-    {
-        var value = partitionKeyExpression.Compile().Invoke((CosmosDbItem)data);
-        var type = partitionKeyExpression.Body.Type;
-        var propertyName = null as string;
-
-        // Check if the body of the expression is a UnaryExpression
-        if (partitionKeyExpression.Body is UnaryExpression unaryExpression)
-        {
-            // If it is, use the Operand property to get the underlying expression
-            type = unaryExpression.Operand.Type;
-        }
-
-        // Check if the body of the expression is a MemberExpression
-        if (partitionKeyExpression.Body is MemberExpression memberExpression)
-            propertyName = memberExpression.Member.Name;
-
-        return (value, type, propertyName);
     }
 
     private void CheckPartitionKeyType<CosmosDbItem>(Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
@@ -401,56 +306,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             return isSucceeded;
         });
 
-        this.deleteReferenceActions.Add(async (entity, services, db) =>
-        {
-            bool? isSucceeded = null;
-            var container = db.GetContainer(cosmosContainerId);
-
-            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
-
-            if (items is null || items?.Count() == 0)
-                return true;
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var item in items)
-            {
-                CosmosDbItem tempItems = item;
-                if (mapping is null)
-                {
-                    var mapper = services.GetRequiredService<IMapper>();
-                    mapper.Map(entity, tempItems);
-                }
-                else
-                    tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
-
-                var containerResponse = await container.ReadContainerAsync();
-                var partitionKeyDetails = Utility.GetPartitionKeyDetails(containerResponse, item!);
-
-                //Get item id
-                var idString = Convert.ToString(item.GetProperty("id"));
-
-                cosmosTasks.Add(container.DeleteItemAsync<CosmosDbItem>(idString,
-                    partitionKeyDetails.partitionKey ?? PartitionKey.None)
-                    .ContinueWith(x =>
-                    {
-                        CosmosException ex = null;
-
-                        if (x.Exception != null)
-                            foreach (var innerException in x.Exception.InnerExceptions)
-                                if (innerException is CosmosException customException)
-                                    ex = customException;
-
-                        isSucceeded = isSucceeded.GetValueOrDefault(true) &&
-                            (x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound);
-                    }));
-            }
-
-            await Task.WhenAll(cosmosTasks);
-
-            return isSucceeded;
-        });
-
         return this;
     }
 
@@ -504,47 +359,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             return isSucceeded;
         });
 
-        this.deleteReferenceActions.Add(async (entity, services, db) =>
-        {
-            bool? isSucceeded = null;
-            var container = db.GetContainer(cosmosContainerId);
-
-            var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
-
-            if (items is null || items?.Count() == 0)
-                return true;
-
-            List<Task> cosmosTasks = new();
-
-            var containerReposne = await container.ReadContainerAsync();
-
-            foreach (var item in items)
-            {
-                CosmosDbItemReference propertyItem;
-                if (mapping is null)
-                {
-                    var mapper = services.GetRequiredService<IMapper>();
-                    propertyItem = mapper.Map<CosmosDbItemReference>(entity);
-                }
-                else
-                    propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
-
-                var id = Convert.ToString(item.GetProperty("id"));
-                PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item!);
-
-                cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                    new[] { PatchOperation.Remove($"/{propertyPath}") })
-                    .ContinueWith(x =>
-                    {
-                        isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
-                    }));
-            }
-
-            await Task.WhenAll(cosmosTasks);
-
-            return isSucceeded;
-        });
-
         return this;
     }
 
@@ -570,11 +384,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
     internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
     {
-        (long id, (PartitionKey? partitionKey,
-            (string? value, PartitionKeyTypes type)? level1,
-            (string? value, PartitionKeyTypes type)? level2,
-            (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails,
-            bool isSucceeded) replicateDeleteItemInfo = new();
         bool? isSucceeded = null;
         string? replicationStamp = null;
 
@@ -623,32 +432,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
             }
         }
-        else if (changeType == ChangeType.Deleted)
-        {
-            //Reset the isSucceeded flag
-            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
-
-            replicateDeleteItemInfo = await this.replicateDeleteAction(entity, serviceProvider, db);
-
-            isSucceeded = isSucceeded.GetValueOrDefault(true) && replicateDeleteItemInfo.isSucceeded;
-
-            foreach (var action in this.deleteReferenceActions)
-            {
-                //Reset the isSucceeded flag
-                isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
-
-                var result = await action(entity, serviceProvider, db);
-
-                isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
-            }
-        }
 
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
 
-        if (isSucceeded.GetValueOrDefault(false) && (changeType == ChangeType.Added || changeType == ChangeType.Modified))
+        if (isSucceeded.GetValueOrDefault(false))
             UpdateLastReplicationDateAsync(dbContext, entity, replicationStamp);
-        else if (isSucceeded.GetValueOrDefault(false) && changeType == ChangeType.Deleted)
-            await UpdateDeleteRowAsync(dbContext, entity, replicateDeleteItemInfo.id, replicateDeleteItemInfo.partitionKeyDetails);
 
         //A replication-bookkeeping save: only the replication columns marked modified above may be written. No
         //triggers, and no audit backfill — explicit suppression rather than relying on the attached entity's
@@ -671,43 +459,6 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         }
     }
 
-    private async Task UpdateDeleteRowAsync(ShiftDbContext dbContext, Entity entity, long rowId, (PartitionKey? partitionKey,
-        (string? value, PartitionKeyTypes type)? level1,
-        (string? value, PartitionKeyTypes type)? level2,
-        (string? value, PartitionKeyTypes type)? level3)? partitionKeyDetails)
-    {
-        var query = dbContext.DeletedRowLogs.Where(x =>
-            x.RowID == rowId &&
-            x.ContainerName == this.ReplicateContainerId
-        );
-
-        if (partitionKeyDetails?.level1 is not null)
-            query = query.Where(x => x.PartitionKeyLevelOneValue == partitionKeyDetails.Value.level1.Value.value &&
-                x.PartitionKeyLevelOneType == partitionKeyDetails.Value.level1.Value.type);
-
-        if (partitionKeyDetails?.level2 is not null)
-            query = query.Where(x => x.PartitionKeyLevelTwoValue == partitionKeyDetails.Value.level2.Value.value &&
-                                    x.PartitionKeyLevelTwoType == partitionKeyDetails.Value.level2!.Value.type);
-
-        if (partitionKeyDetails?.level3 is not null)
-            query = query.Where(x => x.PartitionKeyLevelThreeValue == partitionKeyDetails.Value.level3!.Value.value &&
-                x.PartitionKeyLevelThreeType == partitionKeyDetails.Value.level3!.Value.type);
-
-        var logs = await query.ToListAsync();
-        
-        if (logs is not null)
-            if(this.removeDeleteRowLog)
-                dbContext.DeletedRowLogs.RemoveRange(logs);
-            else
-            {
-                foreach (var log in logs)
-                {
-                    log.LastReplicationDate = DateTime.UtcNow;
-                    dbContext.Attach(log);
-                    dbContext.Entry(log).Property(nameof(DeletedRowLog.LastReplicationDate)).IsModified = true;
-                }
-            }
-    }
 }
 
 public class EntityWrapper<EntityType>

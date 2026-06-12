@@ -66,9 +66,9 @@ public class ShiftEntityControllerAsync<Repository, Entity, ListDTO, ViewAndUpse
     }
 
     [HttpDelete("{key}")]
-    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key, [FromQuery] bool isHardDelete = false)
+    public virtual async Task<ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>>> Delete(string key)
     {
-        return (await base.DeleteItemNonAction(key, isHardDelete)).ActionResult;
+        return (await base.DeleteItemNonAction(key)).ActionResult;
     }
 
     [HttpGet("print/{key}")]

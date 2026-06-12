@@ -46,8 +46,8 @@ public class ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpser
     internal Func<Func<HttpContext, string, ViewAndUpsertDTO, Task<IResult>>,
         HttpContext, string, ViewAndUpsertDTO, Task<IResult>>? _putOverride;
 
-    internal Func<Func<HttpContext, string, bool, Task<IResult>>,
-        HttpContext, string, bool, Task<IResult>>? _deleteOverride;
+    internal Func<Func<HttpContext, string, Task<IResult>>,
+        HttpContext, string, Task<IResult>>? _deleteOverride;
 
     internal Func<Func<HttpContext, string, Task<IResult>>,
         HttpContext, string, Task<IResult>>? _printOverride;
@@ -126,8 +126,8 @@ public class ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpser
     /// </summary>
     public ShiftEntityEndpointConfig<Repository, Entity, ListDTO, ViewAndUpsertDTO>
         OverrideDelete(
-            Func<Func<HttpContext, string, bool, Task<IResult>>,
-                HttpContext, string, bool, Task<IResult>> handler)
+            Func<Func<HttpContext, string, Task<IResult>>,
+                HttpContext, string, Task<IResult>> handler)
     {
         _deleteOverride = handler;
         return this;

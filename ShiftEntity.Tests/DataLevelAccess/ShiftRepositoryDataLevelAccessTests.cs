@@ -361,7 +361,7 @@ public class ShiftRepositoryDataLevelAccessTests
         var vehicle = Sample(3);
 
         await AssertDenied("Can Not Delete Item", () =>
-            repository.DeleteAsync(vehicle, isHardDelete: false, userId: null,
+            repository.DeleteAsync(vehicle, userId: null,
                 disableDefaultDataLevelAccess: false, disableGlobalFilters: false).AsTask());
 
         Assert.False(vehicle.IsDeleted);
@@ -378,7 +378,7 @@ public class ShiftRepositoryDataLevelAccessTests
         var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOr);
         var vehicle = Sample(3);
 
-        var deleted = await repository.DeleteAsync(vehicle, isHardDelete: false, userId: null,
+        var deleted = await repository.DeleteAsync(vehicle, userId: null,
             disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         Assert.True(deleted.IsDeleted);
@@ -397,7 +397,7 @@ public class ShiftRepositoryDataLevelAccessTests
         var vehicle = Sample(3);
 
         await AssertDenied("Can Not Delete Item", () =>
-            repository.DeleteAsync(vehicle, isHardDelete: false, userId: null,
+            repository.DeleteAsync(vehicle, userId: null,
                 disableDefaultDataLevelAccess: false, disableGlobalFilters: false).AsTask());
 
         Assert.False(vehicle.IsDeleted);
@@ -420,7 +420,7 @@ public class ShiftRepositoryDataLevelAccessTests
 
         var found = await repository.FindAsync(1, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
         var inserted = await Upsert(repository, new VehicleEntity(), Dto(Companies.DealerA, null), ActionTypes.Insert);
-        var deleted = await repository.DeleteAsync(Sample(2), isHardDelete: false, userId: null,
+        var deleted = await repository.DeleteAsync(Sample(2), userId: null,
             disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         Assert.NotNull(found);
@@ -444,7 +444,7 @@ public class ShiftRepositoryDataLevelAccessTests
 
         var inserted = await Upsert(repository, new VehicleEntity(), Dto(Companies.DealerA, null), ActionTypes.Insert,
             disableDefaultDataLevelAccess: true);
-        var deleted = await repository.DeleteAsync(Sample(1), isHardDelete: false, userId: null,
+        var deleted = await repository.DeleteAsync(Sample(1), userId: null,
             disableDefaultDataLevelAccess: true, disableGlobalFilters: false);
 
         Assert.Equal(Companies.DealerA, inserted.CompanyID);

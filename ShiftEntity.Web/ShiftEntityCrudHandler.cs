@@ -262,8 +262,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
     public async Task<(CrudResult Result, Entity? Entity)> DeleteAsync(
         HttpContext httpContext,
-        string key,
-        bool isHardDelete)
+        string key)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
@@ -283,7 +282,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID());
+            await repository.DeleteAsync(item, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {

@@ -53,12 +53,12 @@ public class RepositoryBypassTests
         }
 
         public override ValueTask<VehicleEntity> DeleteAsync(
-            VehicleEntity entity, bool isHardDelete, long? userId,
+            VehicleEntity entity, long? userId,
             bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
         {
             DeleteOverrideCalls++;
             DeleteBools = (disableDefaultDataLevelAccess, disableGlobalFilters);
-            return base.DeleteAsync(entity, isHardDelete, userId,
+            return base.DeleteAsync(entity, userId,
                 disableDefaultDataLevelAccess, disableGlobalFilters);
         }
     }
@@ -187,14 +187,14 @@ public class RepositoryBypassTests
         var repository = new OverridingVehicleRepository(RepositoryHost.SeededDb(scope));
         var vehicle = VehicleEntity.FromSamples().Single(v => v.ID == 3);
 
-        var deleted = await repository.DeleteAsync(vehicle, isHardDelete: false, userId: null);
+        var deleted = await repository.DeleteAsync(vehicle, userId: null);
 
         Assert.Equal(1, repository.DeleteOverrideCalls);
         Assert.Equal((false, false), repository.DeleteBools);
         Assert.True(deleted.IsDeleted);
 
         await repository.DeleteAsync(VehicleEntity.FromSamples().Single(v => v.ID == 4),
-            isHardDelete: false, userId: null, bypass: RepositoryBypass.DataLevelAccess);
+            userId: null, bypass: RepositoryBypass.DataLevelAccess);
 
         Assert.Equal((true, false), repository.DeleteBools);
     }

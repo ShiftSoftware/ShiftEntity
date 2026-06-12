@@ -39,6 +39,11 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         if (this.options is null)
             return;
 
+        //The framework's delete is always a soft delete (an update), so there is no delete replication. A raw EF
+        //Remove on a replicated entity is NOT mirrored to Cosmos.
+        if (context.ChangeType == ChangeType.Deleted)
+            return;
+
         using var internalService = this.options.internalServices.BuildServiceProvider();
         var operations = internalService.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();
 

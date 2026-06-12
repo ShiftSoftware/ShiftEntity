@@ -717,7 +717,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return (result, raisedAttention);
     }
 
-    public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, bool isHardDelete, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
+    public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         if (!disableDefaultDataLevelAccess)
         {
@@ -740,14 +740,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     }
 
     /// <summary>
-    /// <see cref="DeleteAsync(EntityType, bool, long?, bool, bool)"/> with the named <see cref="RepositoryBypass"/>
+    /// <see cref="DeleteAsync(EntityType, long?, bool, bool)"/> with the named <see cref="RepositoryBypass"/>
     /// vocabulary instead of the positional bool pair. Deliberately <b>non-virtual</b>: it forwards into the
     /// bool-taking virtual, so repositories that override it keep receiving every call regardless of which
     /// overload the caller used (override the bool overload to customize).
     /// </summary>
     public ValueTask<EntityType> DeleteAsync(
-        EntityType entity, bool isHardDelete, long? userId, RepositoryBypass bypass = RepositoryBypass.None)
-        => DeleteAsync(entity, isHardDelete, userId,
+        EntityType entity, long? userId, RepositoryBypass bypass = RepositoryBypass.None)
+        => DeleteAsync(entity, userId,
             disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
             disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
 

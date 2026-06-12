@@ -2,15 +2,12 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.EFCore.Entities;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
 public abstract class ShiftDbContext : DbContext
 {
     internal ShiftDbContextExtensionOptions? ShiftDbContextOptions { get; set; }
-
-    public DbSet<DeletedRowLog> DeletedRowLogs { get; set; }
 
     public ShiftDbContext() : base()
     {

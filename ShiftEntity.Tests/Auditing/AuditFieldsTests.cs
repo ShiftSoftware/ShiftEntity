@@ -267,7 +267,7 @@ public class AuditFieldsTests
 
         order.AuditFieldsAreSet = false; // mimic a fresh unit-of-work (the [NotMapped] guard is not persisted)
         var beforeDelete = DateTimeOffset.UtcNow;
-        await repo.DeleteAsync(order, isHardDelete: false, userId: 5);
+        await repo.DeleteAsync(order, userId: 5);
         await repo.SaveChangesAsync();
 
         Assert.True(order.IsDeleted);

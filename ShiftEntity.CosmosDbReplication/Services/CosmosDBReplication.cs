@@ -109,16 +109,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
 
     private IEnumerable<Entity> entities;
-    private IEnumerable<DeletedRowLog> deletedRows;
     private List<string> cosmosContainerIds = new();
 
     private Database cosmosDatabase;
 
-    private string replicationContainerId;
-
     List<Func<Task>> upsertActions = new();
-    List<Func<Task>> deleteActions = new();
-    ConcurrentDictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
     ConcurrentDictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
     //Keyed by entity ID, holds the serialized LastReplicationStamp (document id + partition-key levels) computed
@@ -164,7 +159,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// <returns></returns>
     internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
-        this.replicationContainerId = containerId;
         this.cosmosContainerIds.Add(containerId);
 
         //Upsert fail replicated entities into cosmos container
@@ -249,44 +243,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             }
         });
 
-        //Delete fail deleted rows from cosmos container
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var deletedRow in this.deletedRows)
-            {
-                var key = Utility.GetPartitionKey(deletedRow);
-
-                cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
-                    .ContinueWith(x =>
-                    {
-                        CosmosException ex = null;
-
-                        if (x.Exception != null)
-                            foreach (var innerException in x.Exception.InnerExceptions)
-                                if (innerException is CosmosException customException)
-                                    ex = customException;
-
-                        bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                        this.cosmosDeleteSuccesses.AddOrUpdate(deletedRow.ID, SuccessResponse.Create(success),
-                                                                        (key, oldValue) => oldValue.Set(success));
-                    }));
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, Entity, IQueryable<DestinationContainer>> finder,
-        Func<IQueryable<DestinationContainer>, DeletedRowLog, IQueryable<DestinationContainer>> deletedRowFinder,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression); ;
@@ -342,63 +304,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await Task.WhenAll(cosmosTasks);
         });
 
-        //Delete references
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-
-            var containerReposne = await container.ReadContainerAsync();
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var row in this.deletedRows)
-            {
-                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
-
-                if (items is not null && items?.Count() > 0) 
-                {
-                    foreach (var item in items)
-                    {
-                        var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
-
-                        cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                            new[] { PatchOperation.Remove($"/{propertyPath}") })
-                            .ContinueWith(x =>
-                            {
-                                CosmosException ex = null;
-
-                                if (x.Exception != null)
-                                    foreach (var innerException in x.Exception.InnerExceptions)
-                                        if (innerException is CosmosException customException)
-                                            ex = customException;
-
-                                bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                                this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
-                                                                    (key, oldValue) => oldValue.Set(success));
-                            }));
-                    }
-                }
-                else
-                {
-                    this.cosmosDeleteSuccesses.AddOrUpdate(
-                            row.ID,
-                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
-                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
-                        );
-                }
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
-        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
         this.cosmosContainerIds.Add(containerId);
@@ -445,52 +355,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await Task.WhenAll(cosmosTasks);
         });
 
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-            var containerResponse = await container.ReadContainerAsync();
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var row in this.deletedRows)
-            {
-                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
-                if(items is not null && items?.Count() > 0)
-                {
-                    foreach (var item in items)
-                    {
-                        var key = Utility.GetPartitionKey(containerResponse, item);
-
-                        cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(row.RowID.ToString(), key)
-                        .ContinueWith(x =>
-                        {
-                            CosmosException ex = null;
-
-                            if (x.Exception != null)
-                                foreach (var innerException in x.Exception.InnerExceptions)
-                                    if (innerException is CosmosException customException)
-                                        ex = customException;
-
-                            bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                            this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
-                                                                (key, oldValue) => oldValue.Set(success));
-                        }));
-                    }
-                }
-                else
-                {
-                    this.cosmosDeleteSuccesses.AddOrUpdate(
-                            row.ID,
-                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
-                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
-                        );
-                }
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
@@ -513,27 +377,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return items;
     }
 
-    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceDelete<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container, 
-        DeletedRowLog row,
-        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder)
-    {
-        var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
-
-        var extendedQuery = deletedRowFinder(query, row);
-
-        var feedIterator = extendedQuery.ToFeedIterator<CosmosDBItem>();
-
-        List<CosmosDBItem> items = new();
-
-        while (feedIterator.HasMoreResults)
-        {
-            items.AddRange(await feedIterator.ReadNextAsync());
-        }
-
-        return items;
-    }
-
-    public async Task RunAsync(bool removeDeleteRowLog = true, bool updateAll = false)
+    public async Task RunAsync(bool updateAll = false)
     {
         //Return fail replicated entities
         var queryable = this.dbSet.AsQueryable();
@@ -546,15 +390,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
         this.entities = await queryable.ToArrayAsync();
 
-        //Return delete rows that failed to replicate
-        var deleteRowsQueryalbe = db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName);
-        if(!updateAll)
-            deleteRowsQueryalbe = deleteRowsQueryalbe.Where(x => !x.LastReplicationDate.HasValue);
-
-        this.deletedRows = await deleteRowsQueryalbe.ToArrayAsync();
-
-        //If there is no entities or deleted rows to replicate, terminate the process
-        if ((this.entities is null || this.entities?.Count() == 0) && (this.deletedRows is null || this.deletedRows?.Count() == 0))
+        //If there is no entities to replicate, terminate the process
+        if (this.entities is null || this.entities?.Count() == 0)
             return;
 
         if(this.client is null)
@@ -574,12 +411,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.cosmosDatabase = client.GetDatabase(this.cosmosDbDatabaseId);
 
 
-        foreach (var action in this.deleteActions)
-        {
-            this.ResetDeleteSuccess();
-            await action.Invoke();
-        }
-
         foreach (var action in this.upsertActions)
         {
             this.ResetUpsertSuccess();
@@ -587,11 +418,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         }
 
         UpdateLastReplicationDatesAsync();
-
-        if (removeDeleteRowLog)
-            DeleteReplicatedDeletedRowLogs();
-        else
-            UpdateReplicatedDeletedRowLogs();
 
         //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
         //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
@@ -614,42 +440,17 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             }
     }
 
-    private void DeleteReplicatedDeletedRowLogs()
-    {
-        foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
-                db.DeletedRowLogs.Remove(row);
-    }
-
-    private void UpdateReplicatedDeletedRowLogs()
-    {
-        foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
-                row.LastReplicationDate = DateTime.UtcNow;
-    }
-
     private void ResetUpsertSuccess()
     {
         this.cosmosUpsertSuccesses = new ConcurrentDictionary<long, SuccessResponse>(this.cosmosUpsertSuccesses
             .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
     }
 
-    private void ResetDeleteSuccess()
-    {
-        this.cosmosDeleteSuccesses = new ConcurrentDictionary<long, SuccessResponse>(this.cosmosDeleteSuccesses
-                    .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
-    }
-
     public void Dispose()
     {
         this.entities = null!;
-        this.deletedRows = null!;
-
-        this.replicationContainerId = null!;
 
         this.upsertActions = null!;
-        this.deleteActions = null!;
-        this.cosmosDeleteSuccesses = null!;
         this.cosmosUpsertSuccesses = null!;
 
         this.pendingStamps = null!;

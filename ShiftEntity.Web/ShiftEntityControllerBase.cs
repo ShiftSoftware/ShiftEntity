@@ -63,9 +63,9 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
     }
 
     [NonAction]
-    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key, bool isHardDelete)
+    internal async Task<(ActionResult<ShiftEntityResponse<ViewAndUpsertDTO>> ActionResult, Entity? Entity)> DeleteItemNonAction(string key)
     {
-        var (result, entity) = await _handler.DeleteAsync(HttpContext, key, isHardDelete);
+        var (result, entity) = await _handler.DeleteAsync(HttpContext, key);
         return (ToActionResult(result), entity);
     }
 

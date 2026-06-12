@@ -1,6 +1,5 @@
 ﻿using Microsoft.Azure.Cosmos;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
-using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.Model.Enums;
 using System.Globalization;
 using System.Linq.Expressions;
@@ -10,18 +9,6 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
 internal static class Utility
 {
-    internal static PartitionKey GetPartitionKey(DeletedRowLog row)
-    {
-        var builder = new PartitionKeyBuilder();
-
-        AddPrtitionKey(builder, row.PartitionKeyLevelOneValue, row.PartitionKeyLevelOneType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelTwoValue, row.PartitionKeyLevelTwoType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelThreeValue, row.PartitionKeyLevelThreeType);
-
-
-        return builder.Build();
-    }
-
     internal static PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
     {
         PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
@@ -118,8 +105,8 @@ internal static class Utility
             if (type == typeof(string))
             {
                 //Record null as null, never as "" (Convert.ToString(null) returns ""): the recorded value feeds the
-                //LastReplicationStamp and the DeletedRowLog, and a null component written as "" makes every later
-                //stale-document delete address the wrong partition and silently miss.
+                //LastReplicationStamp, and a null component written as "" makes every later stale-document delete
+                //address the wrong partition and silently miss.
                 AddKey(value is null ? null : Convert.ToString(value), PartitionKeyTypes.String);
             }
             else if (type.IsNumericType())

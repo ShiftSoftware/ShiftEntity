@@ -155,7 +155,7 @@ public class UpsertAuditTests
 
         var entity = new OrderEntity { Number = "A-1" };
         var before = DateTimeOffset.UtcNow;
-        await repo.DeleteAsync(entity, isHardDelete: false, userId: null,
+        await repo.DeleteAsync(entity, userId: null,
             disableDefaultDataLevelAccess: true, disableGlobalFilters: true);
 
         Assert.True(entity.IsDeleted);
@@ -171,7 +171,7 @@ public class UpsertAuditTests
         var repo = Repo(Db(scope));
 
         var entity = new OrderEntity { Number = "A-1" };
-        await repo.DeleteAsync(entity, isHardDelete: false, userId: 9,
+        await repo.DeleteAsync(entity, userId: 9,
             disableDefaultDataLevelAccess: true, disableGlobalFilters: true);
 
         Assert.True(entity.IsDeleted);
