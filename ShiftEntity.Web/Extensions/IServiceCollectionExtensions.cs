@@ -105,6 +105,10 @@ public static class IServiceCollectionExtensions
         services.AddScoped<IdentityClaimProvider>();
         services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
+        // v2 data-level-access engine (scoped IAccessibleItemsSource + DataLevelAccessContext) — registered
+        // alongside the legacy IDefaultDataLevelAccess; ShiftRepository starts consuming it in Phase 3.
+        services.AddShiftEntityDataLevelAccess();
+
         return services;
     }
 }

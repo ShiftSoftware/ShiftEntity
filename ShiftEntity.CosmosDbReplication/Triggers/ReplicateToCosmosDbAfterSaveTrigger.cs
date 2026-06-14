@@ -9,8 +9,13 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Triggers;
 
 
+//Registered as an open generic for every entity type; the DI container only materializes it for types that
+//satisfy the constraints (it already skips the base/interface closures Triggered probes), so saves of entities
+//that don't implement IShiftEntityReplication never enter this trigger — they can't be set up for replication
+//in the first place. The operations-null check below covers the remaining case: an entity that implements the
+//interface but has no SetUpReplication registration.
 internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigger<EntityType>, ITriggerPriority
-    where EntityType : ShiftEntity<EntityType>
+    where EntityType : ShiftEntity<EntityType>, IShiftEntityReplication
 {
     private readonly IServiceProvider serviceProvider;
     private readonly IShiftEntityPrepareForReplicationAsync<EntityType>? prepareForReplication;
@@ -39,6 +44,11 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         if (this.options is null)
             return;
 
+        //The framework's delete is always a soft delete (an update), so there is no delete replication. A raw EF
+        //Remove on a replicated entity is NOT mirrored to Cosmos.
+        if (context.ChangeType == ChangeType.Deleted)
+            return;
+
         using var internalService = this.options.internalServices.BuildServiceProvider();
         var operations = internalService.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();
 
@@ -48,23 +58,17 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
         var serviceProvider = this.serviceProvider.CreateAsyncScope().ServiceProvider;
 
         var entity = context.Entity;
-        var unmodifiedEntity = context.ChangeType == ChangeType.Modified ? context.UnmodifiedEntity : null;
         var changeType = ConvertChangeTypeToReplicationChangeType(context.ChangeType);
 
         if (prepareForReplication is not null)
-        {
             entity = await prepareForReplication.PrepareForReplicationAsync(context.Entity, changeType);
-
-            if (unmodifiedEntity is not null)
-                unmodifiedEntity = await prepareForReplication.PrepareForReplicationAsync(unmodifiedEntity, changeType);
-        }
 
         this.logger.LogInformation("CosmosDB Syncing is starting to Sync {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
         _ = Task.Run(async () =>
         {
             this.logger.LogInformation("CosmosDB Syncing Task is Running {entityType} - With ID: {entityID}", entity.GetType(), entity.ID);
 
-            await operations.RunAsync(entity, serviceProvider, context.ChangeType, unmodifiedEntity);
+            await operations.RunAsync(entity, serviceProvider, context.ChangeType);
         }).ContinueWith(t =>
         {
             if (t.IsFaulted)

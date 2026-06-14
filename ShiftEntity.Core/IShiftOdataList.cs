@@ -19,5 +19,16 @@ public interface IShiftOdataList<EntityType, ListDTO>
         bool disableGlobalFilters
     );
 
+    /// <summary>
+    /// <see cref="GetIQueryable(DateTimeOffset?, List{string}?, bool, bool)"/> with the named
+    /// <see cref="RepositoryBypass"/> vocabulary instead of the positional bool pair. A default implementation
+    /// forwards to the bool member, so existing implementors get it for free.
+    /// </summary>
+    public ValueTask<IQueryable<EntityType>> GetIQueryable(
+        DateTimeOffset? asOf = null, List<string>? includes = null, RepositoryBypass bypass = RepositoryBypass.None)
+        => GetIQueryable(asOf, includes,
+            disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
+            disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
+
     public ValueTask<IQueryable<ListDTO>> ApplyPostODataProcessing(IQueryable<ListDTO> queryable);
 }

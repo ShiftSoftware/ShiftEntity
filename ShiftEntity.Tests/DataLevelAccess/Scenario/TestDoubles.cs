@@ -25,6 +25,19 @@ public sealed class FakeCurrentUserProvider : ICurrentUserProvider
         return new FakeCurrentUserProvider(new ClaimsPrincipal(identity));
     }
 
+    /// <summary>
+    /// A principal that CARRIES the given claims but is <b>not authenticated</b> (no authentication type). Claims on
+    /// such a principal must never grant data access — both the legacy claim reads and v2's
+    /// <c>DataLevelAccessContext.GetClaim</c> resolve them to null (the 4.1 parity alignment).
+    /// </summary>
+    public static FakeCurrentUserProvider WithUnauthenticatedClaims(params (string Type, string Value)[] claims)
+    {
+        var identity = new ClaimsIdentity(); // no authentication type ⇒ IsAuthenticated == false
+        foreach (var (type, value) in claims)
+            identity.AddClaim(new Claim(type, value));
+        return new FakeCurrentUserProvider(new ClaimsPrincipal(identity));
+    }
+
     /// <summary>No signed-in user (<see cref="GetUser"/> ⇒ <see langword="null"/>): every claim resolves to null.</summary>
     public static FakeCurrentUserProvider Anonymous() => new(null);
 }
@@ -34,7 +47,10 @@ public sealed class FakeCurrentUserProvider : ICurrentUserProvider
 /// <see cref="Encode(long, System.Type)"/> run an injectable function (default: identity — <c>long.Parse</c> /
 /// <c>ToString</c>) and record each (value, DTO type) call, so a test can assert the engine routed a
 /// <c>HashId&lt;TDto&gt;</c> dimension through the hashid converter (with the right DTO) rather than parsing raw.
-/// All members the v2 engine does not use throw, to fail loud if a path unexpectedly depends on them.
+/// The generic <see cref="Decode{TDTO}(string)"/>/<see cref="Encode{TDTO}(long)"/> forms — what the <em>legacy</em>
+/// <c>DefaultDataLevelAccess</c> calls — run the same functions and record into the same lists, so the Phase 4
+/// parity tests see both arms resolve the identical id-space (and can assert the DTO type-key either way). Members
+/// neither arm uses throw, to fail loud if a path unexpectedly depends on them.
 /// </summary>
 public sealed class RecordingHashIdService : IHashIdService
 {
@@ -62,12 +78,14 @@ public sealed class RecordingHashIdService : IHashIdService
         return encode(id, dtoType);
     }
 
-    // Not used by the v2 engine — throw rather than guess at behavior.
+    // The legacy DefaultDataLevelAccess uses the generic forms — same functions, same recording.
+    public long Decode<TDTO>(string key) => Decode(key, typeof(TDTO));
+    public string Encode<TDTO>(long id) => Encode(id, typeof(TDTO));
+
+    // Not used by either arm — throw rather than guess at behavior.
     public bool IsConfigurationRegistered(string configurationName) => throw new NotImplementedException();
     public bool IsAcceptUnencodedIds(string? configurationName) => throw new NotImplementedException();
-    public long Decode<TDTO>(string key) => throw new NotImplementedException();
     public long Decode(string key, JsonHashIdConverterAttribute attr) => throw new NotImplementedException();
-    public string Encode<TDTO>(long id) => throw new NotImplementedException();
     public string Encode(long id, JsonHashIdConverterAttribute attr) => throw new NotImplementedException();
     public ShiftEntityHashId? GetHasherFor(JsonHashIdConverterAttribute attr) => throw new NotImplementedException();
 }

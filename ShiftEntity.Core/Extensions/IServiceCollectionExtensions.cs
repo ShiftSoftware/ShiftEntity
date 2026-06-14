@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using System;
 using System.Linq;
@@ -34,6 +35,35 @@ public static class IServiceCollectionExtensions
     private static IServiceCollection AddShiftEntityHashIdCore(this IServiceCollection services)
     {
         services.TryAddSingleton<IHashIdService, HashIdService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the v2 data-level-access engine's per-request services: <see cref="IAccessibleItemsSource"/>
+    /// (TypeAuth-backed, memoized per request) and the <see cref="DataLevelAccessContext"/> consumed by
+    /// <c>DataLevelAccessPolicy</c>'s query filter and row check. <c>AddShiftEntityWeb</c> and
+    /// <c>AddShiftEntityFunctions</c> call this internally; call it directly only from custom hosts
+    /// that don't go through either entry point.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Both registrations are scoped — by design, never singleton.</b> The source wraps the request's scoped
+    /// <c>ITypeAuthService</c> (the caller's grants) and caches per request; the context resolves the caller's
+    /// <see cref="System.Security.Claims.ClaimsPrincipal"/> once. A longer lifetime would serve one user's
+    /// accessible ids to another (see <see cref="TypeAuthAccessibleItemsSource"/>).
+    /// </para>
+    /// <para>
+    /// Resolving <see cref="DataLevelAccessContext"/> expects <c>ITypeAuthService</c> (TypeAuth's
+    /// <c>AddTypeAuth</c>), <see cref="ICurrentUserProvider"/> (the web/functions entry points), and
+    /// <see cref="IHashIdService"/> (<c>AddShiftEntity</c> / <see cref="AddShiftEntityHashId"/>) to be registered.
+    /// Registrations use <c>TryAdd</c>, so a custom <see cref="IAccessibleItemsSource"/> registered beforehand wins.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddShiftEntityDataLevelAccess(this IServiceCollection services)
+    {
+        services.TryAddScoped<IAccessibleItemsSource, TypeAuthAccessibleItemsSource>();
+        services.TryAddScoped<DataLevelAccessContext>();
+
         return services;
     }
 

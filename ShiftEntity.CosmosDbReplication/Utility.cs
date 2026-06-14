@@ -1,6 +1,7 @@
 ﻿using Microsoft.Azure.Cosmos;
-using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.Model.Enums;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -8,18 +9,6 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
 internal static class Utility
 {
-    internal static PartitionKey GetPartitionKey(DeletedRowLog row)
-    {
-        var builder = new PartitionKeyBuilder();
-
-        AddPrtitionKey(builder, row.PartitionKeyLevelOneValue, row.PartitionKeyLevelOneType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelTwoValue, row.PartitionKeyLevelTwoType);
-        AddPrtitionKey(builder, row.PartitionKeyLevelThreeValue, row.PartitionKeyLevelThreeType);
-
-
-        return builder.Build();
-    }
-
     internal static PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
     {
         PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();
@@ -34,14 +23,20 @@ internal static class Utility
             var type = propertyInfo.PropertyType;
             var value = propertyInfo.GetValue(item, null);
 
-            if (type == typeof(string))
+            if (!(type == typeof(string) || type.IsNumericType() || type == typeof(bool) || type == typeof(bool?)))
+                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
+
+            //A null component must be added as the JSON-null key value. Coercing it instead
+            //(Convert.ToString → "", Convert.ToDouble → 0, Convert.ToBoolean → false) builds a key for a DIFFERENT
+            //partition than the one the document actually lives in, so point operations (delete/read) silently miss.
+            if (value is null)
+                partitionKeyBuilder.AddNullValue();
+            else if (type == typeof(string))
                 partitionKeyBuilder.Add(Convert.ToString(value));
             else if (type.IsNumericType())
                 partitionKeyBuilder.Add(Convert.ToDouble(value));
-            else if (type == typeof(bool) || type == typeof(bool?))
-                partitionKeyBuilder.Add(Convert.ToBoolean(value));
             else
-                throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
+                partitionKeyBuilder.Add(Convert.ToBoolean(value));
         }
 
         return partitionKeyBuilder.Build();
@@ -49,13 +44,44 @@ internal static class Utility
 
     internal static void AddPrtitionKey(PartitionKeyBuilder builder, string? value, PartitionKeyTypes type)
     {
+        if (type == PartitionKeyTypes.None)
+            return;
+
+        //A recorded null component rebuilds as the JSON-null key value, whatever its declared type (see the remark
+        //in GetPartitionKey — any other representation addresses the wrong partition).
+        if (value is null)
+        {
+            builder.AddNullValue();
+            return;
+        }
+
         if (type == PartitionKeyTypes.String)
             builder.Add(value);
         else if (type == PartitionKeyTypes.Numeric)
-            builder.Add(Double.Parse(value));
+            builder.Add(Double.Parse(value, CultureInfo.InvariantCulture));
         else if (type == PartitionKeyTypes.Boolean)
             builder.Add(Boolean.Parse(value));
     }
+
+    /// <summary>
+    /// Build the <see cref="LastReplicationStamp"/> (document id + partition-key levels) the given Cosmos item is
+    /// being replicated under, for change detection and persistence on the entity.
+    /// </summary>
+    internal static LastReplicationStamp BuildStamp(ContainerResponse containerResponse, object item)
+    {
+        var details = GetPartitionKeyDetails(containerResponse, item);
+
+        return new LastReplicationStamp
+        {
+            Id = Convert.ToString(item.GetProperty("id")),
+            Level1 = ToLevel(details.level1),
+            Level2 = ToLevel(details.level2),
+            Level3 = ToLevel(details.level3),
+        };
+    }
+
+    private static PartitionKeyLevelStamp? ToLevel((string? value, PartitionKeyTypes type)? level)
+        => level.HasValue ? new PartitionKeyLevelStamp { Value = level.Value.value, Type = level.Value.type } : null;
 
     internal static (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
@@ -78,21 +104,27 @@ internal static class Utility
 
             if (type == typeof(string))
             {
-                partitionKeyBuilder.Add(Convert.ToString(value));
-                keys.Add((Convert.ToString(value), PartitionKeyTypes.String));
+                //Record null as null, never as "" (Convert.ToString(null) returns ""): the recorded value feeds the
+                //LastReplicationStamp, and a null component written as "" makes every later stale-document delete
+                //address the wrong partition and silently miss.
+                AddKey(value is null ? null : Convert.ToString(value), PartitionKeyTypes.String);
             }
             else if (type.IsNumericType())
             {
-                partitionKeyBuilder.Add(Convert.ToDouble(value));
-                keys.Add((Convert.ToString(value), PartitionKeyTypes.Numeric));
+                AddKey(value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture), PartitionKeyTypes.Numeric);
             }
             else if (type == typeof(bool) || type == typeof(bool?))
             {
-                partitionKeyBuilder.Add(Convert.ToBoolean(value));
-                keys.Add((Convert.ToString(value), PartitionKeyTypes.Boolean));
+                AddKey(value is null ? null : Convert.ToString(value), PartitionKeyTypes.Boolean);
             }
             else
                 throw new ArgumentException($"The type or value of '{partitionKeyPath}' partition key is incorrect");
+        }
+
+        void AddKey(string? value, PartitionKeyTypes type)
+        {
+            AddPrtitionKey(partitionKeyBuilder, value, type);
+            keys.Add((value, type));
         }
 
         (string? value, PartitionKeyTypes type)? level1 = keys[0];

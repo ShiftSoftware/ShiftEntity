@@ -53,7 +53,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
 
-        var queryable = await repository.GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var queryable = await repository.GetIQueryable();
 
         if (where is not null)
             queryable = queryable.Where(where);
@@ -88,7 +88,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf);
         }
         catch (ShiftEntityException ex)
         {
@@ -143,7 +143,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                     idempotencyKey = Guid.Parse(header);
             }
 
-            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey);
         }
         catch (ShiftEntityException ex)
         {
@@ -158,7 +158,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
         catch (DuplicateIdempotencyKeyException)
         {
-            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
 
             var existingDto = await repository.ViewAsync(existingItem!);
 
@@ -207,7 +207,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
         }
         catch (ShiftEntityException ex)
         {
@@ -235,7 +235,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 );
             }
 
-            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID(), idempotencyKey: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -262,13 +262,12 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
     public async Task<(CrudResult Result, Entity? Entity)> DeleteAsync(
         HttpContext httpContext,
-        string key,
-        bool isHardDelete)
+        string key)
     {
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key), asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+        var item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         if (item == null)
             return (CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -283,7 +282,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await repository.DeleteAsync(item, isHardDelete, httpContext.GetUserID(), disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            await repository.DeleteAsync(item, httpContext.GetUserID());
         }
         catch (ShiftEntityException ex)
         {
@@ -300,7 +299,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         }
 
         if (item.ReloadAfterSave)
-            item = await repository.FindAsync(item.ID, asOf: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
+            item = await repository.FindAsync(item.ID);
 
         var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item!))
         {
@@ -339,11 +338,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-        var found = await repository.FindAsync(
-            hashIdService.Decode<ViewAndUpsertDTO>(key),
-            asOf: null,
-            disableDefaultDataLevelAccess: false,
-            disableGlobalFilters: false);
+        var found = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
 
         if (found is null)
             return CrudResult.NotFound(new ShiftEntityResponse<ViewAndUpsertDTO>
@@ -458,8 +453,25 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
-            return CrudResult.Ok(null);
+            var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+
+            // Clearing raises no AttentionRaised event, so push a real-time hint here too —
+            // otherwise other sessions with this entity's list/form open would keep showing the
+            // (now-cleared) indicator until their next manual refresh. Best-effort + opt-in:
+            // absent when the hub isn't registered, and a failed send never fails the clear.
+            var broadcaster = httpContext.RequestServices.GetService<Attention.IAttentionRealtimeBroadcaster>();
+            if (broadcaster is not null)
+            {
+                // Exclude the window that performed the clear — it already dropped its own banner.
+                var origin = httpContext.RequestServices.GetService<IAttentionOriginProvider>()?.OriginConnectionId;
+                try { await broadcaster.BroadcastClearedAsync(entityTypeName, entityId, origin); }
+                catch { /* realtime hint is best-effort — never fail the clear over it */ }
+            }
+
+            // The clear advanced the entity's audit stamp (= the optimistic-concurrency
+            // version). Return it so a client holding the pre-clear DTO can patch its
+            // LastSaveDate instead of conflicting on the next save.
+            return CrudResult.Ok(new ClearAttentionResponse { LastSaveDate = lastSaveDate });
         }
         catch (InvalidOperationException ex)
         {

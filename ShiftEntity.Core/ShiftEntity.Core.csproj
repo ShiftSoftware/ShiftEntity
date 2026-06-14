@@ -31,10 +31,10 @@
 
 	<ItemGroup>
 		<PackageReference Include="AutoMapper" Version="14.0.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
-		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.8" />
-		<PackageReference Include="Azure.Storage.Blobs" Version="12.28.0" />
-		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.8" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.0" />
+		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.9" />
 		<PackageReference Include="Microsoft.OData.Core" Version="8.4.3" />
 		<PackageReference Include="Microsoft.OData.Edm" Version="8.4.3" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.Core" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj')" />

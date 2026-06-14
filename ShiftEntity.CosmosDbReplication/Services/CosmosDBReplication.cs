@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Net;
@@ -28,7 +29,7 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
     {
         return new CosmosDbReplicationOperation<DB, Entity>(cosmosDbConnectionString, cosmosDataBaseId, services, query);
     }
@@ -36,14 +37,14 @@ public class CosmosDBReplication
     public CosmosDbReplicationOperation<DB, Entity> SetUp<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<IQueryable<Entity>, IQueryable<Entity>>? query = null)
         where DB : ShiftDbContext
-        where Entity : ShiftEntity<Entity>
+        where Entity : ShiftEntity<Entity>, IShiftEntityReplication
     {
         return new CosmosDbReplicationOperation<DB, Entity>(client, cosmosDataBaseId, services, query);
     }
 }
 public class CosmosDbReplicationOperation<DB, Entity>
     where DB : ShiftDbContext
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string? cosmosDbConnectionString;
     private readonly string cosmosDbDatabaseId;
@@ -97,7 +98,7 @@ public class CosmosDbReplicationOperation<DB, Entity>
 
 public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     where DB : ShiftDbContext
-    where Entity : ShiftEntity<Entity>
+    where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string cosmosDbConnectionString;
     private CosmosClient client;
@@ -108,23 +109,18 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
 
     private IEnumerable<Entity> entities;
-    private IEnumerable<DeletedRowLog> deletedRows;
     private List<string> cosmosContainerIds = new();
 
     private Database cosmosDatabase;
 
-    private string replicationContainerId;
-
     List<Func<Task>> upsertActions = new();
-    List<Func<Task>> deleteActions = new();
-    ConcurrentDictionary<long, SuccessResponse> cosmosDeleteSuccesses = new();
     ConcurrentDictionary<long, SuccessResponse> cosmosUpsertSuccesses = new();
 
-    //Populated only when Entity is mapped to a SQL Server temporal table.
-    //Keyed by entity ID, holds the historical row that was current at the time replication last succeeded
-    //(matched by PeriodStart <= LastReplicationDate < PeriodEnd) so we can detect a partition-key change
-    //and delete the stale Cosmos document under the OLD partition key before upserting the new one.
-    Dictionary<long, Entity> previouslySyncedEntities = new();
+    //Keyed by entity ID, holds the serialized LastReplicationStamp (document id + partition-key levels) computed
+    //during this sync. Written back to each entity's LastReplicationStamp column after a successful upsert so
+    //the NEXT sync — trigger or catch-up — can detect an id or partition-key change and delete the stale Cosmos
+    //document under the OLD id + key before upserting the new one.
+    Dictionary<long, string> pendingStamps = new();
 
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
@@ -163,7 +159,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// <returns></returns>
     internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
-        this.replicationContainerId = containerId;
         this.cosmosContainerIds.Add(containerId);
 
         //Upsert fail replicated entities into cosmos container
@@ -176,48 +171,57 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             foreach (var entity in this.entities)
             {
-                CosmosDBItem newItem;
-                if (mapping is not null)
-                    newItem = mapping(entity);
-                else
-                    newItem = this.mapper.Map<CosmosDBItem>(entity);
-
-                var entityId = entity.ID;
-
-                //If this entity is on a temporal table and we found the version that was current at the last
-                //successful sync, detect a partition-key change and remove the stale Cosmos document under the
-                //OLD partition key before upserting under the new one. Cosmos cannot mutate a document's PK,
-                //so a naive upsert would leave the old doc orphaned.
-                PartitionKey? oldPartitionKey = null;
-                if (this.previouslySyncedEntities.TryGetValue(entityId, out var previousEntity))
+                //One bad row (a mapping that throws, a stamp that defeats even Deserialize's validation) must fail
+                //THAT row — marked unsuccessful below so it stays dirty and is retried — never abort the whole
+                //catch-up run for every other entity.
+                try
                 {
-                    CosmosDBItem oldItem;
+                    CosmosDBItem newItem;
                     if (mapping is not null)
-                        oldItem = mapping(previousEntity);
+                        newItem = mapping(entity);
                     else
-                        oldItem = this.mapper.Map<CosmosDBItem>(previousEntity);
+                        newItem = this.mapper.Map<CosmosDBItem>(entity);
 
-                    var newPk = Utility.GetPartitionKey(containerResponse, newItem!);
-                    var oldPk = Utility.GetPartitionKey(containerResponse, oldItem!);
-                    if (!newPk.Equals(oldPk))
-                        oldPartitionKey = oldPk;
+                    var entityId = entity.ID;
+
+                    //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
+                    //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
+                    //id or PK, so a naive upsert would orphan the old doc). The mapping only ever runs on the fully
+                    //loaded current entity, so navigation-derived keys/fields are always populated.
+                    string? deleteId = null;
+                    PartitionKey? oldPartitionKey = null;
+
+                    var newStamp = Utility.BuildStamp(containerResponse, newItem!);
+                    var oldStamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+
+                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                    {
+                        deleteId = oldStamp.Id;
+                        oldPartitionKey = oldStamp.BuildPartitionKey();
+                    }
+
+                    this.pendingStamps[entityId] = newStamp.Serialize();
+
+                    cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
                 }
-
-                cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, oldPartitionKey));
+                catch
+                {
+                    this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(false),
+                        (key, oldValue) => oldValue.Set(false));
+                }
             }
 
             await Task.WhenAll(cosmosTasks);
 
-            async Task UpsertWithPartitionKeyChangeHandlingAsync(Microsoft.Azure.Cosmos.Container c, CosmosDBItem item, long id, PartitionKey? deletePk)
+            async Task UpsertWithPartitionKeyChangeHandlingAsync(Microsoft.Azure.Cosmos.Container c, CosmosDBItem item, long id, string? deleteId, PartitionKey? deletePk)
             {
                 bool success = true;
 
-                if (deletePk.HasValue)
+                if (deletePk.HasValue && deleteId is not null)
                 {
-                    var idString = Convert.ToString(item!.GetProperty("id"));
                     try
                     {
-                        await c.DeleteItemAsync<CosmosDBItem>(idString, deletePk.Value);
+                        await c.DeleteItemAsync<CosmosDBItem>(deleteId, deletePk.Value);
                     }
                     catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                     {
@@ -246,44 +250,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             }
         });
 
-        //Delete fail deleted rows from cosmos container
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var deletedRow in this.deletedRows)
-            {
-                var key = Utility.GetPartitionKey(deletedRow);
-
-                cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(deletedRow.RowID.ToString(), key)
-                    .ContinueWith(x =>
-                    {
-                        CosmosException ex = null;
-
-                        if (x.Exception != null)
-                            foreach (var innerException in x.Exception.InnerExceptions)
-                                if (innerException is CosmosException customException)
-                                    ex = customException;
-
-                        bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                        this.cosmosDeleteSuccesses.AddOrUpdate(deletedRow.ID, SuccessResponse.Create(success),
-                                                                        (key, oldValue) => oldValue.Set(success));
-                    }));
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, Entity, IQueryable<DestinationContainer>> finder,
-        Func<IQueryable<DestinationContainer>, DeletedRowLog, IQueryable<DestinationContainer>> deletedRowFinder,
         Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression); ;
@@ -339,63 +311,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await Task.WhenAll(cosmosTasks);
         });
 
-        //Delete references
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-
-            var containerReposne = await container.ReadContainerAsync();
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var row in this.deletedRows)
-            {
-                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
-
-                if (items is not null && items?.Count() > 0) 
-                {
-                    foreach (var item in items)
-                    {
-                        var id = Convert.ToString(item.GetProperty("id"));
-                        PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
-
-                        cosmosTasks.Add(container.PatchItemAsync<DestinationContainer>(id, partitionKey,
-                            new[] { PatchOperation.Remove($"/{propertyPath}") })
-                            .ContinueWith(x =>
-                            {
-                                CosmosException ex = null;
-
-                                if (x.Exception != null)
-                                    foreach (var innerException in x.Exception.InnerExceptions)
-                                        if (innerException is CosmosException customException)
-                                            ex = customException;
-
-                                bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                                this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
-                                                                    (key, oldValue) => oldValue.Set(success));
-                            }));
-                    }
-                }
-                else
-                {
-                    this.cosmosDeleteSuccesses.AddOrUpdate(
-                            row.ID,
-                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
-                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
-                        );
-                }
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
-        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder,
         Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
         this.cosmosContainerIds.Add(containerId);
@@ -442,52 +362,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await Task.WhenAll(cosmosTasks);
         });
 
-        this.deleteActions.Add(async () =>
-        {
-            var container = this.cosmosDatabase.GetContainer(containerId);
-            var containerResponse = await container.ReadContainerAsync();
-
-            List<Task> cosmosTasks = new();
-
-            foreach (var row in this.deletedRows)
-            {
-                var items = await GetItemsForReferenceDelete(container, row, deletedRowFinder);
-                if(items is not null && items?.Count() > 0)
-                {
-                    foreach (var item in items)
-                    {
-                        var key = Utility.GetPartitionKey(containerResponse, item);
-
-                        cosmosTasks.Add(container.DeleteItemAsync<CosmosDBItem>(row.RowID.ToString(), key)
-                        .ContinueWith(x =>
-                        {
-                            CosmosException ex = null;
-
-                            if (x.Exception != null)
-                                foreach (var innerException in x.Exception.InnerExceptions)
-                                    if (innerException is CosmosException customException)
-                                        ex = customException;
-
-                            bool success = x.IsCompletedSuccessfully || ex?.StatusCode == HttpStatusCode.NotFound;
-
-                            this.cosmosDeleteSuccesses.AddOrUpdate(row.ID, SuccessResponse.Create(success),
-                                                                (key, oldValue) => oldValue.Set(success));
-                        }));
-                    }
-                }
-                else
-                {
-                    this.cosmosDeleteSuccesses.AddOrUpdate(
-                            row.ID,
-                            id => new SuccessResponse(), // This function is called if entity.ID does not exist in the dictionary
-                            (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
-                        );
-                }
-            }
-
-            await Task.WhenAll(cosmosTasks);
-        });
-
         return this;
     }
 
@@ -510,32 +384,14 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return items;
     }
 
-    private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceDelete<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container, 
-        DeletedRowLog row,
-        Func<IQueryable<CosmosDBItem>, DeletedRowLog, IQueryable<CosmosDBItem>> deletedRowFinder)
-    {
-        var query = container.GetItemLinqQueryable<CosmosDBItem>().AsQueryable();
-
-        var extendedQuery = deletedRowFinder(query, row);
-
-        var feedIterator = extendedQuery.ToFeedIterator<CosmosDBItem>();
-
-        List<CosmosDBItem> items = new();
-
-        while (feedIterator.HasMoreResults)
-        {
-            items.AddRange(await feedIterator.ReadNextAsync());
-        }
-
-        return items;
-    }
-
-    public async Task RunAsync(bool removeDeleteRowLog = true, bool updateAll = false)
+    public async Task RunAsync(bool updateAll = false)
     {
         //Return fail replicated entities
         var queryable = this.dbSet.AsQueryable();
 
         if (!updateAll)
+            //Dirty = the replicated-version watermark is behind the row's save date (or absent: never replicated).
+            //LastReplicationDate is that watermark — the save date of the replicated version, not a run timestamp.
             queryable = queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
 
         if (this.query is not null)
@@ -543,17 +399,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
         this.entities = await queryable.ToArrayAsync();
 
-        await LoadPreviouslySyncedEntitiesAsync();
-
-        //Return delete rows that failed to replicate
-        var deleteRowsQueryalbe = db.DeletedRowLogs.Where(x => this.replicationContainerId == x.ContainerName);
-        if(!updateAll)
-            deleteRowsQueryalbe = deleteRowsQueryalbe.Where(x => !x.LastReplicationDate.HasValue);
-
-        this.deletedRows = await deleteRowsQueryalbe.ToArrayAsync();
-
-        //If there is no entities or deleted rows to replicate, terminate the process
-        if ((this.entities is null || this.entities?.Count() == 0) && (this.deletedRows is null || this.deletedRows?.Count() == 0))
+        //If there is no entities to replicate, terminate the process
+        if (this.entities is null || this.entities?.Count() == 0)
             return;
 
         if(this.client is null)
@@ -573,100 +420,33 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.cosmosDatabase = client.GetDatabase(this.cosmosDbDatabaseId);
 
 
-        foreach (var action in this.deleteActions)
-        {
-            this.ResetDeleteSuccess();
-            await action.Invoke();
-        }
-
         foreach (var action in this.upsertActions)
         {
             this.ResetUpsertSuccess();
             await action.Invoke();
         }
 
-        UpdateLastReplicationDatesAsync();
+        ApplyReplicationBookkeeping();
 
-        if (removeDeleteRowLog)
-            DeleteReplicatedDeletedRowLogs();
-        else
-            UpdateReplicatedDeletedRowLogs();
-
-        await this.db.SaveChangesWithoutTriggersAsync();
+        //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
+        //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
+        //sweep would treat this infrastructure save as a real edit.
+        using (this.db.SuppressAuditStamping())
+            await this.db.SaveChangesWithoutTriggersAsync();
 
         this.Dispose();
     }
 
-    private async Task LoadPreviouslySyncedEntitiesAsync()
+    private void ApplyReplicationBookkeeping()
     {
-        if (this.entities is null)
-            return;
-
-        var designTimeModel = this.db.GetService<IDesignTimeModel>().Model;
-        var entityType = designTimeModel.FindEntityType(typeof(Entity));
-        if (entityType is null || !entityType.IsTemporal())
-            return;
-
-        var idsToLookup = this.entities
-            .Where(e => e.LastReplicationDate.HasValue)
-            .Select(e => e.ID)
-            .Distinct()
-            .ToArray();
-
-        if (idsToLookup.Length == 0)
-            return;
-
-        //Per entity in the batch, pick the history row with the largest LastSaveDate that's still <= LastReplicationDate.
-        //
-        //That row is the version we last synced regardless of how LRD got set:
-        //  - When LRD was written via UpdateReplicationDate() (LRD = LastSaveDate), the max LastSaveDate <= LRD equals
-        //    LRD exactly, landing on the synced row.
-        //  - When LRD was set to DateTime.UtcNow (or any other monotonic value), no history row's LastSaveDate equals
-        //    LRD, but the largest LastSaveDate still <= LRD is the version that was current right before LRD was stamped.
-        //
-        //Both columns live in the .NET clock domain (written by the application), so the comparison is exact — there's
-        //no SQL-vs-.NET clock skew to introduce off-by-one neighbouring rows. Modelled as a correlated subquery in the
-        //projection, EF Core translates this to a CROSS APPLY(SELECT TOP 1 ... ORDER BY ... DESC) on SQL Server, so the
-        //per-row TOP-1 happens server-side without materializing history chains.
-        var matched = await (
-            from current in this.db.Set<Entity>().AsNoTracking().IgnoreQueryFilters()
-            where idsToLookup.Contains(current.ID) && current.LastReplicationDate.HasValue
-            select new
-            {
-                ID = current.ID,
-                History = this.db.Set<Entity>().TemporalAll().AsNoTracking().IgnoreQueryFilters()
-                    .Where(h => h.ID == current.ID && h.LastSaveDate <= current.LastReplicationDate!.Value)
-                    .OrderByDescending(h => h.LastSaveDate)
-                    .FirstOrDefault()
-            }
-        ).ToListAsync();
-
-        foreach (var row in matched)
-        {
-            if (row.History is not null)
-                this.previouslySyncedEntities[row.ID] = row.History;
-        }
-    }
-
-    private void UpdateLastReplicationDatesAsync()
-    {
+        //Success implies a pending stamp exists: the upsert action records it before queueing the Cosmos call,
+        //and rows whose mapping or stamp computation threw are marked unsuccessful. The TryGetValue keeps the
+        //unreachable missing-stamp case on the safe side — the row stays dirty and is retried, rather than being
+        //marked clean with stale coordinates.
         foreach (var entity in this.entities)
-            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get())
-                entity.UpdateReplicationDate();
-    }
-
-    private void DeleteReplicatedDeletedRowLogs()
-    {
-        foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
-                db.DeletedRowLogs.Remove(row);
-    }
-
-    private void UpdateReplicatedDeletedRowLogs()
-    {
-        foreach (var row in this.deletedRows)
-            if (this.cosmosDeleteSuccesses.GetOrAdd(row.ID, new SuccessResponse()).Get())
-                row.LastReplicationDate = DateTime.UtcNow;
+            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get() &&
+                this.pendingStamps.TryGetValue(entity.ID, out var stamp))
+                entity.MarkReplicated(stamp);
     }
 
     private void ResetUpsertSuccess()
@@ -675,25 +455,14 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
     }
 
-    private void ResetDeleteSuccess()
-    {
-        this.cosmosDeleteSuccesses = new ConcurrentDictionary<long, SuccessResponse>(this.cosmosDeleteSuccesses
-                    .ToDictionary(x => x.Key, x => x.Value?.Reset() ?? new SuccessResponse()));
-    }
-
     public void Dispose()
     {
         this.entities = null!;
-        this.deletedRows = null!;
-
-        this.replicationContainerId = null!;
 
         this.upsertActions = null!;
-        this.deleteActions = null!;
-        this.cosmosDeleteSuccesses = null!;
         this.cosmosUpsertSuccesses = null!;
 
-        this.previouslySyncedEntities = null!;
+        this.pendingStamps = null!;
 
         this.cosmosDatabase = null!;
     }

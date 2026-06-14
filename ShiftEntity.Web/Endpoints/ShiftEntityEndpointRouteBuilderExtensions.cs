@@ -178,9 +178,9 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
             return ToMinimalApiResult(result);
         };
 
-        Func<HttpContext, string, bool, Task<IResult>> defaultDelete = async (HttpContext ctx, string key, bool isHardDelete) =>
+        Func<HttpContext, string, Task<IResult>> defaultDelete = async (HttpContext ctx, string key) =>
         {
-            var (result, _) = await handler.DeleteAsync(ctx, key, isHardDelete);
+            var (result, _) = await handler.DeleteAsync(ctx, key);
             return ToMinimalApiResult(result);
         };
 
@@ -249,10 +249,10 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
             .AddEndpointFilter<ShiftEntityValidationEndpointFilter>();
 
         // DELETE /{key}
-        var deleteRoute = group.MapDelete("/{key}", async (HttpContext ctx, string key, bool isHardDelete) =>
+        var deleteRoute = group.MapDelete("/{key}", async (HttpContext ctx, string key) =>
             config?._deleteOverride is not null
-                ? await config._deleteOverride(defaultDelete, ctx, key, isHardDelete)
-                : await defaultDelete(ctx, key, isHardDelete));
+                ? await config._deleteOverride(defaultDelete, ctx, key)
+                : await defaultDelete(ctx, key));
 
         // GET /print/{key}
         // In secure mode the SAS token is validated inside defaultPrint, and the route is
