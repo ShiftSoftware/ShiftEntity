@@ -1,7 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using ShiftSoftware.ShiftEntity.Core.Tagging;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.EFCore.Tagging;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
@@ -10,6 +13,13 @@ public abstract class ShiftDbContext : DbContext
     internal ShiftDbContextExtensionOptions? ShiftDbContextOptions { get; set; }
 
     public DbSet<DeletedRowLog> DeletedRowLogs { get; set; }
+
+    /// <summary>
+    /// Tag vocabulary for this DbContext. Ignored from the EF model — and therefore
+    /// from migrations — unless the application calls <c>services.AddShiftTagging&lt;TDbContext&gt;()</c>.
+    /// Access this set without registering tagging will throw at runtime.
+    /// </summary>
+    public DbSet<Tag> Tags { get; set; } = default!;
 
     public ShiftDbContext() : base()
     {
@@ -47,7 +57,10 @@ public abstract class ShiftDbContext : DbContext
             }
         }
 
-        modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false);
+        var taggingOptions = _applicationServiceProvider?.GetService<IOptions<ShiftTaggingOptions>>()?.Value;
+        var effectiveTaggingOptions = taggingOptions?.Enabled == true ? taggingOptions : null;
+
+        modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false, effectiveTaggingOptions);
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

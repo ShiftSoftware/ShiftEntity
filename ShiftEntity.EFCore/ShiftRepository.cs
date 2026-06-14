@@ -5,9 +5,12 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Core.Tagging;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.ShiftEntity.EFCore.Tagging;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Dtos.Tagging;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.TypeAuth.Core;
 using System.Net;
@@ -39,6 +42,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private bool _hasUniqueHashInterface;
     private bool _hasAttentionInterface;
     private bool _needsAttentionTransaction;
+    private bool _hasTaggableInterface;
 
     private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
     private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
@@ -72,6 +76,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         _hasAttentionInterface = typeof(IHasAttention).IsAssignableFrom(typeof(EntityType));
         _needsAttentionTransaction = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(EntityType));
+        _hasTaggableInterface = typeof(IShiftEntityTaggable).IsAssignableFrom(typeof(EntityType));
 
         if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
             this.beforeSaveHook = beforeSaveHook;
@@ -134,7 +139,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(MapToView(entity));
     }
 
-    public virtual ValueTask<EntityType> UpsertAsync(
+    public virtual async ValueTask<EntityType> UpsertAsync(
         EntityType entity, ViewAndUpsertDTO dto,
         ActionTypes actionType,
         long? userId,
@@ -144,6 +149,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     )
     {
         entity = MapToEntity(dto, entity);
+
+        if (_hasTaggableInterface && dto is IShiftEntityTaggableDTO taggableDto && entity is IShiftEntityTaggable taggableEntity)
+        {
+            await TaggingPipeline.ApplyTagsAsync(this.db, taggableEntity, taggableDto.Tags);
+        }
 
         var now = DateTimeOffset.UtcNow;
 
@@ -188,7 +198,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        return new ValueTask<EntityType>(entity);
+        return entity;
     }
 
     public Message? ResponseMessage { get; set; }

@@ -2,15 +2,21 @@
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Core.Tagging;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
 using ShiftSoftware.ShiftEntity.EFCore.Migrations;
+using ShiftSoftware.ShiftEntity.EFCore.Tagging;
+using System.Reflection;
 
 namespace Microsoft.EntityFrameworkCore;
 
 public static class ModelBuilderExtensions
 {
     public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder, bool useTemporal)
+        => ConfigureShiftEntity(modelBuilder, useTemporal, taggingOptions: null);
+
+    public static ModelBuilder ConfigureShiftEntity(this ModelBuilder modelBuilder, bool useTemporal, ShiftTaggingOptions? taggingOptions)
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -50,6 +56,8 @@ public static class ModelBuilderExtensions
         }
 
         ConfigureAttention(modelBuilder);
+
+        ConfigureTagging(modelBuilder, taggingOptions);
 
         if (useTemporal)
             ConfigureTemporalHistoryIndexAnnotation(modelBuilder);
@@ -98,6 +106,56 @@ public static class ModelBuilderExtensions
                 entity.Property(e => e.Category).HasMaxLength(256);
                 entity.HasIndex(e => new { e.EntityType, e.EntityId, e.ClearedAt });
             });
+        }
+    }
+
+    private static void ConfigureTagging(ModelBuilder modelBuilder, ShiftTaggingOptions? options)
+    {
+        // Snapshot entity types first — UsingEntity() / Entity() calls below add new entities
+        // to the model and would invalidate the live enumerator otherwise.
+        var taggableClrTypes = modelBuilder.Model.GetEntityTypes()
+            .Select(et => et.ClrType)
+            .Where(t => t != typeof(Tag) && typeof(IShiftEntityTaggable).IsAssignableFrom(t))
+            .ToList();
+
+        if (options is null)
+        {
+            // Tagging not registered for this DbContext — keep Tag out of the model
+            // and strip any Tags navigation that taggable entities would otherwise expose.
+            modelBuilder.Ignore<Tag>();
+
+            foreach (var clrType in taggableClrTypes)
+                modelBuilder.Entity(clrType).Ignore(nameof(IShiftEntityTaggable.Tags));
+
+            return;
+        }
+
+        modelBuilder.Entity<Tag>(e =>
+        {
+            e.HasIndex(t => t.Name)
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+
+            e.HasIndex(t => t.IntegrationID)
+                .IsUnique()
+                .HasFilter("IntegrationID IS NOT NULL AND IsDeleted = 0");
+        });
+
+        foreach (var clrType in taggableClrTypes)
+        {
+            var attr = clrType.GetCustomAttribute<ShiftTagTableAttribute>(inherit: false);
+            var joinTableName = attr?.Name ?? $"{clrType.Name}{options.JoinTableSuffix}";
+            var joinSchema = attr?.Schema ?? options.JoinTableSchema;
+
+            var entityBuilder = modelBuilder.Entity(clrType);
+            var collectionBuilder = entityBuilder
+                .HasMany(typeof(Tag), nameof(IShiftEntityTaggable.Tags))
+                .WithMany();
+
+            if (joinSchema is null)
+                collectionBuilder.UsingEntity(joinTableName);
+            else
+                collectionBuilder.UsingEntity(joinTableName, j => j.ToTable(joinTableName, joinSchema));
         }
     }
 
