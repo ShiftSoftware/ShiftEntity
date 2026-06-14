@@ -29,7 +29,6 @@ public class ShiftTaggingAutoMapperProfile : Profile
             .ForMember(d => d.ID, opt => opt.Ignore())
             .ForMember(d => d.CreateDate, opt => opt.Ignore())
             .ForMember(d => d.LastSaveDate, opt => opt.Ignore())
-            .ForMember(d => d.LastReplicationDate, opt => opt.Ignore())
             .ForMember(d => d.CreatedByUserID, opt => opt.Ignore())
             .ForMember(d => d.LastSavedByUserID, opt => opt.Ignore());
     }
