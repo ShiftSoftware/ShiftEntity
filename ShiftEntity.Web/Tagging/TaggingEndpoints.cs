@@ -18,13 +18,12 @@ public static class TaggingEndpoints
     /// Returns the route group so callers can chain additional configuration.
     /// </summary>
     /// <remarks>
-    /// Endpoints registered, all behind <c>RequireAuthorization</c>:
+    /// Endpoints registered (GET list/single, POST, PUT, DELETE):
     /// <list type="bullet">
-    ///   <item>GET    {prefix}            — list (OData $filter/$top/$orderby) — <c>Tags.Read</c></item>
-    ///   <item>GET    {prefix}/{key}      — single — <c>Tags.Read</c></item>
-    ///   <item>POST   {prefix}            — create — <c>Tags.Write</c></item>
-    ///   <item>PUT    {prefix}/{key}      — update — <c>Tags.Write</c></item>
-    ///   <item>DELETE {prefix}/{key}      — soft delete — <c>Tags.Delete</c></item>
+    ///   <item>If a tagging <c>Action</c> was supplied to <c>AddShiftTagging</c>, the endpoints
+    ///   require authentication and are gated by that action's Read/Write/Delete access levels.</item>
+    ///   <item>If NO action was supplied (e.g. <c>services.AddShiftTagging&lt;DB&gt;()</c>), the
+    ///   endpoints are mapped <b>anonymously</b> — no authentication required.</item>
     /// </list>
     /// Autocomplete is served by the standard OData list endpoint via
     /// <c>?$filter=contains(Name,'…')&amp;$top=N</c> — no separate autocomplete route is needed.
@@ -41,9 +40,19 @@ public static class TaggingEndpoints
         if (options is null || !options.Enabled || options.SkipEndpointRegistration)
             return endpoints;
 
-        endpoints.MapShiftEntitySecureCrud<ShiftTagRepository<TDbContext>, Tag, TagListDTO, TagDTO>(
-            options.EndpointPrefix,
-            options.Action);
+        if (options.Action is not null)
+        {
+            // Secured: authentication required + TypeAuth gate on the supplied action node.
+            endpoints.MapShiftEntitySecureCrud<ShiftTagRepository<TDbContext>, Tag, TagListDTO, TagDTO>(
+                options.EndpointPrefix,
+                options.Action);
+        }
+        else
+        {
+            // No action supplied → anonymous endpoints (no authentication).
+            endpoints.MapShiftEntityCrud<ShiftTagRepository<TDbContext>, Tag, TagListDTO, TagDTO>(
+                options.EndpointPrefix);
+        }
 
         return endpoints;
     }

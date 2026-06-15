@@ -138,7 +138,19 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
     {
-        return new ValueTask<ViewAndUpsertDTO>(MapToView(entity));
+        var dto = MapToView(entity);
+
+        // Read-side tagging is owned by the framework, not the entity mapper: when both the
+        // entity and its DTO opt into tagging, populate the DTO's Tags from the entity's
+        // (auto-included) Tags navigation. Mappers don't need to touch Tags at all.
+        if (_hasTaggableInterface
+            && entity is IShiftEntityTaggable taggableEntity
+            && dto is IShiftEntityTaggableDTO taggableDto)
+        {
+            taggableDto.Tags = TagProjection.ToDtoList(taggableEntity.Tags);
+        }
+
+        return new ValueTask<ViewAndUpsertDTO>(dto);
     }
 
     public virtual async ValueTask<EntityType> UpsertAsync(
@@ -227,6 +239,16 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 i.Invoke(operation);
                 includes.Add(operation.Includes);
             }
+        }
+
+        // Auto-include the Tags navigation for taggable entities so single-entity reads
+        // (GET/{id}, and POST/PUT response bodies built from ViewAsync) always carry tags.
+        // Programmers no longer hand-add .Include(x => x.Tags) per repository.
+        if (_hasTaggableInterface)
+        {
+            includes ??= new();
+            if (!includes.Contains(nameof(IShiftEntityTaggable.Tags)))
+                includes.Add(nameof(IShiftEntityTaggable.Tags));
         }
 
         // WhenDenied(Forbidden) (D7, 3.3): to refuse an out-of-scope row loudly the repository must SEE it — skip the

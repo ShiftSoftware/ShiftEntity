@@ -13,6 +13,8 @@ public static class ShiftTaggingServiceCollectionExtensions
     /// <list type="bullet">
     ///   <item>Includes the <see cref="Tag"/> entity in the model (it is otherwise ignored).</item>
     ///   <item>Auto-wires many-to-many join tables for every <see cref="IShiftEntityTaggable"/> entity.</item>
+    ///   <item>Auto-includes the <c>Tags</c> navigation on single-entity reads and auto-maps it onto
+    ///         <see cref="Model.Dtos.Tagging.IShiftEntityTaggableDTO"/> DTOs — entity mappers never touch Tags.</item>
     ///   <item>Registers <see cref="ShiftTagRepository{TDbContext}"/> as a scoped service.</item>
     ///   <item>Adds <c>Tag → TagDTO</c> AutoMapper maps via the standard
     ///         <c>ShiftEntityOptions.AddAutoMapper</c> path.</item>
@@ -20,6 +22,14 @@ public static class ShiftTaggingServiceCollectionExtensions
     /// Call <c>app.MapShiftTaggingEndpoints&lt;TDbContext&gt;()</c> in the Web layer to expose
     /// the REST surface, or set <see cref="ShiftTaggingOptions.SkipEndpointRegistration"/> = true
     /// and write your own.
+    ///
+    /// <para>
+    /// Permissions: supply a tagging action via the <see cref="ReadWriteDeleteAction"/> overload (or
+    /// <c>opts.Action</c>) to secure the endpoints with TypeAuth. Call this WITHOUT an action
+    /// (e.g. <c>services.AddShiftTagging&lt;DB&gt;()</c>) to expose the tag endpoints
+    /// <b>anonymously</b> — no authentication — which is the simplest setup for services that
+    /// don't need to gate the tag vocabulary.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddShiftTagging<TDbContext>(
         this IServiceCollection services,
