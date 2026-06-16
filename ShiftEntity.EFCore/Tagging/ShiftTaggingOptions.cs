@@ -25,12 +25,6 @@ public class ShiftTaggingOptions
     public ReadWriteDeleteAction? Action { get; set; }
 
     /// <summary>
-    /// Behavior when an entity is saved with a tag whose name doesn't yet exist
-    /// in the vocabulary. Default <see cref="UnknownTagPolicy.AutoCreateIfAuthorized"/>.
-    /// </summary>
-    public UnknownTagPolicy UnknownTagPolicy { get; set; } = UnknownTagPolicy.AutoCreateIfAuthorized;
-
-    /// <summary>
     /// Default schema for the auto-wired many-to-many join tables.
     /// Per-entity override via <see cref="Core.Tagging.ShiftTagTableAttribute"/>.
     /// </summary>
@@ -51,23 +45,4 @@ public class ShiftTaggingOptions
     /// is still registered.
     /// </summary>
     public bool SkipEndpointRegistration { get; set; }
-}
-
-public enum UnknownTagPolicy
-{
-    /// <summary>
-    /// Free-typed unknown tag is created if the saving user has Write access on the
-    /// tagging action; otherwise the save is rejected.
-    /// </summary>
-    AutoCreateIfAuthorized,
-
-    /// <summary>
-    /// Unknown tags are silently dropped — only existing tags get attached.
-    /// </summary>
-    SilentDrop,
-
-    /// <summary>
-    /// Save is rejected if any tag name does not exist in the vocabulary.
-    /// </summary>
-    Reject
 }
