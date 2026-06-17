@@ -41,6 +41,9 @@ public sealed record StoredAttentionSignal
     /// <inheritdoc cref="AttentionSignal.PayloadJson"/>
     public string? PayloadJson { get; init; }
 
+    /// <inheritdoc cref="AttentionSignal.ClearScope"/>
+    public string? ClearScope { get; init; }
+
     /// <summary>When the signal was raised.</summary>
     public DateTimeOffset RaisedAt { get; init; }
 

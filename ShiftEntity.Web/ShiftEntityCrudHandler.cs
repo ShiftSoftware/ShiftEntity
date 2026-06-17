@@ -435,7 +435,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     /// Clears all active attention signals for one entity. Single source of truth shared by the
     /// controller and the minimal-API endpoint. No-op (200) when the entity hasn't opted in.
     /// </summary>
-    public async Task<CrudResult> ClearAttentionSignalsAsync(HttpContext httpContext, string key)
+    public async Task<CrudResult> ClearAttentionSignalsAsync(HttpContext httpContext, string key, AttentionClearFilter? filter = null)
     {
         if (!typeof(IHasAttention).IsAssignableFrom(typeof(Entity)))
             return CrudResult.Ok(null);
@@ -453,7 +453,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         try
         {
-            var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId);
+            var lastSaveDate = await AttentionPipeline.ClearSignals(db, entityTypeName, entityId, userId, filter);
 
             // Clearing raises no AttentionRaised event, so push a real-time hint here too —
             // otherwise other sessions with this entity's list/form open would keep showing the

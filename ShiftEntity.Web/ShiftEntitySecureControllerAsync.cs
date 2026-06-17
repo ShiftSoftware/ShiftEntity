@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -556,13 +557,15 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
 
     [Authorize]
     [HttpPost("{key}/attention/clear")]
-    public virtual async Task<ActionResult> ClearAttentionSignals(string key)
+    public virtual async Task<ActionResult> ClearAttentionSignals(
+        string key,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AttentionClearFilter? filter = null)
     {
         var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
         if (action is not null && !typeAuthService.CanWrite(action))
             return Forbid();
 
-        return ToActionResult(await _handler.ClearAttentionSignalsAsync(HttpContext, key));
+        return ToActionResult(await _handler.ClearAttentionSignalsAsync(HttpContext, key, filter));
     }
 
     [NonAction]

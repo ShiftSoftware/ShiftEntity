@@ -156,6 +156,7 @@ internal static class AttentionPipeline
                 Reason = signal.Reason,
                 Severity = signal.Severity,
                 PayloadJson = signal.PayloadJson,
+                ClearScope = signal.ClearScope,
                 RaisedAt = now,
             });
         }
@@ -210,8 +211,11 @@ internal static class AttentionPipeline
     }
 
     /// <summary>
-    /// Marks all active signals for the specified entity as cleared, resets the entity's
-    /// summary columns, and saves. Works against both JSON-shadow and indexed storage modes.
+    /// Marks the active signals selected by <paramref name="filter"/> for the specified entity as
+    /// cleared, <em>recomputes</em> the entity's summary columns from whatever stays active, and
+    /// saves. Works against both JSON-shadow and indexed storage modes. A <c>null</c> filter clears
+    /// every active signal (the historical behavior); a scoped or per-signal filter may leave other
+    /// signals active, which is why the summary columns are recomputed rather than zeroed.
     /// </summary>
     /// <returns>
     /// The entity's <c>LastSaveDate</c> after the save — when the clear modifies the entity row,
@@ -219,13 +223,15 @@ internal static class AttentionPipeline
     /// insert-only), and the stamp doubles as the optimistic-concurrency version.
     /// Endpoints return it (<see cref="ClearAttentionResponse"/>) so clients holding a
     /// pre-clear DTO can patch it instead of hitting a version conflict on their next save.
-    /// <c>null</c> when the entity doesn't carry audit fields.
+    /// A clear that matched nothing leaves the entity row (and its stamp) untouched and returns the
+    /// current stamp. <c>null</c> when the entity doesn't carry audit fields.
     /// </returns>
     internal static async Task<DateTimeOffset?> ClearSignals(
         ShiftDbContext db,
         string entityTypeName,
         long entityId,
-        long? userId)
+        long? userId,
+        AttentionClearFilter? filter = null)
     {
         var entityType = db.Model.GetEntityTypes()
             .FirstOrDefault(e => e.ClrType.Name == entityTypeName);
@@ -244,17 +250,31 @@ internal static class AttentionPipeline
         var entity = await db.FindAsync(clrType, entityId)
             ?? throw new InvalidOperationException($"Entity '{entityTypeName}' with ID {entityId} not found.");
 
+        // Signals that survive this clear — they drive the recomputed summary columns. A scoped or
+        // per-signal filter can leave some active, so we never blindly zero the columns.
+        List<StoredAttentionSignal> remainingActive;
+        var clearedAny = false;
+
         if (isIndexed)
         {
-            var signalEntries = await db.Set<AttentionSignalEntry>()
+            var activeEntries = await db.Set<AttentionSignalEntry>()
                 .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId && x.ClearedAt == null)
                 .ToListAsync();
 
-            foreach (var signal in signalEntries)
+            foreach (var signalEntry in activeEntries)
             {
-                signal.ClearedAt = now;
-                signal.ClearedByUserId = userId;
+                if (filter is not null && !filter.Matches(signalEntry.ToStoredSignal()))
+                    continue;
+
+                signalEntry.ClearedAt = now;
+                signalEntry.ClearedByUserId = userId;
+                clearedAny = true;
             }
+
+            remainingActive = activeEntries
+                .Where(x => x.ClearedAt is null)
+                .Select(x => x.ToStoredSignal())
+                .ToList();
         }
         else
         {
@@ -263,24 +283,35 @@ internal static class AttentionPipeline
             var signals = AttentionSignalJsonHelper.Deserialize(json);
 
             var updatedSignals = signals
-                .Select(s => s.ClearedAt is null ? s with { ClearedAt = now, ClearedByUserId = userId } : s)
+                .Select(s =>
+                {
+                    if (s.ClearedAt is not null) return s;                  // already cleared
+                    if (filter is not null && !filter.Matches(s)) return s; // not selected by the filter
+                    clearedAny = true;
+                    return s with { ClearedAt = now, ClearedByUserId = userId };
+                })
                 .ToList();
 
-            dbEntry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue =
-                AttentionSignalJsonHelper.Serialize(updatedSignals);
+            // Only rewrite the shadow property when something actually changed, so a no-op clear
+            // leaves the entity row (and its concurrency stamp) untouched.
+            if (clearedAny)
+                dbEntry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue =
+                    AttentionSignalJsonHelper.Serialize(updatedSignals);
+
+            remainingActive = updatedSignals.Where(s => s.ClearedAt is null).ToList();
         }
 
-        if (entity is IHasAttention attentionEntity)
+        // Recompute the summary columns from what stayed active, and advance the audit stamp — but
+        // only when the clear actually cleared something. A no-op clear must keep the current stamp,
+        // since the returned value doubles as the client's optimistic-concurrency version.
+        if (clearedAny && entity is IHasAttention attentionEntity)
         {
-            attentionEntity.HasActiveAttention = false;
-            attentionEntity.HighestSeverity = null;
-            attentionEntity.ActiveSignalCount = 0;
+            attentionEntity.HasActiveAttention = remainingActive.Count > 0;
+            attentionEntity.HighestSeverity = remainingActive.Count > 0 ? remainingActive.Max(s => s.Severity) : null;
+            attentionEntity.ActiveSignalCount = remainingActive.Count;
         }
 
-        // Stamp the last-save columns explicitly — the context's SaveChanges backfill is insert-only — but only
-        // when the clear actually modified the entity row: a no-op clear must keep the current stamp, since the
-        // returned value doubles as the client's optimistic-concurrency version.
-        if (entity is IShiftEntityAudit auditable && db.Entry(entity).State == EntityState.Modified)
+        if (clearedAny && entity is IShiftEntityAudit auditable && db.Entry(entity).State == EntityState.Modified)
             AuditStamper.StampAuditFields(auditable, isAdded: false, userId, now);
 
         await db.SaveChangesAsync();

@@ -26,6 +26,12 @@ public sealed class ClearAttentionRequest
 
     /// <summary>Hash-encoded entity ID. Decoded via <see cref="ShiftEntityDtoMap"/> to resolve the DTO type.</summary>
     public required string EntityId { get; set; }
+
+    /// <summary>
+    /// Which signals to clear. <c>null</c> clears every active signal (the default); a scoped or
+    /// per-signal filter clears only the matching subset and leaves the rest active.
+    /// </summary>
+    public AttentionClearFilter? Filter { get; set; }
 }
 
 /// <summary>
@@ -62,7 +68,7 @@ public static class AttentionEndpoints
 
             try
             {
-                var lastSaveDate = await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId);
+                var lastSaveDate = await AttentionPipeline.ClearSignals(db, request.EntityType, entityId, userId, request.Filter);
 
                 // Clearing raises no AttentionRaised event — push a real-time hint so other
                 // sessions drop the indicator. Best-effort + opt-in (skipped when the hub isn't

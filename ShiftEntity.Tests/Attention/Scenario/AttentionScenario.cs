@@ -79,6 +79,46 @@ public sealed class WidgetFlagEvaluator : IAttentionEvaluator<WidgetEntity>
             : null;
 }
 
+/// <summary>
+/// DI evaluator that raises a <em>scoped</em> signal (<see cref="ReviewScope"/>) alongside the
+/// gadget's own default-scope LowStock signal — so the scoped-clear tests have one entity carrying
+/// two signals in different clear scopes. Co-fires with LowStock (<c>StockLevel &lt; 5</c>).
+/// </summary>
+public sealed class GadgetReviewEvaluator : IAttentionEvaluator<GadgetEntity>
+{
+    public const string ReviewCategory = "NeedsReview";
+    public const string ReviewScope = "Review";
+
+    public AttentionSignal? Evaluate(AttentionContext<GadgetEntity> context)
+        => context.Entity.StockLevel < 5
+            ? new AttentionSignal
+            {
+                Category = ReviewCategory,
+                Reason = "Low-stock gadget needs review",
+                Severity = AttentionSeverity.Info,
+                ClearScope = ReviewScope,
+            }
+            : null;
+}
+
+/// <summary>Indexed-mode counterpart of <see cref="GadgetReviewEvaluator"/>, for <see cref="WidgetEntity"/>.</summary>
+public sealed class WidgetReviewEvaluator : IAttentionEvaluator<WidgetEntity>
+{
+    public const string ReviewCategory = "NeedsReview";
+    public const string ReviewScope = "Review";
+
+    public AttentionSignal? Evaluate(AttentionContext<WidgetEntity> context)
+        => context.Entity.Flagged
+            ? new AttentionSignal
+            {
+                Category = ReviewCategory,
+                Reason = "Flagged widget needs review",
+                Severity = AttentionSeverity.Info,
+                ClearScope = ReviewScope,
+            }
+            : null;
+}
+
 /// <summary>Minimal DTO — the repository's type parameters demand one; emission tests never map.</summary>
 public class GadgetDTO : ShiftEntityDTOBase
 {

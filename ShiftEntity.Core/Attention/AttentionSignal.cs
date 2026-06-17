@@ -41,4 +41,14 @@ public sealed record AttentionSignal
     /// signals simply lack them.
     /// </summary>
     public string? PayloadJson { get; init; }
+
+    /// <summary>
+    /// Optional clear-scope tag that groups this signal for <em>selective</em> acknowledgment.
+    /// Signals a single UI surface clears together share a scope — e.g. an evaluator that flags a
+    /// chat awaiting a reply raises with <c>ClearScope = "Chat"</c> so those signals are cleared
+    /// only when the chat surface is viewed, not by the form's clear-on-open. <c>null</c>/empty
+    /// places the signal in the <em>default</em> scope, which clear-on-open clears. Not part of
+    /// the dedup key — it governs <em>clearing</em>, not signal identity.
+    /// </summary>
+    public string? ClearScope { get; init; }
 }

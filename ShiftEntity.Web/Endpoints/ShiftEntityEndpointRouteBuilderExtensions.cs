@@ -283,8 +283,9 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
         var getAttentionRoute = group.MapGet("/{key}/attention", async (HttpContext ctx, string key) =>
             ToMinimalApiResult(await handler.GetAttentionSignalsAsync(ctx, key)));
 
-        var clearAttentionRoute = group.MapPost("/{key}/attention/clear", async (HttpContext ctx, string key) =>
-            ToMinimalApiResult(await handler.ClearAttentionSignalsAsync(ctx, key)));
+        var clearAttentionRoute = group.MapPost("/{key}/attention/clear", async (HttpContext ctx, string key,
+            ShiftSoftware.ShiftEntity.Core.Attention.AttentionClearFilter? filter) =>
+            ToMinimalApiResult(await handler.ClearAttentionSignalsAsync(ctx, key, filter)));
 
         if (secure)
         {

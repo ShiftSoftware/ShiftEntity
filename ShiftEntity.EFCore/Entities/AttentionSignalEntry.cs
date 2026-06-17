@@ -34,6 +34,9 @@ public class AttentionSignalEntry
     /// <inheritdoc cref="AttentionSignal.PayloadJson"/>
     public string? PayloadJson { get; set; }
 
+    /// <inheritdoc cref="AttentionSignal.ClearScope"/>
+    public string? ClearScope { get; set; }
+
     /// <summary>When the signal was raised.</summary>
     public DateTimeOffset RaisedAt { get; set; }
 
@@ -54,6 +57,7 @@ public class AttentionSignalEntry
         Reason = Reason,
         Severity = Severity,
         PayloadJson = PayloadJson,
+        ClearScope = ClearScope,
         RaisedAt = RaisedAt,
         ClearedAt = ClearedAt,
         ClearedByUserId = ClearedByUserId,
@@ -72,6 +76,7 @@ public class AttentionSignalEntry
         Reason = signal.Reason,
         Severity = signal.Severity,
         PayloadJson = signal.PayloadJson,
+        ClearScope = signal.ClearScope,
         RaisedAt = signal.RaisedAt,
         ClearedAt = signal.ClearedAt,
         ClearedByUserId = signal.ClearedByUserId,

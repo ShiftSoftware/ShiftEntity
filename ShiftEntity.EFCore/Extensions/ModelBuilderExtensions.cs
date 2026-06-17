@@ -104,6 +104,7 @@ public static class ModelBuilderExtensions
                 entity.Property(e => e.EntityType).HasMaxLength(256);
                 entity.Property(e => e.Source).HasMaxLength(256);
                 entity.Property(e => e.Category).HasMaxLength(256);
+                entity.Property(e => e.ClearScope).HasMaxLength(256);
                 entity.HasIndex(e => new { e.EntityType, e.EntityId, e.ClearedAt });
             });
         }
