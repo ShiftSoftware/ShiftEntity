@@ -1,11 +1,7 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.EFCore;
-using ShiftSoftware.ShiftEntity.Web.Endpoints;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
@@ -13,28 +9,6 @@ using System.Linq;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Endpoints;
-
-/// <summary>A discovered endpoint spec paired with the DB it should bind its built-in repository to.</summary>
-internal readonly record struct ShiftEntityEndpointEntry(ShiftEntityEndpointSpec Spec, Type DbType);
-
-/// <summary>
-/// Accumulates the endpoint entries registered across one or more <c>AddShiftEntityEndpoints&lt;DB&gt;()</c>
-/// calls so a single data source serves them all (avoids duplicate route registration). Routes are
-/// deduplicated as they're added.
-/// </summary>
-internal sealed class ShiftEntityGeneratedEndpointRegistry
-{
-    private readonly HashSet<string> routes = new(StringComparer.OrdinalIgnoreCase);
-    public List<ShiftEntityEndpointEntry> Entries { get; } = new();
-
-    public void Add(ShiftEntityEndpointSpec spec, Type dbType)
-    {
-        // Skip a route already registered (e.g. AddShiftEntityEndpoints called twice) — adding it again
-        // would produce a duplicate endpoint and an AmbiguousMatchException at request time.
-        if (routes.Add("/" + spec.Route.Trim().Trim('/').ToLowerInvariant()))
-            Entries.Add(new ShiftEntityEndpointEntry(spec, dbType));
-    }
-}
 
 /// <summary>
 /// Generates minimal-API CRUD endpoints from entity endpoint attributes (see
@@ -44,29 +18,41 @@ internal sealed class ShiftEntityGeneratedEndpointRegistry
 /// </summary>
 internal static class ShiftEntityGeneratedEndpoints
 {
-    // The no-configure overloads: (IEndpointRouteBuilder, string) and (IEndpointRouteBuilder, string, ReadWriteDeleteAction).
-    private static readonly MethodInfo CrudMethod = ResolveMap(nameof(ShiftEntityEndpointRouteBuilderExtensions.MapShiftEntityCrud), secure: false);
-    private static readonly MethodInfo SecureMethod = ResolveMap(nameof(ShiftEntityEndpointRouteBuilderExtensions.MapShiftEntitySecureCrud), secure: true);
+    // The only reflection needed: the generic type arguments (entity + DTOs + repository) are runtime
+    // Types discovered from the attribute, so the generic Map method can't be called directly — it's
+    // closed via MakeGenericMethod against the MapEntityEndpoint helper below, which then calls the real
+    // MapShiftEntityCrud / MapShiftEntitySecureCrud extensions directly (compile-time, constraint-checked).
+    private static readonly MethodInfo MapEntityEndpointMethod =
+        typeof(ShiftEntityGeneratedEndpoints).GetMethod(nameof(MapEntityEndpoint), BindingFlags.NonPublic | BindingFlags.Static)!;
 
-    internal static void Generate(IEndpointRouteBuilder routeBuilder, IEnumerable<ShiftEntityEndpointEntry> entries)
+    internal static void Generate(IEndpointRouteBuilder routeBuilder, IEnumerable<ShiftEntityEndpointSpec> specs, Type dbType)
     {
-        foreach (var (spec, dbType) in entries)
+        foreach (var spec in specs)
         {
             var repositoryType = ResolveRepositoryType(spec, dbType);
             ValidateRepository(repositoryType, spec);
 
-            if (spec.Secure)
-            {
-                var action = ResolveAction(spec.ActionTreeType!, spec.ActionName!);
-                SecureMethod.MakeGenericMethod(repositoryType, spec.Entity, spec.ListDto, spec.ViewDto)
-                    .Invoke(null, new object?[] { routeBuilder, spec.Route, action });
-            }
-            else
-            {
-                CrudMethod.MakeGenericMethod(repositoryType, spec.Entity, spec.ListDto, spec.ViewDto)
-                    .Invoke(null, new object?[] { routeBuilder, spec.Route });
-            }
+            var action = spec.Secure ? ResolveAction(spec.ActionTreeType!, spec.ActionName!) : null;
+
+            MapEntityEndpointMethod
+                .MakeGenericMethod(repositoryType, spec.Entity, spec.ListDto, spec.ViewDto)
+                .Invoke(null, new object?[] { routeBuilder, spec.Route, spec.Secure, action });
         }
+    }
+
+    // Closed over the runtime types by Generate. The MapShiftEntity*Crud calls here are direct: the
+    // compiler picks the right (no-configure) overload and checks the generic constraints.
+    private static void MapEntityEndpoint<TRepository, TEntity, TListDTO, TViewAndUpsertDTO>(
+        IEndpointRouteBuilder endpoints, string route, bool secure, ReadWriteDeleteAction? action)
+        where TRepository : IShiftRepositoryAsync<TEntity, TListDTO, TViewAndUpsertDTO>
+        where TEntity : ShiftEntity<TEntity>, new()
+        where TViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
+        where TListDTO : ShiftEntityDTOBase
+    {
+        if (secure)
+            endpoints.MapShiftEntitySecureCrud<TRepository, TEntity, TListDTO, TViewAndUpsertDTO>(route, action);
+        else
+            endpoints.MapShiftEntityCrud<TRepository, TEntity, TListDTO, TViewAndUpsertDTO>(route);
     }
 
     // Custom repository if the attribute named one; otherwise the framework's built-in
@@ -106,143 +92,4 @@ internal static class ShiftEntityGeneratedEndpoints
 
         return action;
     }
-
-    private static MethodInfo ResolveMap(string name, bool secure)
-    {
-        var expectedLength = secure ? 3 : 2;
-
-        foreach (var m in typeof(ShiftEntityEndpointRouteBuilderExtensions)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Where(m => m.Name == name && m.IsGenericMethodDefinition && m.GetGenericArguments().Length == 4))
-        {
-            var p = m.GetParameters();
-            if (p.Length != expectedLength) continue;
-            if (p[0].ParameterType != typeof(IEndpointRouteBuilder)) continue;
-            if (p[1].ParameterType != typeof(string)) continue;
-            if (secure && p[2].ParameterType != typeof(ReadWriteDeleteAction)) continue;
-            return m;
-        }
-
-        throw new InvalidOperationException($"Could not resolve the no-configure overload of {name}.");
-    }
-}
-
-/// <summary>
-/// A DI-registered <see cref="EndpointDataSource"/> that lazily generates the attribute-driven CRUD
-/// endpoints on first enumeration (after the application's service provider exists).
-///
-/// Note: <see cref="WebApplication"/> does NOT auto-include DI-registered endpoint data sources, so
-/// the accompanying <see cref="ShiftEntityGeneratedEndpointsStartupFilter"/> is what actually adds this
-/// source to the application's endpoint route builder — do not remove it.
-/// </summary>
-internal sealed class ShiftEntityGeneratedEndpointDataSource : EndpointDataSource
-{
-    private readonly IServiceProvider serviceProvider;
-    private readonly ShiftEntityGeneratedEndpointRegistry registry;
-    private readonly object gate = new();
-    private volatile IReadOnlyList<Endpoint>? endpoints;
-
-    public ShiftEntityGeneratedEndpointDataSource(IServiceProvider serviceProvider, ShiftEntityGeneratedEndpointRegistry registry)
-    {
-        this.serviceProvider = serviceProvider;
-        this.registry = registry;
-    }
-
-    public override IReadOnlyList<Endpoint> Endpoints
-    {
-        get
-        {
-            if (endpoints is not null)
-                return endpoints;
-
-            lock (gate)
-            {
-                if (endpoints is null)
-                {
-                    var routeBuilder = new InternalEndpointRouteBuilder(serviceProvider);
-                    ShiftEntityGeneratedEndpoints.Generate(routeBuilder, registry.Entries);
-                    endpoints = routeBuilder.DataSources.SelectMany(ds => ds.Endpoints).ToList();
-                }
-
-                return endpoints;
-            }
-        }
-    }
-
-    // The generated set never changes after first build, so a no-op token is correct.
-    public override Microsoft.Extensions.Primitives.IChangeToken GetChangeToken() => NoOpChangeToken.Instance;
-
-    private sealed class NoOpChangeToken : Microsoft.Extensions.Primitives.IChangeToken
-    {
-        public static readonly NoOpChangeToken Instance = new();
-        public bool HasChanged => false;
-        public bool ActiveChangeCallbacks => false;
-        public IDisposable RegisterChangeCallback(Action<object?> callback, object? state) => NoOpDisposable.Instance;
-
-        private sealed class NoOpDisposable : IDisposable
-        {
-            public static readonly NoOpDisposable Instance = new();
-            public void Dispose() { }
-        }
-    }
-}
-
-/// <summary>
-/// Adds the generated <see cref="ShiftEntityGeneratedEndpointDataSource"/> to the application's endpoint
-/// route builder so the routes are served without the programmer calling <c>app.Map…</c>.
-/// </summary>
-internal sealed class ShiftEntityGeneratedEndpointsStartupFilter : IStartupFilter
-{
-    // The IEndpointRouteBuilder UseRouting stores (and never removes) under this key. We add our data
-    // source AFTER the inner pipeline runs, so the app's UseRouting/UseEndpoints (which it wires when it
-    // has any endpoints) have already populated it; our source then rides the same live composite.
-    private const string EndpointRouteBuilderKey = "__EndpointRouteBuilder";
-
-    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
-    {
-        next(app);
-
-        var dataSources = app.ApplicationServices.GetServices<EndpointDataSource>()
-            .OfType<ShiftEntityGeneratedEndpointDataSource>()
-            .ToList();
-
-        if (dataSources.Count == 0)
-            return;
-
-        if (app.Properties.TryGetValue(EndpointRouteBuilderKey, out var value) && value is IEndpointRouteBuilder routeBuilder)
-        {
-            foreach (var dataSource in dataSources)
-                if (!routeBuilder.DataSources.Contains(dataSource))
-                    routeBuilder.DataSources.Add(dataSource);
-
-            return;
-        }
-
-        // No endpoint routing was wired by the app. WebApplication only enables UseRouting/UseEndpoints
-        // when it already has endpoints, so an app whose ONLY endpoints are these generated ones would
-        // silently 404. We can't safely add routing here (it would run after the app's auth middleware,
-        // risking an authorization bypass on secure endpoints), so fail fast with actionable guidance.
-        throw new InvalidOperationException(
-            "ShiftEntity could not auto-map the attribute-driven endpoints because the application has no " +
-            "other endpoints, so ASP.NET Core did not enable endpoint routing. Enable routing — e.g. map at " +
-            "least one other endpoint (app.MapControllers(), …) or call app.UseRouting()/app.UseEndpoints().");
-    };
-}
-
-/// <summary>
-/// A minimal <see cref="IEndpointRouteBuilder"/> used to host the generated endpoints inside the data
-/// source above (the map methods write their route data sources into <see cref="DataSources"/>).
-/// </summary>
-internal sealed class InternalEndpointRouteBuilder : IEndpointRouteBuilder
-{
-    public InternalEndpointRouteBuilder(IServiceProvider serviceProvider)
-    {
-        ServiceProvider = serviceProvider;
-    }
-
-    public IServiceProvider ServiceProvider { get; }
-
-    public ICollection<EndpointDataSource> DataSources { get; } = new List<EndpointDataSource>();
-
-    public IApplicationBuilder CreateApplicationBuilder() => new ApplicationBuilder(ServiceProvider);
 }
