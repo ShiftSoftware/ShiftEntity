@@ -18,7 +18,7 @@ public class ShiftEntityOptions
     /// Entity + DTO generic-argument sets (each <c>[entity, listDto, viewDto]</c>) for attribute-driven
     /// endpoints whose entities have no repository class for the AutoMapper assembly scanner to discover.
     /// Their default maps are built from these sets (deduped against the repository scan + user profiles).
-    /// Populated by <c>AddShiftEntityEndpoints&lt;DB&gt;()</c>.
+    /// Populated by <c>RegisterShiftRepositories(...)</c> when it discovers endpoint-attributed entities.
     /// </summary>
     internal List<Type[]> EndpointDefaultMaps = new List<Type[]>();
     //internal int MaxTop;
@@ -45,7 +45,7 @@ public class ShiftEntityOptions
 
     /// <summary>
     /// Registers a default entity↔DTO map for an attribute-driven endpoint whose entity has no
-    /// repository class. Normally called indirectly via <c>AddShiftEntityEndpoints&lt;DB&gt;()</c>.
+    /// repository class. Normally called indirectly by <c>RegisterShiftRepositories(...)</c>.
     /// </summary>
     public ShiftEntityOptions AddEndpointDefaultMap(Type entity, Type listDto, Type viewAndUpsertDto)
     {

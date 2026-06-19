@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using System.Reflection;
 
@@ -171,6 +172,25 @@ public static class IServiceCollectionExtensions
 
         if (existingMap is null)
             services.AddSingleton(map);
+
+        // Attribute-driven endpoints: an entity decorated with [ShiftEntityEndpoint<…>] /
+        // [ShiftEntitySecureEndpoint<…>] needs the built-in repository, its default AutoMapper map, and a
+        // DTO-map entry. Wire that here off the same assemblies — so the programmer makes no extra service
+        // call — and map the routes in the pipeline with app.MapShiftEntityEndpoints<DB>(). The built-in
+        // repository is registered as an open generic, so no DB type is needed here; the concrete DB is
+        // supplied by the closed repository type at map time.
+        var endpointSpecs = ShiftEntityEndpointDiscovery.Discover(assemblies ?? [Assembly.GetEntryAssembly()!]);
+
+        if (endpointSpecs.Count > 0)
+        {
+            services.TryAddScoped(typeof(ShiftRepository<,,,>));
+
+            foreach (var spec in endpointSpecs)
+            {
+                services.Configure<ShiftEntityOptions>(o => o.AddEndpointDefaultMap(spec.Entity, spec.ListDto, spec.ViewDto));
+                map.Register(spec.Entity.Name, spec.ViewDto);
+            }
+        }
 
         return services;
     }
