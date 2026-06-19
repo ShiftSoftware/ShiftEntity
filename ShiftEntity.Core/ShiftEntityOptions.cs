@@ -13,6 +13,14 @@ public class ShiftEntityOptions
     internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
     internal List<Assembly> DataAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
+
+    /// <summary>
+    /// Entity + DTO generic-argument sets (each <c>[entity, listDto, viewDto]</c>) for attribute-driven
+    /// endpoints whose entities have no repository class for the AutoMapper assembly scanner to discover.
+    /// Their default maps are built from these sets (deduped against the repository scan + user profiles).
+    /// Populated by <c>AddShiftEntityEndpoints&lt;DB&gt;()</c>.
+    /// </summary>
+    internal List<Type[]> EndpointDefaultMaps = new List<Type[]>();
     //internal int MaxTop;
     //internal Func<IServiceProvider, int?>? MaxTopResolver;
 
@@ -32,6 +40,16 @@ public class ShiftEntityOptions
     public ShiftEntityOptions AddDataAssembly(params Assembly[] assemblies)
     {
         DataAssemblies.AddRange(assemblies);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a default entity↔DTO map for an attribute-driven endpoint whose entity has no
+    /// repository class. Normally called indirectly via <c>AddShiftEntityEndpoints&lt;DB&gt;()</c>.
+    /// </summary>
+    public ShiftEntityOptions AddEndpointDefaultMap(Type entity, Type listDto, Type viewAndUpsertDto)
+    {
+        EndpointDefaultMaps.Add(new[] { entity, listDto, viewAndUpsertDto });
         return this;
     }
 

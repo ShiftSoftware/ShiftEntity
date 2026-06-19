@@ -11,6 +11,10 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 public class DefaultAutoMapperProfile : Profile
 {
+    // (source, dest) pairs this profile instance already created — prevents an in-profile duplicate
+    // (AutoMapper errors on that). Only consulted on the explicit/deduped path.
+    private readonly HashSet<(Type Source, Type Destination)> _created = new();
+
     public DefaultAutoMapperProfile() { }
     public DefaultAutoMapperProfile(params Assembly[] assemblies)
     {
@@ -28,37 +32,77 @@ public class DefaultAutoMapperProfile : Profile
         foreach (var repositoryType in repositoryTypes)
         {
             if (repositoryType.BaseType is not null)
-            {
-                var baseGenericArguments = repositoryType.BaseType.GetGenericArguments();
-
-                var entity = baseGenericArguments
-                    .Where(x => x.BaseType is not null)
-                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityBase)))
-                    .FirstOrDefault();
-
-                var listDto = baseGenericArguments
-                    .Where(x => x.BaseType is not null)
-                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityListDTO)))
-                    .FirstOrDefault();
-
-                var viewAndUpsertDTOorMixedDTO = baseGenericArguments
-                    .Where(x => x.BaseType is not null)
-                    .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityViewAndUpsertDTO)) || x.BaseType!.IsAssignableTo(typeof(ShiftEntityMixedDTO)))
-                    .FirstOrDefault();
-
-
-                if (listDto is not null)
-                    CreateMap(entity, listDto);
-
-                if (viewAndUpsertDTOorMixedDTO is not null)
-                {
-                    CreateMap(entity, viewAndUpsertDTOorMixedDTO)
-                        .DefaultEntityToDtoAfterMap()
-                        .ReverseMap()
-                        .DefaultDtoToEntityAfterMap();
-                }
-            }
+                CreateEntityMaps(repositoryType.BaseType.GetGenericArguments());
         }
+    }
+
+    /// <summary>
+    /// Builds maps for attribute-driven endpoints whose entities have no repository class for the
+    /// assembly scanner to discover. Each item is the generic argument set (entity + DTOs).
+    /// <paramref name="alreadyConfiguredPairs"/> are the (source, dest) pairs other profiles (the
+    /// repository scan + user profiles) already declared; any such pair is skipped so an existing or
+    /// customized map is never overwritten. The global type converters added by the assembly-scanning
+    /// constructor are intentionally not re-added here, so the two profiles compose cleanly.
+    /// </summary>
+    public DefaultAutoMapperProfile(
+        IEnumerable<Type[]> explicitGenericArgumentSets,
+        ISet<(Type Source, Type Destination)> alreadyConfiguredPairs)
+    {
+        foreach (var genericArguments in explicitGenericArgumentSets)
+            CreateEntityMaps(genericArguments, alreadyConfiguredPairs);
+    }
+
+    // Single source of truth for entity → DTO map creation, shared by the assembly-scanning path
+    // (skipPairs == null → original behavior, unchanged) and the explicit endpoint path
+    // (skipPairs != null → never overrides a pair another profile already declared). Picks the
+    // entity / list DTO / view (or mixed) DTO out of the supplied generic arguments.
+    private void CreateEntityMaps(Type[] genericArguments, ISet<(Type Source, Type Destination)>? skipPairs = null)
+    {
+        var entity = genericArguments
+            .Where(x => x.BaseType is not null)
+            .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityBase)))
+            .FirstOrDefault();
+
+        var listDto = genericArguments
+            .Where(x => x.BaseType is not null)
+            .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityListDTO)))
+            .FirstOrDefault();
+
+        var viewAndUpsertDTOorMixedDTO = genericArguments
+            .Where(x => x.BaseType is not null)
+            .Where(x => x.BaseType!.IsAssignableTo(typeof(ShiftEntityViewAndUpsertDTO)) || x.BaseType!.IsAssignableTo(typeof(ShiftEntityMixedDTO)))
+            .FirstOrDefault();
+
+        if (entity is null)
+            return;
+
+        if (listDto is not null && CanCreate(entity, listDto, skipPairs))
+            CreateMap(entity, listDto);
+
+        if (viewAndUpsertDTOorMixedDTO is not null && CanCreate(entity, viewAndUpsertDTOorMixedDTO, skipPairs))
+        {
+            CreateMap(entity, viewAndUpsertDTOorMixedDTO)
+                .DefaultEntityToDtoAfterMap()
+                .ReverseMap()
+                .DefaultDtoToEntityAfterMap();
+        }
+    }
+
+    // Repository-scan path (skipPairs == null): always create — preserving AutoMapper's loud
+    // duplicate detection for a genuinely duplicate repository registration.
+    // Explicit endpoint path (skipPairs != null): skip a pair another profile declared, and skip a
+    // pair this profile already created. Keys on the forward (entity → DTO) pair; a forward map's
+    // ReverseMap target isn't enumerable at config-build time, so a standalone reverse-only user map
+    // isn't deduped against (no such case in practice).
+    private bool CanCreate(Type source, Type dest, ISet<(Type Source, Type Destination)>? skipPairs)
+    {
+        if (skipPairs is null)
+            return true;
+
+        if (skipPairs.Contains((source, dest)))
+            return false;
+
+        return _created.Add((source, dest));
     }
 }
 

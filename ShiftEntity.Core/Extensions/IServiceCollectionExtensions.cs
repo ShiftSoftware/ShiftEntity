@@ -1,10 +1,12 @@
 ﻿using AutoMapper;
+using AutoMapper.Internal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
@@ -113,8 +115,11 @@ public static class IServiceCollectionExtensions
         services.AddAutoMapper((sp, cfg) =>
         {
             var options = sp.GetRequiredService<ShiftEntityOptions>();
+
+            // 1. Maps auto-built from repository generic arguments.
             cfg.AddProfile(new DefaultAutoMapperProfile(options.DataAssemblies.ToArray()));
 
+            // 2. User-written profiles.
             foreach (var assembly in options.AutoMapperAssemblies)
             {
                 foreach (var profileType in assembly.GetTypes()
@@ -124,8 +129,35 @@ public static class IServiceCollectionExtensions
                     cfg.AddProfile(profile);
                 }
             }
+
+            // 3. Default maps for attribute-driven endpoints whose entities have no repository class.
+            //    Added LAST and deduped against everything above so a repository scan or a custom user
+            //    profile for the same pair is kept — AutoMapper would otherwise let this later profile
+            //    silently override it.
+            if (options.EndpointDefaultMaps.Count > 0)
+                cfg.AddProfile(new DefaultAutoMapperProfile(options.EndpointDefaultMaps, GetConfiguredPairs(cfg)));
         }, typeof(DefaultAutoMapperProfile).Assembly);
 
         return services;
+    }
+
+    // The (source, dest) pairs already declared by the profiles added to cfg so far, via AutoMapper 14's
+    // Internal() escape hatch. Used to dedupe the endpoint-map profile so it never re-creates (and thus
+    // overrides) a map a repository scan or user profile already defined. ReverseMap targets aren't
+    // materialized at this point — fine, we key on the forward pair and skip the whole forward+reverse.
+    private static HashSet<(Type Source, Type Destination)> GetConfiguredPairs(IMapperConfigurationExpression cfg)
+    {
+        var pairs = new HashSet<(Type, Type)>();
+
+        foreach (var profile in cfg.Internal().Profiles)
+        {
+            foreach (var tm in profile.TypeMapConfigs)
+                pairs.Add((tm.Types.SourceType, tm.Types.DestinationType));
+
+            foreach (var tm in profile.OpenTypeMapConfigs)
+                pairs.Add((tm.Types.SourceType, tm.Types.DestinationType));
+        }
+
+        return pairs;
     }
 }
