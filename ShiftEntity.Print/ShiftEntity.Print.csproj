@@ -30,8 +30,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FastReport.OpenSource" Version="2026.2.1" />
-		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2026.2.1" />
+		<PackageReference Include="FastReport.OpenSource" Version="2026.2.3" />
+		<PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2026.2.3" />
 		<!--<PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.14.0" />-->
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
 	</ItemGroup>
