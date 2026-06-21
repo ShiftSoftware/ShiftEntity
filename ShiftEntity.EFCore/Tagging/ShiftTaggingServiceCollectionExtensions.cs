@@ -30,6 +30,12 @@ public static class ShiftTaggingServiceCollectionExtensions
     /// <b>anonymously</b> — no authentication — which is the simplest setup for services that
     /// don't need to gate the tag vocabulary.
     /// </para>
+    /// <para>
+    /// In a web host, prefer the <c>AddShiftTagging&lt;TDbContext, TActionTree&gt;</c> overload in
+    /// <c>ShiftSoftware.ShiftEntity.Web.Tagging</c> — it forwards here <b>and</b> registers the action
+    /// tree with TypeAuth in one call. These base overloads live in EFCore (not Web) so a non-web
+    /// host can enable tagging without taking an ASP.NET Core / TypeAuth.AspNetCore dependency.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddShiftTagging<TDbContext>(
         this IServiceCollection services,
