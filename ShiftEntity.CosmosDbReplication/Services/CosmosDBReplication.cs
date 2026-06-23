@@ -323,30 +323,35 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.upsertActions.Add(async () =>
         {
             var container = this.cosmosDatabase.GetContainer(containerId);
+            var containerResponse = await container.ReadContainerAsync();
 
-            List<Task> cosmosTasks = new();
+            //Several source entities can reference the SAME destination document (e.g. multiple tags embedded in
+            //one occupation). Each item is a full read-modify-write upsert, so writing per (entity, item) pair lets
+            //those writes overwrite each other with stale copies (lost update). Instead, group the found documents
+            //by their Cosmos identity and merge EVERY contributing entity's update onto a single document instance,
+            //then upsert each document ONCE. Writes stay fully parallel (one per distinct document), so bulk
+            //execution is preserved.
+            var groupedByDocument = new Dictionary<string, (CosmosDBItem document, List<Entity> contributors)>();
 
             foreach (var entity in this.entities)
             {
                 var items = await GetItemsForReferenceUpdate(container, entity, finder);
 
-                if (items is not null && items?.Count() > 0)
+                if (items is not null && items.Any())
                 {
                     foreach (var item in items)
                     {
-                        CosmosDBItem tempItems = item;
-                        if (mapping is null)
-                            this.mapper.Map(entity, tempItems);
+                        //A Cosmos document is identified by id + partition key, NOT id alone: the same id can exist
+                        //in different logical partitions (e.g. an Occupation and an IncomeLevel both id "1" under
+                        //different ItemTypes). Key the group by both so distinct documents are never merged together.
+                        var id = Convert.ToString(item.GetProperty("id"));
+                        var partitionKey = Utility.GetPartitionKey(containerResponse, item!);
+                        var documentKey = $"{partitionKey}|{id}";
+
+                        if (groupedByDocument.TryGetValue(documentKey, out var existing))
+                            existing.contributors.Add(entity);
                         else
-                            tempItems = mapping(entity, item);
-
-
-                        cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(tempItems)
-                            .ContinueWith(x =>
-                            {
-                                this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(x.IsCompletedSuccessfully),
-                                                                            (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
-                            }));
+                            groupedByDocument[documentKey] = (item, new List<Entity> { entity });
                     }
                 }
                 else
@@ -357,6 +362,33 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                             (id, oldValue) => oldValue.ResetToPreviousState() // This function is called if entity.ID exists in the dictionary
                         );
                 }
+            }
+
+            //One upsert per distinct destination document, all queued together for bulk execution.
+            List<Task> cosmosTasks = new();
+
+            foreach (var entry in groupedByDocument.Values)
+            {
+                CosmosDBItem mergedDocument = entry.document;
+
+                foreach (var entity in entry.contributors)
+                {
+                    if (mapping is null)
+                        this.mapper.Map(entity, mergedDocument);
+                    else
+                        mergedDocument = mapping(entity, mergedDocument);
+                }
+
+                //A successful (or failed) write counts for EVERY source entity that merged into the document.
+                var contributors = entry.contributors;
+
+                cosmosTasks.Add(container.UpsertItemAsync<CosmosDBItem>(mergedDocument)
+                    .ContinueWith(x =>
+                    {
+                        foreach (var entity in contributors)
+                            this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(x.IsCompletedSuccessfully),
+                                                                        (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
+                    }));
             }
 
             await Task.WhenAll(cosmosTasks);
