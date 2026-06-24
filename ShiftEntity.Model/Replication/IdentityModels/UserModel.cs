@@ -12,6 +12,7 @@ public class UserModel :
     public string FullName { get; set; } = default!;
     public string Username { get; set; } = default!;
     public string? Phone { get; set; }
+    public string? Email { get; set; }
     public string? IntegrationId { get; set; }
     public bool BuiltIn { get; set; }
     public long? CompanyID { get; set; }
