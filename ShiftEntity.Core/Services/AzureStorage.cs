@@ -109,16 +109,11 @@ public class AzureStorageService
         return sasBuilder.ToSasQueryParameters(sharedKeyCredential).ToString();
     }
 
-    public string? GetSignedURL(string blobName, BlobSasPermissions blobSasPermissions, string? containerName = null, string? accountName = null, int? expireAfter_Seconds = null)
+    public string GetSignedURL(string blobName, BlobSasPermissions blobSasPermissions, string? containerName = null, string? accountName = null, int? expireAfter_Seconds = null)
     {
         accountName = accountName ?? defaultAccountName;
 
-        // The file references a storage account that isn't configured (its config key is missing, or
-        // there's no default account). Return null instead of throwing a KeyNotFoundException, so a
-        // form/list that contains the file still loads — the file just has no resolvable URL.
-        // (A user-facing warning can be added later.)
-        if (!azureStorageAccounts.TryGetValue(accountName, out var account))
-            return null;
+        var account = azureStorageAccounts[accountName];
 
         if (containerName == null)
             containerName = account.DefaultContainerName;
