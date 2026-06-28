@@ -1,3 +1,6 @@
+
+using ShiftSoftware.ShiftEntity.Core.Attention;
+
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
 /// <summary>
@@ -10,8 +13,10 @@ public interface IHasAttentionSummary
     /// <summary>Whether any uncleared attention signal exists for this entity.</summary>
     bool HasActiveAttention { get; set; }
 
-    /// <summary>Highest attention severity across active signals as its underlying <c>int</c> value (maps to <c>AttentionSeverity</c> in ShiftEntity.Core), or <c>null</c> if none.</summary>
-    int? HighestSeverity { get; set; }
+    /// <summary>Highest attention severity across active signals, or <c>null</c> if none. Same
+    /// <see cref="AttentionSeverity"/> type as the entity-side <c>IHasAttention.HighestSeverity</c>
+    /// </summary>
+    AttentionSeverity? HighestSeverity { get; set; }
 
     /// <summary>Count of uncleared attention signals.</summary>
     int ActiveSignalCount { get; set; }
