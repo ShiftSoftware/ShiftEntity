@@ -24,7 +24,8 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     ShiftRepositoryBase,
     IShiftRepositoryAsync<EntityType, ListDTO, ViewAndUpsertDTO>,
-    IShiftRepositoryWithOptions<EntityType>
+    IShiftRepositoryWithOptions<EntityType, ListDTO, ViewAndUpsertDTO>,
+    IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>
     where DB : ShiftDbContext
     where EntityType : ShiftEntity<EntityType>, new()
     where ListDTO : ShiftEntityDTOBase
@@ -33,11 +34,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet = default!;
     public override object? GetDbContext() => db;
 
-    [Obsolete("Use entityMapper instead. This property is kept for backwards compatibility.")]
-    public IMapper? mapper => (entityMapper as AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)?.Mapper;
-
-    protected IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? entityMapper { get; private set; }
-    public ShiftRepositoryOptions<EntityType> ShiftRepositoryOptions { get; set; } = default!;
+    // The default/plugged mapper that this repository's own (virtual) mapping methods delegate to.
+    // Defaults to an AutoMapper-backed mapper; replaced by UseMapper(...) when a custom one is plugged.
+    protected IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? innerMapper { get; private set; }
+    public ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> ShiftRepositoryOptions { get; set; } = default!;
     public IDefaultDataLevelAccess? defaultDataLevelAccess { get; private set; }
     public IdentityClaimProvider identityClaimProvider { get; private set; } = default!;
     public ICurrentUserProvider? currentUserProvider { get; private set; }
@@ -49,23 +49,21 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
     private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
 
-    public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
+    public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO>>? shiftRepositoryBuilder = null)
     {
-        var autoMapper = db.GetService<IMapper>();
-        if (autoMapper is not null)
-            this.entityMapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
         InitCommon(db, shiftRepositoryBuilder);
     }
 
-    public ShiftRepository(DB db,
-        IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO> entityMapper,
-        Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder = null)
+    // Optional service resolution: db.GetService<T>() throws when a service isn't registered, so this
+    // wraps it to return null instead. It uses EF's resolution (which also checks the application
+    // service provider, where AutoMapper / TypeAuth / HashId are typically registered).
+    private static TService? TryGetService<TService>(DB db) where TService : class
     {
-        this.entityMapper = entityMapper;
-        InitCommon(db, shiftRepositoryBuilder);
+        try { return db.GetService<TService>(); }
+        catch (InvalidOperationException) { return null; }
     }
 
-    private void InitCommon(DB db, Action<ShiftRepositoryOptions<EntityType>>? shiftRepositoryBuilder)
+    private void InitCommon(DB db, Action<ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO>>? shiftRepositoryBuilder)
     {
         this.db = db;
         this.dbSet = db.Set<EntityType>();
@@ -90,40 +88,63 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             this.ShiftRepositoryOptions.SetCurrentUserProvider(this.currentUserProvider);
 
-            this.ShiftRepositoryOptions.SetTypeAuthService(db.GetService<ITypeAuthService>());
+            // Optional resolution: these are only needed by the TypeAuth/claim/hash filters, so a
+            // repository configured with options but without those services registered still constructs.
+            this.ShiftRepositoryOptions.SetTypeAuthService(TryGetService<ITypeAuthService>(db)!);
 
-            this.ShiftRepositoryOptions.SetHashIdService(db.GetService<IHashIdService>());
+            this.ShiftRepositoryOptions.SetHashIdService(TryGetService<IHashIdService>(db)!);
 
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
+        // Apply the default mapper (the registered AutoMapper) only when the builder didn't call
+        // UseMapper(...) — so UseMapper(custom) and UseMapper(null) both win over the default.
+        // TryGetService uses EF's resolution (incl. the application service provider) but tolerates
+        // AutoMapper being absent (the mapping methods then throw "No mapper configured" unless overridden).
+        if (!this.ShiftRepositoryOptions.MapperConfigured)
+        {
+            var autoMapper = TryGetService<IMapper>(db);
+            if (autoMapper is not null)
+                this.ShiftRepositoryOptions.Mapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
+        }
+
+        this.innerMapper = this.ShiftRepositoryOptions.Mapper;
+
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
-    #region Mapping Methods (virtual, delegates to entityMapper)
+    #region Mapping Methods (public virtual — implements IShiftEntityMapper; default delegates to innerMapper)
 
-    protected virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable)
+    public virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable)
     {
-        if (entityMapper is null)
+        if (innerMapper is null)
             throw new InvalidOperationException(
-                "No mapper configured. Override MapToList() or provide an IShiftEntityMapper.");
-        return entityMapper.MapToList(queryable);
+                "No mapper configured. Override MapToList() or set one via UseMapper().");
+        return innerMapper.MapToList(queryable);
     }
 
-    protected virtual ViewAndUpsertDTO MapToView(EntityType entity)
+    public virtual ViewAndUpsertDTO MapToView(EntityType entity)
     {
-        if (entityMapper is null)
+        if (innerMapper is null)
             throw new InvalidOperationException(
-                "No mapper configured. Override MapToView() or provide an IShiftEntityMapper.");
-        return entityMapper.MapToView(entity);
+                "No mapper configured. Override MapToView() or set one via UseMapper().");
+        return innerMapper.MapToView(entity);
     }
 
-    protected virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing)
+    public virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing)
     {
-        if (entityMapper is null)
+        if (innerMapper is null)
             throw new InvalidOperationException(
-                "No mapper configured. Override MapToEntity() or provide an IShiftEntityMapper.");
-        return entityMapper.MapToEntity(dto, existing);
+                "No mapper configured. Override MapToEntity() or set one via UseMapper().");
+        return innerMapper.MapToEntity(dto, existing);
+    }
+
+    public virtual void CopyEntity(EntityType source, EntityType target)
+    {
+        if (innerMapper is not null)
+            innerMapper.CopyEntity(source, target);
+        else
+            source.ShallowCopyTo(target);
     }
 
     #endregion
@@ -361,7 +382,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     /// <summary>
     /// The query-path data-level filter: when a v2 policy was declared via
-    /// <see cref="ShiftRepositoryOptions{EntityType}.DataLevelAccess"/> the declaration is the whole truth for the
+    /// <see cref="ShiftRepositoryOptions{EntityType, ListDTO, ViewAndUpsertDTO}.DataLevelAccess"/> the declaration is the whole truth for the
     /// entity — its filter replaces the legacy default filters entirely (an explicit <c>Unscoped()</c> applies no
     /// filter from either path). With no declaration, today's legacy default filters run unchanged (opt-in
     /// coexistence, D1).
@@ -736,13 +757,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
 
         // Reload entities that have navigation properties (Includes)
-        if (entitiesToReload.Count > 0 && entityMapper is not null)
+        if (entitiesToReload.Count > 0)
         {
             foreach (var trackedEntity in entitiesToReload)
             {
                 var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
-                    entityMapper.CopyEntity(freshEntity, trackedEntity);
+                    CopyEntity(freshEntity, trackedEntity);
             }
         }
 

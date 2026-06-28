@@ -12,7 +12,7 @@ public class ShiftTagRepository<DB> : ShiftRepository<DB, Tag, TagListDTO, TagDT
     }
 
     public ShiftTagRepository(DB db, IShiftEntityMapper<Tag, TagListDTO, TagDTO> entityMapper)
-        : base(db, entityMapper)
+        : base(db, o => o.UseMapper(entityMapper))
     {
     }
 }

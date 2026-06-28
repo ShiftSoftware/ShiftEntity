@@ -82,7 +82,7 @@ public class ShiftDbContextAuditTests
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
         var repo = new ShiftRepository<OrderingDbContext, OrderEntity, OrderListDTO, OrderListDTO>(
-            db, new ThrowingMapper<OrderEntity, OrderListDTO>());
+            db, o => o.UseMapper(new ThrowingMapper<OrderEntity, OrderListDTO>()));
 
         var viaRepo = new OrderEntity { Number = "via-repo" };
         repo.Add(viaRepo);

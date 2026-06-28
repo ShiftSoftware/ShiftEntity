@@ -40,7 +40,7 @@ public class RepositoryBypassTests
         public (bool DataLevel, bool GlobalFilters)? DeleteBools { get; private set; }
 
         public OverridingVehicleRepository(VehicleDbContext db)
-            : base(db, new UpsertVehicleMapper()) { }
+            : base(db, o => o.UseMapper(new UpsertVehicleMapper())) { }
 
         public override ValueTask<VehicleEntity> UpsertAsync(
             VehicleEntity entity, VehicleListDTO dto, ActionTypes actionType, long? userId, Guid? idempotencyKey,
@@ -102,7 +102,7 @@ public class RepositoryBypassTests
         using var scope = provider.CreateScope();
 
         var repository = new ShiftRepository<VehicleDbContext, VehicleEntity, VehicleListDTO, VehicleListDTO>(
-            RepositoryHost.SeededDb(scope), new ThrowingVehicleMapper());
+            RepositoryHost.SeededDb(scope), o => o.UseMapper(new ThrowingVehicleMapper()));
 
         var rows = (await repository.GetIQueryable()).ToList();
 
@@ -120,7 +120,7 @@ public class RepositoryBypassTests
         using var scope = provider.CreateScope();
 
         var repository = new ShiftRepository<VehicleDbContext, VehicleEntity, VehicleListDTO, VehicleListDTO>(
-            RepositoryHost.SeededDb(scope), new ThrowingVehicleMapper());
+            RepositoryHost.SeededDb(scope), o => o.UseMapper(new ThrowingVehicleMapper()));
 
         var rows = (await repository.GetIQueryable(bypass: RepositoryBypass.DataLevelAccess)).ToList();
 
@@ -143,9 +143,12 @@ public class RepositoryBypassTests
         using var scope = provider.CreateScope();
 
         var repository = new ShiftRepository<VehicleDbContext, VehicleEntity, VehicleListDTO, VehicleListDTO>(
-            RepositoryHost.SeededDb(scope), new ThrowingVehicleMapper(), options =>
-                options.DataLevelAccess(access =>
-                    access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID)));
+            RepositoryHost.SeededDb(scope), o =>
+            {
+                o.UseMapper(new ThrowingVehicleMapper());
+                o.DataLevelAccess(access =>
+                    access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID));
+            });
 
         Assert.Null(await repository.FindAsync(1));                                // #1 is out of the Intermediary's scope
         Assert.NotNull(await repository.FindAsync(1, bypass: RepositoryBypass.All)); // the explicit, named bypass

@@ -25,7 +25,7 @@ public class AttentionRealtimeTests
 {
     private static ShiftRepository<AttentionTestDbContext, GadgetEntity, GadgetDTO, GadgetDTO> GadgetRepository(
         AttentionTestDbContext db)
-        => new(db, new ThrowingGadgetMapper());
+        => new(db, o => o.UseMapper(new ThrowingGadgetMapper()));
 
     [Fact]
     public async Task RaisedSignal_PublishesHintToEntityTypeGroup_WithHashEncodedId()

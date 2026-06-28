@@ -20,11 +20,11 @@ public class AttentionEmissionTests
 {
     private static ShiftRepository<AttentionTestDbContext, GadgetEntity, GadgetDTO, GadgetDTO> GadgetRepository(
         AttentionTestDbContext db)
-        => new(db, new ThrowingGadgetMapper());
+        => new(db, o => o.UseMapper(new ThrowingGadgetMapper()));
 
     private static ShiftRepository<AttentionTestDbContext, WidgetEntity, WidgetDTO, WidgetDTO> WidgetRepository(
         AttentionTestDbContext db)
-        => new(db, new ThrowingWidgetMapper());
+        => new(db, o => o.UseMapper(new ThrowingWidgetMapper()));
 
     private static AttentionRaised Sentinel() => new()
     {

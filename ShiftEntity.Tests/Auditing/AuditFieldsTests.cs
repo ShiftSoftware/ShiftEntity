@@ -24,10 +24,10 @@ namespace ShiftSoftware.ShiftEntity.Tests.Auditing;
 public class AuditFieldsTests
 {
     private static ShiftRepository<OrderingDbContext, OrderEntity, OrderListDTO, OrderListDTO> OrderRepo(OrderingDbContext db)
-        => new(db, new ThrowingMapper<OrderEntity, OrderListDTO>());
+        => new(db, o => o.UseMapper(new ThrowingMapper<OrderEntity, OrderListDTO>()));
 
     private static ShiftRepository<OrderingDbContext, CategoryEntity, CategoryListDTO, CategoryListDTO> CategoryRepo(OrderingDbContext db)
-        => new(db, new ThrowingMapper<CategoryEntity, CategoryListDTO>());
+        => new(db, o => o.UseMapper(new ThrowingMapper<CategoryEntity, CategoryListDTO>()));
 
     // ── Root entity: insert ──────────────────────────────────────────────────
 

@@ -22,7 +22,7 @@ namespace ShiftSoftware.ShiftEntity.Web;
 
 public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewAndUpsertDTO> :
     ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpsertDTO>
-    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>, IShiftRepositoryWithOptions<Entity>
+    where Repository : IShiftRepositoryAsync<Entity, ListDTO, ViewAndUpsertDTO>, IShiftRepositoryWithOptions<Entity, ListDTO, ViewAndUpsertDTO>
     where Entity : ShiftEntity<Entity>, new()
     where ViewAndUpsertDTO : ShiftEntityViewAndUpsertDTO
     where ListDTO : ShiftEntityDTOBase

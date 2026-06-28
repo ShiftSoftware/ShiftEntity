@@ -26,17 +26,17 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 public class ShiftRepositoryDataLevelAccessTests
 {
     private static ShiftRepository<VehicleDbContext, VehicleEntity, VehicleListDTO, VehicleListDTO> Repository(
-        VehicleDbContext db, Action<ShiftRepositoryOptions<VehicleEntity>>? configure = null,
+        VehicleDbContext db, Action<ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>>? configure = null,
         IShiftEntityMapper<VehicleEntity, VehicleListDTO, VehicleListDTO>? mapper = null)
-        => new(db, mapper ?? new ThrowingVehicleMapper(), configure);
+        => new(db, o => { o.UseMapper(mapper ?? new ThrowingVehicleMapper()); configure?.Invoke(o); });
 
     /// <summary>The canonical declaration — one Companies dimension, OR across the two legs.</summary>
-    private static void DeclareCompanyOr(ShiftRepositoryOptions<VehicleEntity> options)
+    private static void DeclareCompanyOr(ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO> options)
         => options.DataLevelAccess(access =>
             access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID));
 
     /// <summary>The canonical declaration plus the loud denied-View posture (3.3).</summary>
-    private static void DeclareCompanyOrForbidden(ShiftRepositoryOptions<VehicleEntity> options)
+    private static void DeclareCompanyOrForbidden(ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO> options)
         => options.DataLevelAccess(access =>
         {
             access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID);

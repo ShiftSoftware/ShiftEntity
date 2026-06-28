@@ -28,7 +28,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     [Fact]
     public void DataLevelAccess_RecordsACompiledLivePolicy()
     {
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         options.DataLevelAccess(access =>
             access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID, x => x.IntermediaryCompanyID));
@@ -49,13 +49,13 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     public void DataLevelAccessPolicy_IsNullUntilDeclared()
     {
         // No declaration ⇒ no policy — the signal Phase 3 keys "use the legacy path" off of.
-        Assert.Null(new ShiftRepositoryOptions<VehicleEntity>().DataLevelAccessPolicy);
+        Assert.Null(new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>().DataLevelAccessPolicy);
     }
 
     [Fact]
     public void DataLevelAccess_NullDeclaration_Throws()
     {
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         Assert.Throws<ArgumentNullException>(() => options.DataLevelAccess(null!));
     }
@@ -64,7 +64,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     public void DataLevelAccess_DeclaredTwice_Throws()
     {
         // One entity, one policy: a second declaration must not silently widen or replace a security declaration.
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
         options.DataLevelAccess(access => access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID));
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -76,7 +76,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     {
         // A value source with no Key/Keys/Match would be an unenforceable dimension. The policy ctor validates, so
         // the declaration itself throws — at repository-construction (startup) time, not on some later query.
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         Assert.Throws<InvalidOperationException>(() =>
             options.DataLevelAccess(access => access.On(VehicleDataLevel.Companies)));
@@ -87,7 +87,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     {
         // Unscoped() is an explicit, recorded "this entity has no data-level scope" (≠ never declared) — Phase 3
         // can distinguish a deliberate opt-out from a missing declaration.
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         options.DataLevelAccess(access => access.Unscoped());
 
@@ -100,7 +100,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     {
         // An empty declaration would compile to a filter-nothing policy — a silent, total fail-open on an entity
         // that says it is protected. The policy ctor validates, so the declaration itself throws at startup.
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         Assert.Throws<InvalidOperationException>(() => options.DataLevelAccess(access => { }));
     }
@@ -109,7 +109,7 @@ public class ShiftRepositoryOptionsDataLevelAccessTests
     public void DataLevelAccess_WhenDenied_LandsOnTheStoredPolicy()
     {
         // The denied-View disclosure choice (D7) travels with the compiled policy — the Find path (3.3) keys off it.
-        var options = new ShiftRepositoryOptions<VehicleEntity>();
+        var options = new ShiftRepositoryOptions<VehicleEntity, VehicleListDTO, VehicleListDTO>();
 
         options.DataLevelAccess(access =>
         {

@@ -35,7 +35,7 @@ public class UpsertAuditTests
     }
 
     private static ShiftRepository<OrderingDbContext, OrderEntity, OrderListDTO, OrderListDTO> Repo(OrderingDbContext db)
-        => new(db, new OrderUpsertMapper());
+        => new(db, o => o.UseMapper(new OrderUpsertMapper()));
 
     private static OrderingDbContext Db(IServiceScope scope)
         => scope.ServiceProvider.GetRequiredService<OrderingDbContext>();

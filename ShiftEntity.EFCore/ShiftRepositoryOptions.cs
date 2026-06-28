@@ -7,7 +7,7 @@ using System.Linq.Expressions;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
-public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<EntityType>
+public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where EntityType : ShiftEntity<EntityType>
 {
     internal List<Action<IncludeOperations<EntityType>>> IncludeOperations { get; set; } = new();
     public Dictionary<Guid, IGlobalRepositoryFilter> GlobalRepositoryFilters { get; set; } = new();
@@ -41,6 +41,29 @@ public class ShiftRepositoryOptions<EntityType> where EntityType : ShiftEntity<E
     public void IncludeRelatedEntitiesWithFindAsync(params Action<IncludeOperations<EntityType>>[] includeOperations)
     {
         this.IncludeOperations = includeOperations.ToList();
+    }
+
+    /// <summary>
+    /// The mapper the repository uses. When the builder doesn't call <see cref="UseMapper"/>, the
+    /// repository fills this with the default AutoMapper-backed mapper (when AutoMapper is registered).
+    /// </summary>
+    public IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? Mapper { get; internal set; }
+
+    /// <summary>
+    /// True once <see cref="UseMapper"/> has been called — tells the repository not to overwrite the
+    /// programmer's choice (including an explicit <see langword="null"/>) with the AutoMapper default.
+    /// </summary>
+    internal bool MapperConfigured { get; private set; }
+
+    /// <summary>
+    /// Sets the mapper the repository uses, overriding the AutoMapper default (even when AutoMapper is
+    /// registered). Pass <see langword="null"/> to use no mapper (override the mapping methods instead,
+    /// or — in future — rely on source-generated mapping).
+    /// </summary>
+    public void UseMapper(IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? mapper)
+    {
+        this.Mapper = mapper;
+        this.MapperConfigured = true;
     }
 
     /// <summary>
