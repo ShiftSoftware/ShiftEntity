@@ -113,36 +113,42 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.defaultDataLevelAccess = db.GetService<IDefaultDataLevelAccess>();
     }
 
+    // The application service provider behind the DbContext (falling back to EF's internal provider on hosts
+    // that didn't set one). Handed to the (virtual) mapping methods so a plugged IShiftEntityMapper can resolve
+    // services on demand — letting a mapper stay unregistered (new-ed in UseMapper(...)) yet still reach DI.
+    private IServiceProvider MapperServiceProvider
+        => db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
+
     #region Mapping Methods (public virtual — implements IShiftEntityMapper; default delegates to innerMapper)
 
-    public virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable)
+    public virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable, IServiceProvider? serviceProvider = null)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToList() or set one via UseMapper().");
-        return innerMapper.MapToList(queryable);
+        return innerMapper.MapToList(queryable, serviceProvider ?? MapperServiceProvider);
     }
 
-    public virtual ViewAndUpsertDTO MapToView(EntityType entity)
+    public virtual ViewAndUpsertDTO MapToView(EntityType entity, IServiceProvider? serviceProvider = null)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToView() or set one via UseMapper().");
-        return innerMapper.MapToView(entity);
+        return innerMapper.MapToView(entity, serviceProvider ?? MapperServiceProvider);
     }
 
-    public virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing)
+    public virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing, IServiceProvider? serviceProvider = null)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToEntity() or set one via UseMapper().");
-        return innerMapper.MapToEntity(dto, existing);
+        return innerMapper.MapToEntity(dto, existing, serviceProvider ?? MapperServiceProvider);
     }
 
-    public virtual void CopyEntity(EntityType source, EntityType target)
+    public virtual void CopyEntity(EntityType source, EntityType target, IServiceProvider? serviceProvider = null)
     {
         if (innerMapper is not null)
-            innerMapper.CopyEntity(source, target);
+            innerMapper.CopyEntity(source, target, serviceProvider ?? MapperServiceProvider);
         else
             source.ShallowCopyTo(target);
     }
@@ -154,12 +160,12 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (queryable is null)
             queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
-        return MapToList(queryable);
+        return MapToList(queryable, MapperServiceProvider);
     }
 
     public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
     {
-        var dto = MapToView(entity);
+        var dto = MapToView(entity, MapperServiceProvider);
 
         // Read-side tagging is owned by the framework, not the entity mapper: when both the
         // entity and its DTO opt into tagging, populate the DTO's Tags from the entity's
@@ -183,7 +189,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         bool disableGlobalFilters
     )
     {
-        entity = MapToEntity(dto, entity);
+        entity = MapToEntity(dto, entity, MapperServiceProvider);
 
         if (_hasTaggableInterface && dto is IShiftEntityTaggableDTO taggableDto && entity is IShiftEntityTaggable taggableEntity)
         {
@@ -763,7 +769,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
-                    CopyEntity(freshEntity, trackedEntity);
+                    CopyEntity(freshEntity, trackedEntity, MapperServiceProvider);
             }
         }
 

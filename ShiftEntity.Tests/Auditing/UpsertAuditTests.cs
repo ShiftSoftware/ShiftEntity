@@ -23,15 +23,15 @@ public class UpsertAuditTests
     /// <summary>Real mapper — <c>UpsertAsync</c> maps the DTO onto the entity, so this can't be the throwing double.</summary>
     private sealed class OrderUpsertMapper : IShiftEntityMapper<OrderEntity, OrderListDTO, OrderListDTO>
     {
-        public OrderEntity MapToEntity(OrderListDTO dto, OrderEntity existing)
+        public OrderEntity MapToEntity(OrderListDTO dto, OrderEntity existing, IServiceProvider? serviceProvider = null)
         {
             existing.Number = dto.Number;
             return existing;
         }
 
-        public OrderListDTO MapToView(OrderEntity entity) => throw new NotSupportedException();
-        public IQueryable<OrderListDTO> MapToList(IQueryable<OrderEntity> query) => throw new NotSupportedException();
-        public void CopyEntity(OrderEntity source, OrderEntity target) => throw new NotSupportedException();
+        public OrderListDTO MapToView(OrderEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+        public IQueryable<OrderListDTO> MapToList(IQueryable<OrderEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+        public void CopyEntity(OrderEntity source, OrderEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
     }
 
     private static ShiftRepository<OrderingDbContext, OrderEntity, OrderListDTO, OrderListDTO> Repo(OrderingDbContext db)
