@@ -18,6 +18,13 @@ public sealed class ShiftEntityEndpointSpec
     /// <summary>The custom repository type, or null to use the framework's built-in repository.</summary>
     public Type? Repository { get; init; }
 
+    /// <summary>
+    /// A custom mapper type (an <c>IShiftEntityMapper&lt;Entity, ListDto, ViewDto&gt;</c> implementation) the
+    /// built-in repository should use instead of AutoMapper, or null. Mutually exclusive with
+    /// <see cref="Repository"/> (a custom repository does its own mapping).
+    /// </summary>
+    public Type? Mapper { get; init; }
+
     public required string Route { get; init; }
     public bool Secure { get; init; }
     public Type? ActionTreeType { get; init; }
@@ -85,35 +92,42 @@ public static class ShiftEntityEndpointDiscovery
         if (string.IsNullOrWhiteSpace(attr.Route))
             throw new InvalidOperationException($"'{entityType.FullName}' has a ShiftEntity endpoint attribute with an empty route.");
 
-        // Generic arg layout:
-        //   anonymous: [list, view] or [list, view, repo]
-        //   secure:    [list, view, actionTree] or [list, view, actionTree, repo]
-        var args = attr.GetType().GetGenericArguments();
+        // The attribute describes its own generic arguments (ListDtoType / ViewDtoType / ActionTreeType /
+        // RepositoryType / MapperType), so discovery is independent of the generic-parameter layout —
+        // reordering or adding a type parameter needs no change here.
+        var listDto = attr.ListDtoType;
+        var viewDto = attr.ViewDtoType;
 
-        if (attr.IsSecure)
-        {
-            return new ShiftEntityEndpointSpec
-            {
-                Entity = entityType,
-                ListDto = args[0],
-                ViewDto = args[1],
-                ActionTreeType = args[2],
-                Repository = args.Length == 4 ? args[3] : null,
-                ActionName = attr.ActionName,
-                Route = attr.Route,
-                Secure = true,
-            };
-        }
+        var mapper = attr.MapperType;
+        if (mapper is not null)
+            ValidateMapper(mapper, entityType, listDto, viewDto, attr.Route);
 
         return new ShiftEntityEndpointSpec
         {
             Entity = entityType,
-            ListDto = args[0],
-            ViewDto = args[1],
-            Repository = args.Length == 3 ? args[2] : null,
+            ListDto = listDto,
+            ViewDto = viewDto,
+            ActionTreeType = attr.ActionTreeType,
+            Repository = attr.RepositoryType,
+            Mapper = mapper,
+            ActionName = attr.ActionName,
             Route = attr.Route,
-            Secure = false,
+            Secure = attr.IsSecure,
         };
+    }
+
+    // The …EndpointWithMapper<…, TMapper> attribute only constrains TMapper to the non-generic
+    // IShiftEntityMapper marker (the entity type isn't knowable at the attribute declaration). Validate here
+    // that the mapper implements the interface for this entity's exact (entity, list, view) triple, so a
+    // mismatched mapper fails with a clear message at startup instead of being silently ignored.
+    private static void ValidateMapper(Type mapperType, Type entity, Type listDto, Type viewDto, string route)
+    {
+        var required = typeof(IShiftEntityMapper<,,>).MakeGenericType(entity, listDto, viewDto);
+
+        if (!required.IsAssignableFrom(mapperType))
+            throw new InvalidOperationException(
+                $"Mapper '{mapperType.FullName}' for the endpoint '{route}' on entity '{entity.FullName}' must implement " +
+                $"IShiftEntityMapper<{entity.Name}, {listDto.Name}, {viewDto.Name}>.");
     }
 
     private static bool IsShiftEntity(Type type)

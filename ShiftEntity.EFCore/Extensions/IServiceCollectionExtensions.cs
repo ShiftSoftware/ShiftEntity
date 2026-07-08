@@ -187,8 +187,23 @@ public static class IServiceCollectionExtensions
 
             foreach (var spec in endpointSpecs)
             {
-                services.Configure<ShiftEntityOptions>(o => o.AddEndpointDefaultMap(spec.Entity, spec.ListDto, spec.ViewDto));
                 map.Register(spec.Entity.Name, spec.ViewDto);
+
+                if (spec.Mapper is null)
+                {
+                    // Plain / custom-repository endpoint: synthesize the default AutoMapper entity↔DTO map.
+                    services.Configure<ShiftEntityOptions>(o => o.AddEndpointDefaultMap(spec.Entity, spec.ListDto, spec.ViewDto));
+                }
+                else
+                {
+                    // A [ShiftEntityEndpoint<…, TMapper>] entity keeps the built-in repository but supplies a
+                    // custom mapper. Register it as IShiftEntityMapper<Entity, ListDto, ViewDto> so the built-in
+                    // repository resolves and prefers it over AutoMapper (see ShiftRepository.InitCommon). No
+                    // AutoMapper default map is synthesized — the entity has opted out of AutoMapper for these
+                    // DTOs, so an entity↔DTO map AutoMapper may not even be able to express is not built.
+                    var mapperInterface = typeof(IShiftEntityMapper<,,>).MakeGenericType(spec.Entity, spec.ListDto, spec.ViewDto);
+                    services.TryAddScoped(mapperInterface, spec.Mapper);
+                }
             }
         }
 

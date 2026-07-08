@@ -97,15 +97,28 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
 
-        // Apply the default mapper (the registered AutoMapper) only when the builder didn't call
-        // UseMapper(...) — so UseMapper(custom) and UseMapper(null) both win over the default.
-        // TryGetService uses EF's resolution (incl. the application service provider) but tolerates
-        // AutoMapper being absent (the mapping methods then throw "No mapper configured" unless overridden).
+        // Apply the default mapper only when the builder didn't call UseMapper(...) — so UseMapper(custom)
+        // and UseMapper(null) both win over the default. Preference order:
+        //   1. An IShiftEntityMapper<Entity, List, View> explicitly registered in DI (e.g. supplied through
+        //      the [ShiftEntityEndpoint<…, TMapper>] attribute). Resolved via GetService (returns null when
+        //      absent — no exception on the common no-mapper path).
+        //   2. The registered AutoMapper, wrapped as an IShiftEntityMapper.
+        //   3. Nothing — the mapping methods then throw "No mapper configured" unless overridden.
+        // A ShiftRepository also implements IShiftEntityMapper<…>, so any repository resolution is ignored
+        // to avoid a repository being used as its own (recursive) mapper.
         if (!this.ShiftRepositoryOptions.MapperConfigured)
         {
-            var autoMapper = TryGetService<IMapper>(db);
-            if (autoMapper is not null)
-                this.ShiftRepositoryOptions.Mapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
+            var diMapper = MapperServiceProvider.GetService<IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>>();
+            if (diMapper is not null && diMapper is not ShiftRepositoryBase)
+            {
+                this.ShiftRepositoryOptions.Mapper = diMapper;
+            }
+            else
+            {
+                var autoMapper = TryGetService<IMapper>(db);
+                if (autoMapper is not null)
+                    this.ShiftRepositoryOptions.Mapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
+            }
         }
 
         this.innerMapper = this.ShiftRepositoryOptions.Mapper;
