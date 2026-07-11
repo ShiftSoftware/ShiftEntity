@@ -21,7 +21,9 @@ namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 ///  - View DTO audit/base fields via MapBaseFields; entity base/infrastructure fields are never written.
 ///  - MapToList is an inline, SQL-translatable Select projection (long→string, enum→int casts inlined;
 ///    SelectWithTags for taggable entities). Unmatched members are skipped.
-///  - CopyEntity delegates to ShallowCopyTo.
+///  - CopyEntity is a generated property-by-property copy (same contract as ShallowCopyTo, without the
+///    reflection): every public read/write property including navigations, except ID, ReloadAfterSave,
+///    and AuditFieldsAreSet.
 /// </summary>
 [Generator]
 public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
@@ -132,7 +134,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             emitted.Add(EmitMapToList(entity, listDto, entityName, listName, compilation));
 
         if (!HasUserMethod(cls, "CopyEntity"))
-            emitted.Add(EmitCopyEntity(entityName));
+            emitted.Add(EmitCopyEntity(entity, entityName));
 
         sb.Append(string.Join("\n", emitted));
         sb.AppendLine("}");
@@ -325,12 +327,22 @@ $@"    public global::System.Linq.IQueryable<{listName}> MapToList(global::Syste
 ";
     }
 
-    private static string EmitCopyEntity(string entityName)
+    private static string EmitCopyEntity(ITypeSymbol entity, string entityName)
     {
+        // Same contract as MappingHelpers.ShallowCopyTo, but as generated assignments (no reflection):
+        // copy every public read/write property — navigations included, since CopyEntity's job is to
+        // bring freshly-loaded state onto the tracked instance — except the key and framework flags.
+        var excluded = new HashSet<string>(StringComparer.Ordinal)
+        { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
+
+        var lines = AllProps(entity)
+            .Where(p => IsReadable(p) && IsSettable(p) && !excluded.Contains(p.Name))
+            .Select(p => $"        target.{p.Name} = source.{p.Name};");
+
         return
 $@"    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
     {{
-        {Helpers}.ShallowCopyTo(source, target);
+{string.Join("\n", lines)}
     }}
 ";
     }
