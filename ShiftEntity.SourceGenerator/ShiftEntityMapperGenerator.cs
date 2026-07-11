@@ -3,15 +3,24 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 
 /// <summary>
-/// Fills [ShiftEntityMapper] partial classes that implement IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;
-/// with convention-based implementations of the four mapping methods. A method the programmer has already
-/// written in their partial half is skipped (user-implemented wins).
+/// Generates convention-based IShiftEntityMapper implementations and registers them (via module
+/// initializers) in ShiftEntityMapperRegistry, keyed by the (entity, list DTO, view DTO) triple.
+///
+/// Two sources:
+///  1. AUTO-DISCOVERY (zero programmer code): every triple found in the compilation — from
+///     ShiftRepository&lt;DB, TEntity, TList, TView&gt; subclasses and from [ShiftEntityEndpoint*]
+///     attributes on entities — gets an auto-named internal mapper. These are what
+///     options.UseGeneratedMapper() and endpoint attributes with UseGeneratedMapper = true resolve.
+///  2. CUSTOMIZATION: a programmer-declared [ShiftEntityMapper] partial class implementing
+///     IShiftEntityMapper&lt;,,&gt;. The generator fills only the methods the programmer didn't write
+///     (user-implemented wins) and registers THAT class for the triple instead of an auto one.
 ///
 /// Conventions (the "simple cases"):
 ///  - Scalars map by name when an implicit conversion exists.
@@ -31,6 +40,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private const string AttributeFullName = "ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperAttribute";
     private const string Helpers = "global::ShiftSoftware.ShiftEntity.Core.MappingHelpers";
     private const string TaggableExtensions = "global::ShiftSoftware.ShiftEntity.EFCore.Tagging.TaggableProjectionExtensions";
+    private const string AutoNamespace = "ShiftSoftware.ShiftEntity.GeneratedMappers";
 
     private static readonly DiagnosticDescriptor NotPartial = new(
         id: "SHENGEN001",
@@ -50,12 +60,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var mappers = context.SyntaxProvider.ForAttributeWithMetadataName(
+        // 1. Programmer-declared [ShiftEntityMapper] partial classes (the customization path).
+        var declared = context.SyntaxProvider.ForAttributeWithMetadataName(
             AttributeFullName,
             static (node, _) => node is ClassDeclarationSyntax,
-            static (ctx, _) => Build(ctx));
+            static (ctx, _) => BuildDeclared(ctx));
 
-        context.RegisterSourceOutput(mappers, static (spc, model) =>
+        context.RegisterSourceOutput(declared, static (spc, model) =>
         {
             if (model.Error is not null)
                 spc.ReportDiagnostic(Diagnostic.Create(
@@ -64,11 +75,52 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (model.Source is not null && model.HintName is not null)
                 spc.AddSource(model.HintName, model.Source);
         });
+
+        // 2. Auto-discovery: triples from ShiftRepository<DB, TEntity, TList, TView> subclasses.
+        var repoTriples = context.SyntaxProvider.CreateSyntaxProvider(
+                static (node, _) => node is ClassDeclarationSyntax { BaseList: not null },
+                static (ctx, _) => BuildFromRepository(ctx))
+            .Where(static m => m is not null)
+            .Select(static (m, _) => m!);
+
+        // 3. Auto-discovery: triples from [ShiftEntityEndpoint*<TList, TView, …>] attributes on entities.
+        var endpointTriples = context.SyntaxProvider.CreateSyntaxProvider(
+                static (node, _) => node is ClassDeclarationSyntax { AttributeLists.Count: > 0 },
+                static (ctx, _) => BuildFromEndpointAttributes(ctx))
+            .SelectMany(static (models, _) => models);
+
+        // Auto mappers are emitted only for triples WITHOUT a programmer-declared mapper class
+        // (the declared class is registered for the triple instead — customization wins).
+        var declaredKeys = declared
+            .Where(static m => m.TripleKey is not null)
+            .Select(static (m, _) => m.TripleKey!)
+            .Collect();
+
+        var autoMappers = repoTriples.Collect()
+            .Combine(endpointTriples.Collect())
+            .Combine(declaredKeys);
+
+        context.RegisterSourceOutput(autoMappers, static (spc, data) =>
+        {
+            var ((fromRepos, fromEndpoints), declaredTriples) = data;
+            var declaredSet = new HashSet<string>(declaredTriples, StringComparer.Ordinal);
+            var emitted = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var model in fromRepos.Concat(fromEndpoints))
+            {
+                if (declaredSet.Contains(model.TripleKey!) || !emitted.Add(model.TripleKey!))
+                    continue;
+
+                spc.AddSource(model.HintName!, model.Source!);
+            }
+        });
     }
 
-    private sealed record MapperModel(string? HintName, string? Source, string? Error, string ClassName);
+    private sealed record MapperModel(string? HintName, string? Source, string? Error, string ClassName, string? TripleKey);
 
-    private static MapperModel Build(GeneratorAttributeSyntaxContext ctx)
+    // ─────────────────────────────────── discovery ───────────────────────────────────
+
+    private static MapperModel BuildDeclared(GeneratorAttributeSyntaxContext ctx)
     {
         var cls = (INamedTypeSymbol)ctx.TargetSymbol;
 
@@ -78,7 +130,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             .Any(s => s.Modifiers.Any(SyntaxKind.PartialKeyword));
 
         if (!isPartial)
-            return new MapperModel(null, null, "partial", cls.Name);
+            return new MapperModel(null, null, "partial", cls.Name, null);
 
         var mapperInterface = cls.AllInterfaces.FirstOrDefault(i =>
             i.Name == "IShiftEntityMapper" &&
@@ -86,23 +138,108 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             i.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal));
 
         if (mapperInterface is null)
-            return new MapperModel(null, null, "interface", cls.Name);
+            return new MapperModel(null, null, "interface", cls.Name, null);
 
-        var source = Emit(cls, mapperInterface, ctx.SemanticModel.Compilation);
-        var ns = cls.ContainingNamespace.IsGlobalNamespace ? "global" : cls.ContainingNamespace.ToDisplayString();
-        var hintName = $"{ns.Replace('.', '_')}_{cls.Name}.g.cs";
-
-        return new MapperModel(hintName, source, null, cls.Name);
-    }
-
-    // ─────────────────────────────────── emission ───────────────────────────────────
-
-    private static string Emit(INamedTypeSymbol cls, INamedTypeSymbol mapperInterface, Compilation compilation)
-    {
         var entity = mapperInterface.TypeArguments[0];
         var listDto = mapperInterface.TypeArguments[1];
         var viewDto = mapperInterface.TypeArguments[2];
 
+        var ns = cls.ContainingNamespace.IsGlobalNamespace ? null : cls.ContainingNamespace.ToDisplayString();
+        var source = Emit(ns, cls.Name, declareInterface: false, cls, entity, listDto, viewDto, ctx.SemanticModel.Compilation);
+        var hintName = $"{(ns ?? "global").Replace('.', '_')}_{cls.Name}.g.cs";
+
+        return new MapperModel(hintName, source, null, cls.Name, TripleKey(entity, listDto, viewDto));
+    }
+
+    private static MapperModel? BuildFromRepository(GeneratorSyntaxContext ctx)
+    {
+        if (ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) is not INamedTypeSymbol cls)
+            return null;
+
+        for (var current = cls.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.Name != "ShiftRepository" ||
+                current.TypeArguments.Length != 4 ||
+                !current.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+                continue;
+
+            // ShiftRepository<DB, TEntity, TListDTO, TViewAndUpsertDTO>
+            var entity = current.TypeArguments[1];
+            var listDto = current.TypeArguments[2];
+            var viewDto = current.TypeArguments[3];
+
+            return BuildAuto(entity, listDto, viewDto, ctx.SemanticModel.Compilation);
+        }
+
+        return null;
+    }
+
+    private static ImmutableArray<MapperModel> BuildFromEndpointAttributes(GeneratorSyntaxContext ctx, System.Threading.CancellationToken _ = default)
+    {
+        if (ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) is not INamedTypeSymbol entity ||
+            !DerivesFrom(entity, "ShiftEntity"))
+            return ImmutableArray<MapperModel>.Empty;
+
+        var models = ImmutableArray.CreateBuilder<MapperModel>();
+
+        foreach (var attribute in entity.GetAttributes())
+        {
+            var attrClass = attribute.AttributeClass;
+
+            // All endpoint attribute variants declare TListDTO, TViewDTO as their first two type arguments.
+            if (attrClass is null ||
+                !attrClass.Name.StartsWith("ShiftEntity", StringComparison.Ordinal) ||
+                !attrClass.Name.Contains("Endpoint") ||
+                attrClass.TypeArguments.Length < 2 ||
+                !attrClass.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+                continue;
+
+            var model = BuildAuto(entity, attrClass.TypeArguments[0], attrClass.TypeArguments[1], ctx.SemanticModel.Compilation);
+            if (model is not null)
+                models.Add(model);
+        }
+
+        return models.ToImmutable();
+    }
+
+    private static MapperModel? BuildAuto(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto, Compilation compilation)
+    {
+        // Open generic bases (e.g. RepositoryBase<TEntity, TList, TView>) carry type parameters — skip;
+        // the concrete subclasses produce the closed triples.
+        if (entity is ITypeParameterSymbol || listDto is ITypeParameterSymbol || viewDto is ITypeParameterSymbol ||
+            entity.TypeKind == TypeKind.Error || listDto.TypeKind == TypeKind.Error || viewDto.TypeKind == TypeKind.Error)
+            return null;
+
+        var key = TripleKey(entity, listDto, viewDto);
+        var className = $"Generated_{entity.Name}_{listDto.Name}_{viewDto.Name}_{Fnv8(key)}";
+        var source = Emit(AutoNamespace, className, declareInterface: true, userClass: null, entity, listDto, viewDto, compilation);
+
+        return new MapperModel($"{className}.g.cs", source, null, className, key);
+    }
+
+    private static string TripleKey(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto)
+        => $"{Fq(entity)}|{Fq(listDto)}|{Fq(viewDto)}";
+
+    private static string Fnv8(string value)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var ch in value)
+            {
+                hash ^= ch;
+                hash *= 16777619u;
+            }
+            return hash.ToString("x8");
+        }
+    }
+
+    // ─────────────────────────────────── emission ───────────────────────────────────
+
+    private static string Emit(
+        string? ns, string className, bool declareInterface, INamedTypeSymbol? userClass,
+        ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto, Compilation compilation)
+    {
         var entityName = Fq(entity);
         var listName = Fq(listDto);
         var viewName = Fq(viewDto);
@@ -113,30 +250,48 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("#nullable disable");
         sb.AppendLine();
 
-        if (!cls.ContainingNamespace.IsGlobalNamespace)
+        if (ns is not null)
         {
-            sb.Append("namespace ").Append(cls.ContainingNamespace.ToDisplayString()).AppendLine(";");
+            sb.Append("namespace ").Append(ns).AppendLine(";");
             sb.AppendLine();
         }
 
-        sb.Append("partial class ").AppendLine(cls.Name);
+        sb.Append(declareInterface ? "internal sealed class " : "partial class ").Append(className);
+        if (declareInterface)
+            sb.Append($" : global::ShiftSoftware.ShiftEntity.Core.IShiftEntityMapper<{entityName}, {listName}, {viewName}>");
+        sb.AppendLine();
         sb.AppendLine("{");
 
         var emitted = new List<string>();
 
-        if (!HasUserMethod(cls, "MapToView"))
+        if (userClass is null || !HasUserMethod(userClass, "MapToView"))
             emitted.Add(EmitMapToView(entity, viewDto, entityName, viewName, compilation));
 
-        if (!HasUserMethod(cls, "MapToEntity"))
+        if (userClass is null || !HasUserMethod(userClass, "MapToEntity"))
             emitted.Add(EmitMapToEntity(entity, viewDto, entityName, viewName, compilation));
 
-        if (!HasUserMethod(cls, "MapToList"))
+        if (userClass is null || !HasUserMethod(userClass, "MapToList"))
             emitted.Add(EmitMapToList(entity, listDto, entityName, listName, compilation));
 
-        if (!HasUserMethod(cls, "CopyEntity"))
+        if (userClass is null || !HasUserMethod(userClass, "CopyEntity"))
             emitted.Add(EmitCopyEntity(entity, entityName));
 
         sb.Append(string.Join("\n", emitted));
+        sb.AppendLine("}");
+
+        // Register the mapper in the runtime registry (keyed by the triple) at module load, so
+        // options.UseGeneratedMapper() and endpoint attributes with UseGeneratedMapper = true can find it
+        // without any DI registration.
+        var mapperTypeName = ns is null ? className : $"global::{ns}.{className}";
+        sb.AppendLine();
+        sb.AppendLine($"internal static class {className}Registration");
+        sb.AppendLine("{");
+        sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("    internal static void Register()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        global::ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperRegistry.Register(");
+        sb.AppendLine($"            typeof({entityName}), typeof({listName}), typeof({viewName}), typeof({mapperTypeName}));");
+        sb.AppendLine("    }");
         sb.AppendLine("}");
 
         return sb.ToString();

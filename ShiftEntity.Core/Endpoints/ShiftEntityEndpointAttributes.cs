@@ -55,6 +55,14 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
     /// <summary>The custom mapper type for the <c>…EndpointWithMapper&lt;…, TMapper&gt;</c> variants, else null.</summary>
     public virtual Type? MapperType => null;
 
+    /// <summary>
+    /// When true, the built-in repository uses the SOURCE-GENERATED mapper for this endpoint's
+    /// (entity, list, view) triple — a <c>[ShiftEntityMapper]</c> partial class must exist for it —
+    /// instead of the default AutoMapper mapping. Not valid on the <c>WithMapper</c> variants (the mapper
+    /// is already explicit) or the custom-repository variants (a custom repository does its own mapping).
+    /// </summary>
+    public bool UseGeneratedMapper { get; set; }
+
     protected ShiftEntityEndpointAttributeBase(string route)
     {
         Route = route;

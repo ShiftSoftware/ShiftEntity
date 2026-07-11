@@ -67,6 +67,25 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
+    /// Uses the SOURCE-GENERATED mapper for this repository's (entity, list, view) triple, overriding
+    /// the AutoMapper default. Mappers are generated automatically for every triple the source generator
+    /// discovers (repository declarations and endpoint attributes) and registered in
+    /// <see cref="ShiftEntityMapperRegistry"/> at module load — no mapper class is declared by hand.
+    /// To customize the mapping, declare a <c>[ShiftEntityMapper]</c> partial class for the triple.
+    /// </summary>
+    public void UseGeneratedMapper()
+    {
+        var mapperType = ShiftEntityMapperRegistry.Find(typeof(EntityType), typeof(ListDTO), typeof(ViewAndUpsertDTO))
+            ?? throw new InvalidOperationException(
+                $"No source-generated mapper is registered for ({typeof(EntityType).Name}, {typeof(ListDTO).Name}, {typeof(ViewAndUpsertDTO).Name}). " +
+                "Ensure the ShiftEntity source generator runs on the assembly declaring the repository (triples are discovered automatically), " +
+                "or declare a [ShiftEntityMapper] partial class for this exact triple.");
+
+        this.Mapper = (IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)Activator.CreateInstance(mapperType)!;
+        this.MapperConfigured = true;
+    }
+
+    /// <summary>
     /// Declares the entity's v2 data-level access dimensions (see <see cref="DataLevelAccessBuilder{TEntity}"/>:
     /// <c>On(action).Key/Keys/Match</c>, <c>OnOwner(claim)</c>, <c>Unscoped()</c>; dimensions AND-compose, a
     /// dimension's key columns are OR-internal) and compiles them into <see cref="DataLevelAccessPolicy"/>.
