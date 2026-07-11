@@ -84,6 +84,14 @@ public static class ModelBuilderExtensions
             if (!typeof(IHasAttention).IsAssignableFrom(clrType))
                 continue;
 
+            // The index is filtered. Only a very small part of any table has active rows,
+            // so the index stays almost empty. "Needs attention" count queries can then be
+            // answered from the index alone, without scanning the whole table. The filter
+            // uses SQL Server syntax, like the temporal support elsewhere in this class.
+            modelBuilder.Entity(clrType)
+                .HasIndex(nameof(IHasAttention.HasActiveAttention))
+                .HasFilter($"[{nameof(IHasAttention.HasActiveAttention)}] = 1");
+
             if (typeof(IHasIndexedAttention).IsAssignableFrom(clrType))
             {
                 hasIndexedAttention = true;
