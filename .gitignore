@@ -32,3 +32,8 @@
 /ShiftEntity.Functions/obj
 /ShiftEntity.Tests/bin
 /ShiftEntity.Tests/obj
+
+# Build outputs for every project (covers ShiftEntity.SourceGenerator and any future project;
+# the per-project entries above are kept but are now redundant).
+[Bb]in/
+[Oo]bj/

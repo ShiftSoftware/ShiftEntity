@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>enable</Nullable>
+		<RootNamespace>ShiftSoftware.ShiftEntity.SourceGenerator</RootNamespace>
+		<AssemblyName>ShiftSoftware.ShiftEntity.SourceGenerator</AssemblyName>
+		<!-- Analyzer assembly: never packed on its own, never referenced at runtime.
+		     It ships inside the ShiftSoftware.ShiftEntity (Core) package under analyzers/dotnet/cs. -->
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+		<IsRoslynComponent>true</IsRoslynComponent>
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+	</ItemGroup>
+
+</Project>
