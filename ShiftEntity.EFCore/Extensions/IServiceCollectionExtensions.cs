@@ -4,6 +4,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
+using ShiftSoftware.TypeAuth.Core.Actions;
 using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -181,6 +182,11 @@ public static class IServiceCollectionExtensions
         // supplied by the closed repository type at map time.
         var endpointSpecs = ShiftEntityEndpointDiscovery.Discover(assemblies ?? [Assembly.GetEntryAssembly()!]);
 
+        // The entity → TypeAuth action registry. Registered here even when it stays empty, so
+        // consumers (for example the standalone attention endpoints) can resolve it and treat
+        // a missing entry as "no action known for this type".
+        var actionMap = GetOrAddShiftEntityActionMap(services);
+
         if (endpointSpecs.Count > 0)
         {
             services.TryAddScoped(typeof(ShiftRepository<,,,>));
@@ -188,6 +194,12 @@ public static class IServiceCollectionExtensions
             foreach (var spec in endpointSpecs)
             {
                 map.Register(spec.Entity.Name, spec.ViewDto);
+
+                // Secure attribute endpoints name their action (ActionTreeType + ActionName).
+                // Resolve it once here and feed the action registry, so cross-entity surfaces
+                // can apply the same permission check as the entity's own endpoints.
+                if (spec.Secure)
+                    actionMap.Register(spec.Entity.Name, ShiftEntityEndpointActionResolver.ResolveAction(spec.ActionTreeType!, spec.ActionName!));
 
                 if (spec.Mapper is null)
                 {
@@ -208,5 +220,42 @@ public static class IServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers the TypeAuth <paramref name="action"/> for <typeparamref name="TEntity"/> in the
+    /// <see cref="ShiftEntityActionMap"/>. Cross-entity surfaces (for example the standalone
+    /// attention endpoints) read that map to apply the same permission check as the entity's own
+    /// endpoints.
+    /// </summary>
+    /// <remarks>
+    /// Attribute endpoints and <c>MapShiftEntitySecureCrud</c> feed the map automatically, so
+    /// this call is only needed for entities served by a classic
+    /// <c>ShiftEntitySecureControllerAsync</c>. The controller receives its action through its
+    /// constructor, so the framework cannot see the action at startup. Safe to call before or
+    /// after <c>RegisterShiftRepositories</c> — both write into the same singleton instance.
+    /// Registering the same entity again overwrites the previous action.
+    /// </remarks>
+    public static IServiceCollection AddShiftEntityAction<TEntity>(this IServiceCollection services, ReadWriteDeleteAction action)
+        where TEntity : ShiftEntityBase
+    {
+        GetOrAddShiftEntityActionMap(services).Register(typeof(TEntity).Name, action);
+
+        return services;
+    }
+
+    // Same pattern as the ShiftEntityDtoMap registration above: the map is registered as a
+    // singleton INSTANCE, so every caller — RegisterShiftRepositories and AddShiftEntityAction,
+    // in any order — finds the existing instance and writes into it.
+    private static ShiftEntityActionMap GetOrAddShiftEntityActionMap(IServiceCollection services)
+    {
+        var existing = services.FirstOrDefault(d => d.ServiceType == typeof(ShiftEntityActionMap));
+
+        if (existing?.ImplementationInstance is ShiftEntityActionMap actionMap)
+            return actionMap;
+
+        var created = new ShiftEntityActionMap();
+        services.AddSingleton(created);
+        return created;
     }
 }

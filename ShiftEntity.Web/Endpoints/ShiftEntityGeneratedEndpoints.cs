@@ -5,7 +5,6 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Endpoints;
@@ -32,7 +31,7 @@ internal static class ShiftEntityGeneratedEndpoints
             var repositoryType = ResolveRepositoryType(spec, dbType);
             ValidateRepository(repositoryType, spec);
 
-            var action = spec.Secure ? ResolveAction(spec.ActionTreeType!, spec.ActionName!) : null;
+            var action = spec.Secure ? ShiftEntityEndpointActionResolver.ResolveAction(spec.ActionTreeType!, spec.ActionName!) : null;
 
             MapEntityEndpointMethod
                 .MakeGenericMethod(repositoryType, spec.Entity, spec.ListDto, spec.ViewDto)
@@ -72,24 +71,5 @@ internal static class ShiftEntityGeneratedEndpoints
                 $"Repository '{repositoryType.FullName}' for the endpoint '{spec.Route}' on entity '{spec.Entity.FullName}' " +
                 $"must implement {required.FullName}. A custom repository must be a " +
                 $"ShiftRepository<DB, {spec.Entity.Name}, {spec.ListDto.Name}, {spec.ViewDto.Name}> (or a subclass).");
-    }
-
-    private static ReadWriteDeleteAction ResolveAction(Type actionTreeType, string actionName)
-    {
-        var field = actionTreeType
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .FirstOrDefault(f => string.Equals(f.Name, actionName, StringComparison.OrdinalIgnoreCase));
-
-        if (field is null)
-            throw new InvalidOperationException(
-                $"Action '{actionName}' was not found as a public static field on '{actionTreeType.FullName}'. " +
-                "The TActionTree of a secure endpoint attribute must directly declare the named action field.");
-
-        if (field.GetValue(null) is not ReadWriteDeleteAction action)
-            throw new InvalidOperationException(
-                $"Action '{actionName}' on '{actionTreeType.FullName}' is not a {nameof(ReadWriteDeleteAction)}. " +
-                "Secure endpoints can only bind to a ReadWriteDeleteAction node (not a dynamic / data-level action).");
-
-        return action;
     }
 }

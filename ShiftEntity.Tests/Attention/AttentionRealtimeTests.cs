@@ -27,6 +27,14 @@ public class AttentionRealtimeTests
         AttentionTestDbContext db)
         => new(db, o => o.UseMapper(new ThrowingGadgetMapper()));
 
+    /// <summary>A hub instance for direct method tests. The presence dependencies are plain default objects that these tests never use.</summary>
+    private static AttentionHub CreateHub(string connectionId, RecordingGroupManager groups)
+        => new(new InMemoryEntityViewerTracker(), new ShiftEntityDtoMap(), new RecordingHashIdService())
+        {
+            Groups = groups,
+            Context = new FakeHubCallerContext(connectionId),
+        };
+
     [Fact]
     public async Task RaisedSignal_PublishesHintToEntityTypeGroup_WithHashEncodedId()
     {
@@ -212,7 +220,7 @@ public class AttentionRealtimeTests
     public async Task SubscribeToEntityType_AddsConnectionToEntityTypeGroup()
     {
         var groups = new RecordingGroupManager();
-        using var hub = new AttentionHub { Groups = groups, Context = new FakeHubCallerContext("conn-1") };
+        using var hub = CreateHub("conn-1", groups);
 
         await hub.SubscribeToEntityType("Invoice");
 
@@ -227,7 +235,7 @@ public class AttentionRealtimeTests
     public async Task UnsubscribeFromEntityType_RemovesConnectionFromGroup()
     {
         var groups = new RecordingGroupManager();
-        using var hub = new AttentionHub { Groups = groups, Context = new FakeHubCallerContext("conn-2") };
+        using var hub = CreateHub("conn-2", groups);
 
         await hub.UnsubscribeFromEntityType("Invoice");
 

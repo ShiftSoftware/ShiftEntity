@@ -296,6 +296,13 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
             // — only print-token does (matching the controller).
             if (action is not null)
             {
+                // Feed the entity → action registry, so cross-entity surfaces (for example the
+                // standalone attention endpoints) can apply the same permission check as these
+                // endpoints. GetService: when the map is not registered (the app never called
+                // RegisterShiftRepositories or AddShiftEntityAction), the feed is skipped and
+                // everything else works as normal.
+                ((IEndpointRouteBuilder)group).ServiceProvider.GetService<ShiftEntityActionMap>()?.Register(typeof(Entity).Name, action);
+
                 getList.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getSingleRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getRevisionsRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
