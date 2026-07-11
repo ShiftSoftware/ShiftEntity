@@ -300,17 +300,23 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var emitted = new List<string>();
 
-        if (userClass is null || !HasUserMethod(userClass, "MapToView"))
-            emitted.Add(EmitMapToView(entity, viewDto, entityName, viewName, compilation));
+        void EmitDirection(string methodName, Func<bool, string> emit)
+        {
+            // If the programmer declared the *Generated method themselves, they own the whole direction.
+            if (userClass is not null && HasUserMethod(userClass, methodName + "Generated"))
+                return;
 
-        if (userClass is null || !HasUserMethod(userClass, "MapToEntity"))
-            emitted.Add(EmitMapToEntity(entity, viewDto, entityName, viewName, compilation));
+            // A user-implemented interface method takes the direction over — but the *Generated body is
+            // still emitted so the implementation can call it (the partial-class analog of the
+            // repository's base.MapToView(...) pattern; builder customizations keep applying inside it).
+            var userImplemented = userClass is not null && HasUserMethod(userClass, methodName);
+            emitted.Add(emit(!userImplemented));
+        }
 
-        if (userClass is null || !HasUserMethod(userClass, "MapToList"))
-            emitted.Add(EmitMapToList(entity, listDto, entityName, listName, compilation));
-
-        if (userClass is null || !HasUserMethod(userClass, "CopyEntity"))
-            emitted.Add(EmitCopyEntity(entity, entityName));
+        EmitDirection("MapToView", withPublic => EmitMapToView(entity, viewDto, entityName, viewName, compilation, withPublic));
+        EmitDirection("MapToEntity", withPublic => EmitMapToEntity(entity, viewDto, entityName, viewName, compilation, withPublic));
+        EmitDirection("MapToList", withPublic => EmitMapToList(entity, listDto, entityName, listName, compilation, withPublic));
+        EmitDirection("CopyEntity", withPublic => EmitCopyEntity(entity, entityName, withPublic));
 
         sb.Append(string.Join("\n", emitted));
         sb.AppendLine("}");
@@ -333,7 +339,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static string EmitMapToView(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation)
+    private static string EmitMapToView(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation, bool includePublicMethod)
     {
         // Base fields are handled by MapBaseFields; Tags by the framework's tagging pipeline. Both can
         // still be customized — those customizations run AFTER MapBaseFields so they win.
@@ -412,17 +418,24 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         foreach (var dtoProp in settable.Where(p => handled.Contains(p.Name)))
             Emit(dtoProp, withConvention: false);
 
+        var wrapper = includePublicMethod
+            ? $@"
+    public {viewName} MapToView({entityName} entity, global::System.IServiceProvider serviceProvider = null)
+        => MapToViewGenerated(entity, serviceProvider);
+"
+            : "";
+
         return
-$@"    public {viewName} MapToView({entityName} entity, global::System.IServiceProvider serviceProvider = null)
+$@"    private {viewName} MapToViewGenerated({entityName} entity, global::System.IServiceProvider serviceProvider = null)
     {{
         var dto = new {viewName}();
 
 {string.Join("\n", lines)}        return dto;
     }}
-";
+{wrapper}";
     }
 
-    private static string EmitMapToEntity(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation)
+    private static string EmitMapToEntity(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation, bool includePublicMethod)
     {
         // Never written by the CONVENTIONS: key, audit fields, framework-managed state, tags, navigations.
         // They remain customizable — an explicit ForEntity registration is a deliberate choice.
@@ -493,15 +506,22 @@ $@"    public {viewName} MapToView({entityName} entity, global::System.IServiceP
         foreach (var entityProp in settable.Where(p => excluded.Contains(p.Name) || IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: false);
 
+        var wrapper = includePublicMethod
+            ? $@"
+    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)
+        => MapToEntityGenerated(dto, existing, serviceProvider);
+"
+            : "";
+
         return
-$@"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)
+$@"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)
     {{
 {string.Join("\n", lines)}        return existing;
     }}
-";
+{wrapper}";
     }
 
-    private static string EmitMapToList(ITypeSymbol entity, ITypeSymbol listDto, string entityName, string listName, Compilation compilation)
+    private static string EmitMapToList(ITypeSymbol entity, ITypeSymbol listDto, string entityName, string listName, Compilation compilation, bool includePublicMethod)
     {
         var entityProps = AllProps(entity).Where(p => IsReadable(p)).ToDictionary(p => p.Name, p => p);
 
@@ -562,13 +582,20 @@ $@"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, gl
         // The convention projection is a static expression; ForList customizations are composed into it
         // once (bindings of customized members are REPLACED — their conventions never run), keeping one
         // pure member-init lambda so OData/paging/SelectWithTags are unaffected.
+        var wrapper = includePublicMethod
+            ? $@"
+    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)
+        => MapToListGenerated(queryable, serviceProvider);
+"
+            : "";
+
         return
 $@"    private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftListProjection = e => new {listName}
     {{
 {string.Join("\n", assignments)}
     }};
 
-    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)
+    private global::System.Linq.IQueryable<{listName}> MapToListGenerated(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)
     {{
         var projection = this.__shiftComposedListProjection;
 
@@ -580,10 +607,10 @@ $@"    private static readonly global::System.Linq.Expressions.Expression<global
 
         return {select}(queryable, projection);
     }}
-";
+{wrapper}";
     }
 
-    private static string EmitCopyEntity(ITypeSymbol entity, string entityName)
+    private static string EmitCopyEntity(ITypeSymbol entity, string entityName, bool includePublicMethod)
     {
         // Same contract as MappingHelpers.ShallowCopyTo, but as generated assignments (no reflection):
         // copy every public read/write property — navigations included, since CopyEntity's job is to
@@ -618,11 +645,18 @@ $@"    private static readonly global::System.Linq.Expressions.Expression<global
         foreach (var prop in copyable.Where(p => excluded.Contains(p.Name)))
             Emit(prop, withConvention: false);
 
+        var wrapper = includePublicMethod
+            ? $@"
+    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
+        => CopyEntityGenerated(source, target, serviceProvider);
+"
+            : "";
+
         return
-$@"    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
+$@"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
     {{
 {string.Join("\n", lines)}    }}
-";
+{wrapper}";
     }
 
     // ─────────────────────────────────── symbol helpers ───────────────────────────────────
