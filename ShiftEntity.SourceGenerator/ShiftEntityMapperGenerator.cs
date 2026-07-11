@@ -330,9 +330,19 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (!entityProps.TryGetValue(dtoProp.Name, out var match))
+                continue;
+
             // Name + implicitly-convertible type match.
-            if (entityProps.TryGetValue(dtoProp.Name, out var match) && IsImplicit(compilation, match.Type, dtoProp.Type))
+            if (IsImplicit(compilation, match.Type, dtoProp.Type))
+            {
                 assignments.Add($"            {dtoProp.Name} = entity.{dtoProp.Name},");
+                continue;
+            }
+
+            // entity T? → DTO T (value types): narrow with default fallback (mirrors MapToEntity's reverse rule).
+            if (UnwrapNullable(match.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
+                assignments.Add($"            {dtoProp.Name} = entity.{dtoProp.Name} ?? default,");
         }
 
         var mapBase = DerivesFrom(viewDto, "ShiftEntityViewAndUpsertDTO") && DerivesFrom(entity, "ShiftEntity")
@@ -435,6 +445,13 @@ $@"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, gl
             if (IsImplicit(compilation, src.Type, dtoProp.Type))
             {
                 assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name},");
+                continue;
+            }
+
+            // entity T? → DTO T (value types): narrow with default fallback (translates to COALESCE).
+            if (UnwrapNullable(src.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
+            {
+                assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name} ?? default,");
                 continue;
             }
 
