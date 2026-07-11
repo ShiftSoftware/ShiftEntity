@@ -71,9 +71,15 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     /// the AutoMapper default. Mappers are generated automatically for every triple the source generator
     /// discovers (repository declarations and endpoint attributes) and registered in
     /// <see cref="ShiftEntityMapperRegistry"/> at module load — no mapper class is declared by hand.
-    /// To customize the mapping, declare a <c>[ShiftEntityMapper]</c> partial class for the triple.
     /// </summary>
-    public void UseGeneratedMapper()
+    /// <param name="configure">
+    /// Optional per-property customization (<c>ForView</c>/<c>ForList</c>/<c>ForEntity</c>/<c>ForCopy</c>).
+    /// Applied after the mapper's own <c>Configure</c> partial hook, so registrations here win over the
+    /// shared mapper configuration. Registering a member automatically suppresses the generated
+    /// convention for it. For triple-wide customization, declare a <c>[ShiftEntityMapper]</c> partial
+    /// class and implement <c>Configure</c> there instead.
+    /// </param>
+    public void UseGeneratedMapper(Action<ShiftMapperBuilder<EntityType, ListDTO, ViewAndUpsertDTO>>? configure = null)
     {
         var mapperType = ShiftEntityMapperRegistry.Find(typeof(EntityType), typeof(ListDTO), typeof(ViewAndUpsertDTO))
             ?? throw new InvalidOperationException(
@@ -81,7 +87,19 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
                 "Ensure the ShiftEntity source generator runs on the assembly declaring the repository (triples are discovered automatically), " +
                 "or declare a [ShiftEntityMapper] partial class for this exact triple.");
 
-        this.Mapper = (IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)Activator.CreateInstance(mapperType)!;
+        var mapper = (IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>)Activator.CreateInstance(mapperType)!;
+
+        if (configure is not null)
+        {
+            if (mapper is not IShiftMapperConfigurable<EntityType, ListDTO, ViewAndUpsertDTO> configurable)
+                throw new InvalidOperationException(
+                    $"The source-generated mapper '{mapperType.Name}' does not support per-property configuration — " +
+                    "rebuild so the generator emits the configuration hook.");
+
+            configurable.AddConfiguration(configure);
+        }
+
+        this.Mapper = mapper;
         this.MapperConfigured = true;
     }
 
