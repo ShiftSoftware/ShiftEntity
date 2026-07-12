@@ -31,9 +31,87 @@ public class ShiftMapperBuilderTests
     private class WidgetViewDTO
     {
         public string? Name { get; set; }
+        public int? Age { get; set; }
     }
 
     private static ShiftMapperBuilder<WidgetEntity, WidgetListDTO, WidgetViewDTO> Builder() => new();
+
+    // ─── ResolveView / ResolveEntity / ResolveCopy: the runtime path the generated code calls ───
+
+    [Fact]
+    public void ResolveView_NoCustomization_RunsConvention()
+    {
+        var result = Builder().ResolveView<string?>(new WidgetEntity { Name = "N" }, null, "Name", (e, _) => e.Name);
+        Assert.Equal("N", result);
+    }
+
+    [Fact]
+    public void ResolveView_WithCustomization_RunsCustomization_AndDefersConvention()
+    {
+        var builder = Builder().ForView(d => d.Name, (e, _) => "custom");
+        var conventionRan = false;
+
+        var result = builder.ResolveView<string?>(new WidgetEntity { Name = "N" }, null, "Name",
+            (e, _) => { conventionRan = true; return e.Name; });
+
+        Assert.Equal("custom", result);
+        Assert.False(conventionRan);   // guard-before-execute: the convention delegate is never invoked
+    }
+
+    [Fact]
+    public void ResolveView_NullableValueType_CastMatches()
+    {
+        // Mirrors the generated case where the customization's TProp is the (nullable) DTO property type.
+        var builder = Builder().ForView(d => d.Age, (e, _) => (int?)42);
+
+        var result = builder.ResolveView<int?>(new WidgetEntity(), null, "Age", (e, _) => null);
+
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public void ResolveEntity_WithCustomization_Wins()
+    {
+        var builder = Builder().ForEntity(x => x.Name, (dto, _) => "from-dto");
+
+        var result = builder.ResolveEntity<string>(new WidgetViewDTO(), null, "Name", (d, _) => "convention");
+
+        Assert.Equal("from-dto", result);
+    }
+
+    [Fact]
+    public void ResolveCopy_NoCustomization_RunsConvention()
+    {
+        var result = Builder().ResolveCopy<string>(new WidgetEntity { Name = "src" }, null, "Name", (s, _) => s.Name);
+        Assert.Equal("src", result);
+    }
+
+    // ─── value-fallback overloads (customization-only members: base/audit/excluded — no convention) ───
+
+    [Fact]
+    public void ResolveView_ValueFallback_NoCustomization_KeepsCurrent()
+    {
+        // The generated base-member form: dto.ID = ResolveView(entity, sp, "ID", dto.ID);
+        var result = Builder().ResolveView<string>(new WidgetEntity(), null, "ID", current: "kept");
+        Assert.Equal("kept", result);
+    }
+
+    [Fact]
+    public void ResolveView_ValueFallback_WithCustomization_Overrides()
+    {
+        var builder = Builder().ForView(d => d.Name, (e, _) => "custom");
+        var result = builder.ResolveView<string?>(new WidgetEntity(), null, "Name", current: "kept");
+        Assert.Equal("custom", result);
+    }
+
+    [Fact]
+    public void ResolveCopy_ValueFallback_PreservesTargetValue_WhenNotCustomized()
+    {
+        // The generated excluded form for CopyEntity: target.ReloadAfterSave = ResolveCopy(source, sp, "X", target.X);
+        // — so target's value is kept (never copied from source) unless explicitly customized.
+        var result = Builder().ResolveCopy<bool>(new WidgetEntity(), null, "ReloadAfterSave", current: true);
+        Assert.True(result);
+    }
 
     [Fact]
     public void MemberSelector_MustBeSimplePropertyAccess()

@@ -360,20 +360,32 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("{");
 
         sb.AppendLine($"    private {builderType} __shiftMapperBuilder;");
+        sb.AppendLine("    private readonly object __shiftMapperLock = new object();");
         sb.AppendLine($"    private global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftComposedListProjection;");
         sb.AppendLine();
         sb.AppendLine($"    private {builderType} __ShiftMap");
         sb.AppendLine("    {");
         sb.AppendLine("        get");
         sb.AppendLine("        {");
-        sb.AppendLine("            if (this.__shiftMapperBuilder == null)");
+        sb.AppendLine("            // Double-checked locking: Configure runs exactly once and the fully-configured");
+        sb.AppendLine("            // builder is published safely, so a mapper instance shared across threads");
+        sb.AppendLine("            // (e.g. a DI singleton) never sees a partially-built or duplicated builder.");
+        sb.AppendLine("            var builder = global::System.Threading.Volatile.Read(ref this.__shiftMapperBuilder);");
+        sb.AppendLine("            if (builder == null)");
         sb.AppendLine("            {");
-        sb.AppendLine($"                var builder = new {builderType}();");
-        sb.AppendLine("                Configure(builder);");
-        sb.AppendLine("                this.__shiftMapperBuilder = builder;");
+        sb.AppendLine("                lock (this.__shiftMapperLock)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    builder = this.__shiftMapperBuilder;");
+        sb.AppendLine("                    if (builder == null)");
+        sb.AppendLine("                    {");
+        sb.AppendLine($"                        builder = new {builderType}();");
+        sb.AppendLine("                        Configure(builder);");
+        sb.AppendLine("                        global::System.Threading.Volatile.Write(ref this.__shiftMapperBuilder, builder);");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                }");
         sb.AppendLine("            }");
         sb.AppendLine();
-        sb.AppendLine("            return this.__shiftMapperBuilder;");
+        sb.AppendLine("            return builder;");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();
@@ -518,14 +530,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         void Emit(IPropertySymbol dtoProp, bool withConvention)
         {
-            var cast = $"global::System.Func<{entityName}, global::System.IServiceProvider, {Fq(dtoProp.Type)}>";
-            string? rhs = null;
+            var propType = Fq(dtoProp.Type);
+            // Convention body written over the lambda parameters (e = entity/source, sp = serviceProvider).
+            string? conv = null;
 
             if (withConvention)
             {
-                rhs = ViewConvention(entityProps, dtoProp, compilation, accessor);
+                conv = ViewConvention(entityProps, dtoProp, compilation, "e");
 
-                if (rhs is null &&
+                if (conv is null &&
                     !skippedEdges.Contains(ownerKey + "|" + dtoProp.Name) &&
                     TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out var isCollection) &&
                     pairs.TryGetValue(PairKey(childEntity, childDto), out var pair))
@@ -533,22 +546,25 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                     var field = $"__shiftPair_{Fnv8(PairKey(childEntity, childDto))}";
                     usedPairs.Add(PairKey(childEntity, childDto));
 
-                    rhs = isCollection
-                        ? $"{accessor}.{dtoProp.Name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({accessor}.{dtoProp.Name}, __child => {field}.Map(__child, serviceProvider)))"
-                        : $"{accessor}.{dtoProp.Name} == null ? null : {field}.Map({accessor}.{dtoProp.Name}, serviceProvider)";
+                    conv = isCollection
+                        ? $"e.{dtoProp.Name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(e.{dtoProp.Name}, __child => {field}.Map(__child, sp)))"
+                        : $"e.{dtoProp.Name} == null ? null : {field}.Map(e.{dtoProp.Name}, sp)";
                 }
 
-                if (rhs is null)
+                if (conv is null)
                     unmapped.Add(dtoProp.Name);
             }
 
-            lines.Add($"        if (this.__ShiftMap.TryGetViewValue(\"{dtoProp.Name}\", out var __v_{dtoProp.Name}))");
-            lines.Add($"            dto.{dtoProp.Name} = (({cast})__v_{dtoProp.Name})({accessor}, serviceProvider);");
-
-            if (rhs is not null)
+            if (conv is not null)
             {
-                lines.Add("        else");
-                lines.Add($"            dto.{dtoProp.Name} = {rhs};");
+                // One reusable call: the ForView customization wins, else the convention lambda runs.
+                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, serviceProvider, \"{dtoProp.Name}\", static (e, sp) => {conv});");
+            }
+            else
+            {
+                // Customization-only member (base/framework field or unmapped): the customization if present,
+                // else keep the current value (what MapBaseFields set, or the DTO default). No if-guard.
+                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, serviceProvider, \"{dtoProp.Name}\", dto.{dtoProp.Name});");
             }
 
             lines.Add("");
@@ -571,7 +587,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return new ViewEmission(lines, usedPairs, unmapped);
     }
 
-    private static string? EntityConvention(Dictionary<string, IPropertySymbol> dtoProps, IPropertySymbol entityProp, Compilation compilation)
+    private static string? EntityConvention(Dictionary<string, IPropertySymbol> dtoProps, IPropertySymbol entityProp, Compilation compilation, string accessor = "dto")
     {
         if (entityProp.Name.EndsWith("ID", StringComparison.Ordinal) && entityProp.Name.Length > 2)
         {
@@ -579,10 +595,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (dtoProps.TryGetValue(baseName, out var select) && IsShiftType(select.Type, "ShiftEntitySelectDTO"))
             {
                 if (IsLong(entityProp.Type))
-                    return $"{Helpers}.ToForeignKey(dto.{baseName})";
+                    return $"{Helpers}.ToForeignKey({accessor}.{baseName})";
 
                 if (IsNullableLong(entityProp.Type))
-                    return $"{Helpers}.ToNullableForeignKey(dto.{baseName})";
+                    return $"{Helpers}.ToNullableForeignKey({accessor}.{baseName})";
             }
         }
 
@@ -590,13 +606,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             return null;
 
         if (entityProp.Type.SpecialType == SpecialType.System_String && IsShiftFileList(dtoProp.Type))
-            return $"{Helpers}.ToJsonString(dto.{entityProp.Name})";
+            return $"{Helpers}.ToJsonString({accessor}.{entityProp.Name})";
 
         if (IsImplicit(compilation, dtoProp.Type, entityProp.Type))
-            return $"dto.{entityProp.Name}";
+            return $"{accessor}.{entityProp.Name}";
 
         if (UnwrapNullable(dtoProp.Type) is { } inner && SymbolEqualityComparer.Default.Equals(inner, entityProp.Type))
-            return $"dto.{entityProp.Name} ?? default";
+            return $"{accessor}.{entityProp.Name} ?? default";
 
         return null;
     }
@@ -608,16 +624,25 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         void Emit(IPropertySymbol entityProp, bool withConvention)
         {
-            var cast = $"global::System.Func<{viewName}, global::System.IServiceProvider, {Fq(entityProp.Type)}>";
-            var rhs = withConvention ? EntityConvention(dtoProps, entityProp, compilation) : null;
+            var propType = Fq(entityProp.Type);
+            var conv = withConvention ? EntityConvention(dtoProps, entityProp, compilation, "d") : null;
 
-            lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{entityProp.Name}\", out var __e_{entityProp.Name}))");
-            lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, serviceProvider);");
-
-            if (rhs is not null)
+            if (conv is not null)
             {
-                lines.Add("        else");
-                lines.Add($"            existing.{entityProp.Name} = {rhs};");
+                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, serviceProvider, \"{entityProp.Name}\", static (d, sp) => {conv});");
+            }
+            else if (IsEntityNavigation(entityProp.Type))
+            {
+                // Navigation: apply the customization if present, but NEVER read existing.<nav>
+                // (avoids triggering lazy loading) — so a guard, not the value-fallback overload.
+                var cast = $"global::System.Func<{viewName}, global::System.IServiceProvider, {propType}>";
+                lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{entityProp.Name}\", out var __e_{entityProp.Name}))");
+                lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, serviceProvider);");
+            }
+            else
+            {
+                // Key/audit/excluded scalar: the customization if present, else keep the existing value.
+                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, serviceProvider, \"{entityProp.Name}\", existing.{entityProp.Name});");
             }
 
             lines.Add("");
@@ -687,15 +712,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         void Emit(IPropertySymbol prop, bool withConvention)
         {
-            var cast = $"global::System.Func<{entityName}, global::System.IServiceProvider, {Fq(prop.Type)}>";
-
-            lines.Add($"        if (this.__ShiftMap.TryGetCopyValue(\"{prop.Name}\", out var __c_{prop.Name}))");
-            lines.Add($"            target.{prop.Name} = (({cast})__c_{prop.Name})(source, serviceProvider);");
+            var propType = Fq(prop.Type);
 
             if (withConvention)
             {
-                lines.Add("        else");
-                lines.Add($"            target.{prop.Name} = source.{prop.Name};");
+                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, serviceProvider, \"{prop.Name}\", static (s, sp) => s.{prop.Name});");
+            }
+            else
+            {
+                // Excluded member (key/flags — all scalar): the customization if present, else keep target's value
+                // (so e.g. ReloadAfterSave is preserved, never copied from source). No if-guard.
+                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, serviceProvider, \"{prop.Name}\", target.{prop.Name});");
             }
 
             lines.Add("");

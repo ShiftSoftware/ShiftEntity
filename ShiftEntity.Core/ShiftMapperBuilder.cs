@@ -174,12 +174,66 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         return (IShiftObjectMapper<TChildEntity, TChildDto>)Activator.CreateInstance(mapperType)!;
     }
 
-    // ─── consumed by the generated code ───
+    // ─── consumed by the generated code (not part of the customization API) ───
 
+    /// <summary>
+    /// Resolves a view-DTO member: the registered <c>ForView</c> customization if one exists, otherwise
+    /// the generated <paramref name="convention"/>. The convention is a delegate, so it runs ONLY when the
+    /// member is not customized (guard-before-execute — a customized convention that would throw is skipped).
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveView<TProp>(TEntity entity, IServiceProvider? serviceProvider, string memberName, Func<TEntity, IServiceProvider?, TProp> convention)
+        => this.viewValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(entity, serviceProvider)
+            : convention(entity, serviceProvider);
+
+    /// <summary>Resolves an entity member in <c>MapToEntity</c>: the <c>ForEntity</c> customization, else the generated convention.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveEntity<TProp>(TViewDTO dto, IServiceProvider? serviceProvider, string memberName, Func<TViewDTO, IServiceProvider?, TProp> convention)
+        => this.entityValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TViewDTO, IServiceProvider?, TProp>)custom)(dto, serviceProvider)
+            : convention(dto, serviceProvider);
+
+    /// <summary>Resolves an entity member in <c>CopyEntity</c>: the <c>ForCopy</c> customization, else the generated convention.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveCopy<TProp>(TEntity source, IServiceProvider? serviceProvider, string memberName, Func<TEntity, IServiceProvider?, TProp> convention)
+        => this.copyValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(source, serviceProvider)
+            : convention(source, serviceProvider);
+
+    // Value-fallback overloads for customization-only members (base/audit/navigation/excluded — no
+    // convention): apply the customization if present, otherwise keep the value that is already there
+    // (what MapBaseFields set, or the existing/target value). Lets the generator emit ONE line with no
+    // if-guard for these members too.
+
+    /// <summary>View member with no convention: the <c>ForView</c> customization if present, else <paramref name="current"/> (unchanged).</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveView<TProp>(TEntity entity, IServiceProvider? serviceProvider, string memberName, TProp current)
+        => this.viewValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(entity, serviceProvider)
+            : current;
+
+    /// <summary>Entity member with no convention: the <c>ForEntity</c> customization if present, else <paramref name="current"/> (unchanged).</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveEntity<TProp>(TViewDTO dto, IServiceProvider? serviceProvider, string memberName, TProp current)
+        => this.entityValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TViewDTO, IServiceProvider?, TProp>)custom)(dto, serviceProvider)
+            : current;
+
+    /// <summary>Copy member with no convention: the <c>ForCopy</c> customization if present, else <paramref name="current"/> (target unchanged).</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp ResolveCopy<TProp>(TEntity source, IServiceProvider? serviceProvider, string memberName, TProp current)
+        => this.copyValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(source, serviceProvider)
+            : current;
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public bool TryGetViewValue(string memberName, out object? value) => this.viewValues.TryGetValue(memberName, out value);
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public bool TryGetEntityValue(string memberName, out object? value) => this.entityValues.TryGetValue(memberName, out value);
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public bool TryGetCopyValue(string memberName, out object? value) => this.copyValues.TryGetValue(memberName, out value);
 
     /// <summary>
@@ -188,6 +242,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// and the result is still one pure member-init lambda. Returns the projection unchanged when there
     /// are no list customizations.
     /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public Expression<Func<TEntity, TListDTO>> ComposeList(Expression<Func<TEntity, TListDTO>> projection)
     {
         if (this.listValues.Count == 0 && this.listChildren.Count == 0)
