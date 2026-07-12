@@ -11,6 +11,8 @@
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<IsRoslynComponent>true</IsRoslynComponent>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<!-- RS2008 = "enable analyzer release tracking"; not needed for a generator shipped inside a product package. -->
+		<NoWarn>$(NoWarn);RS2008</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

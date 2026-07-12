@@ -24,6 +24,13 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private readonly Dictionary<string, object> entityValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> copyValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Value)> listValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Source, Type ChildEntity, Type ChildDto, bool IsCollection)> listChildren = new(StringComparer.Ordinal);
+
+    private static readonly MethodInfo EnumerableSelect = typeof(Enumerable).GetMethods()
+        .First(m => m.Name == nameof(Enumerable.Select) && m.GetParameters().Length == 2 &&
+                    m.GetParameters()[1].ParameterType.GetGenericTypeDefinition() == typeof(Func<,>));
+
+    private static readonly MethodInfo EnumerableToList = typeof(Enumerable).GetMethod(nameof(Enumerable.ToList))!;
 
     /// <summary>Customizes a view-DTO property in <c>MapToView</c> (in-memory; full C# + services).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForView<TProp>(
@@ -77,6 +84,96 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         return this;
     }
 
+    // ─── deep-mapping sugar: wire the generated PAIR mappers explicitly, without boilerplate ───
+
+    /// <summary>
+    /// Maps a child COLLECTION in <c>MapToEntity</c> through the source-generated pair mapper.
+    /// Semantics: REPLACE-WITH-NEW — every child DTO becomes a new entity instance (pair this with a
+    /// repository that owns the previous children, e.g. delete-and-recreate); it is NOT a merge/update-by-ID.
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChildren<TChildEntity, TChildDto>(
+        Expression<Func<TEntity, List<TChildEntity>>> member, Func<TViewDTO, IEnumerable<TChildDto>?> from)
+        where TChildEntity : class, new()
+    {
+        var pair = ResolvePair<TChildEntity, TChildDto>();
+
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, List<TChildEntity>?>((dto, sp) =>
+        {
+            var source = from(dto);
+            return source == null ? null : source.Select(c => pair.MapBack(c, new TChildEntity(), sp)).ToList();
+        });
+
+        return this;
+    }
+
+    /// <inheritdoc cref="ForEntityChildren{TChildEntity, TChildDto}(Expression{Func{TEntity, List{TChildEntity}}}, Func{TViewDTO, IEnumerable{TChildDto}})"/>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChildren<TChildEntity, TChildDto>(
+        Expression<Func<TEntity, ICollection<TChildEntity>>> member, Func<TViewDTO, IEnumerable<TChildDto>?> from)
+        where TChildEntity : class, new()
+    {
+        var pair = ResolvePair<TChildEntity, TChildDto>();
+
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, ICollection<TChildEntity>?>((dto, sp) =>
+        {
+            var source = from(dto);
+            return source == null ? null : source.Select(c => pair.MapBack(c, new TChildEntity(), sp)).ToList();
+        });
+
+        return this;
+    }
+
+    /// <summary>Maps a single child object in <c>MapToEntity</c> through the source-generated pair mapper (into a NEW instance).</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChild<TChildEntity, TChildDto>(
+        Expression<Func<TEntity, TChildEntity>> member, Func<TViewDTO, TChildDto?> from)
+        where TChildEntity : class, new()
+        where TChildDto : class
+    {
+        var pair = ResolvePair<TChildEntity, TChildDto>();
+
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, TChildEntity?>((dto, sp) =>
+        {
+            var source = from(dto);
+            return source == null ? null : pair.MapBack(source, new TChildEntity(), sp);
+        });
+
+        return this;
+    }
+
+    /// <summary>
+    /// Projects a child COLLECTION inside the <c>MapToList</c> SQL projection, using the pair's
+    /// source-generated, conventions-only projection expression (a correlated collection query —
+    /// deliberate, visible query-shape change). For a custom child list shape use <see cref="ForList"/>.
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChildren<TChildEntity, TChildDto>(
+        Expression<Func<TListDTO, IEnumerable<TChildDto>>> member, Expression<Func<TEntity, IEnumerable<TChildEntity>>> source)
+    {
+        var memberInfo = MemberOf(member);
+        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), true);
+        return this;
+    }
+
+    /// <summary>Projects a single child object inside the <c>MapToList</c> SQL projection (null-safe), using the pair's generated projection.</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChild<TChildEntity, TChildDto>(
+        Expression<Func<TListDTO, TChildDto>> member, Expression<Func<TEntity, TChildEntity>> source)
+        where TChildEntity : class
+        where TChildDto : class
+    {
+        var memberInfo = MemberOf(member);
+        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), false);
+        return this;
+    }
+
+    private static IShiftObjectMapper<TChildEntity, TChildDto> ResolvePair<TChildEntity, TChildDto>()
+    {
+        var mapperType = ShiftEntityMapperRegistry.FindPair(typeof(TChildEntity), typeof(TChildDto))
+            ?? throw new InvalidOperationException(
+                $"No source-generated pair mapper is registered for ({typeof(TChildEntity).Name}, {typeof(TChildDto).Name}). " +
+                "Ensure the ShiftEntity source generator runs on the assembly (pairs are discovered from view DTOs automatically), " +
+                "or declare a [ShiftEntityMapper] partial class implementing IShiftObjectMapper for this exact pair.");
+
+        return (IShiftObjectMapper<TChildEntity, TChildDto>)Activator.CreateInstance(mapperType)!;
+    }
+
     // ─── consumed by the generated code ───
 
     public bool TryGetViewValue(string memberName, out object? value) => this.viewValues.TryGetValue(memberName, out value);
@@ -93,7 +190,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// </summary>
     public Expression<Func<TEntity, TListDTO>> ComposeList(Expression<Func<TEntity, TListDTO>> projection)
     {
-        if (this.listValues.Count == 0)
+        if (this.listValues.Count == 0 && this.listChildren.Count == 0)
             return projection;
 
         if (projection.Body is not MemberInitExpression init)
@@ -102,8 +199,11 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
         var parameter = projection.Parameters[0];
 
+        var replaced = new HashSet<string>(this.listValues.Keys, StringComparer.Ordinal);
+        replaced.UnionWith(this.listChildren.Keys);
+
         var bindings = init.Bindings
-            .Where(b => !this.listValues.ContainsKey(b.Member.Name))
+            .Where(b => !replaced.Contains(b.Member.Name))
             .ToList();
 
         foreach (var custom in this.listValues.Values)
@@ -112,12 +212,51 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
             bindings.Add(Expression.Bind(custom.Member, body));
         }
 
+        foreach (var child in this.listChildren.Values)
+        {
+            var childProjection = ShiftEntityMapperRegistry.FindPairListProjection(child.ChildEntity, child.ChildDto)
+                ?? throw new InvalidOperationException(
+                    $"No pair list projection is registered for ({child.ChildEntity.Name}, {child.ChildDto.Name}). " +
+                    "Ensure the ShiftEntity source generator runs on the assembly declaring the pair.");
+
+            var sourceBody = new ParameterReplacer(child.Source.Parameters[0], parameter).Visit(child.Source.Body)!;
+
+            Expression value;
+
+            if (child.IsCollection)
+            {
+                // e.Children.Select(childProjection).ToList() — the compiler-equivalent shape of a
+                // hand-written correlated collection projection; EF translates it as such.
+                var select = Expression.Call(
+                    EnumerableSelect.MakeGenericMethod(child.ChildEntity, child.ChildDto), sourceBody, childProjection);
+                value = Expression.Call(EnumerableToList.MakeGenericMethod(child.ChildDto), select);
+            }
+            else
+            {
+                // Inline the pair projection's body over the source expression, null-safe.
+                var inlined = new ParameterReplacer(childProjection.Parameters[0], sourceBody).Visit(childProjection.Body)!;
+                value = Expression.Condition(
+                    Expression.Equal(sourceBody, Expression.Constant(null, child.ChildEntity)),
+                    Expression.Constant(null, child.ChildDto),
+                    inlined);
+            }
+
+            bindings.Add(Expression.Bind(child.Member, value));
+        }
+
         return Expression.Lambda<Func<TEntity, TListDTO>>(Expression.MemberInit(init.NewExpression, bindings), parameter);
     }
 
     private static MemberInfo MemberOf(LambdaExpression selector)
     {
-        if (selector.Body is MemberExpression member && member.Expression == selector.Parameters[0])
+        var body = selector.Body;
+
+        // The compiler may wrap the member access in a Convert when the selector's declared return
+        // type is a base/interface of the property type (e.g. List<T> property, IEnumerable<T> selector).
+        while (body is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
+            body = unary.Operand;
+
+        if (body is MemberExpression member && member.Expression == selector.Parameters[0])
             return member.Member;
 
         throw new ArgumentException("The member selector must be a simple property access, e.g. d => d.Name.", nameof(selector));
@@ -126,9 +265,9 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private sealed class ParameterReplacer : ExpressionVisitor
     {
         private readonly ParameterExpression from;
-        private readonly ParameterExpression to;
+        private readonly Expression to;
 
-        public ParameterReplacer(ParameterExpression from, ParameterExpression to)
+        public ParameterReplacer(ParameterExpression from, Expression to)
         {
             this.from = from;
             this.to = to;

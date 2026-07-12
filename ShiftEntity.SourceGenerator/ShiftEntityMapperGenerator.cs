@@ -10,29 +10,32 @@ using System.Text;
 namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 
 /// <summary>
-/// Generates convention-based IShiftEntityMapper implementations and registers them (via module
-/// initializers) in ShiftEntityMapperRegistry, keyed by the (entity, list DTO, view DTO) triple.
+/// Generates convention-based mappers and registers them (via module initializers) in
+/// ShiftEntityMapperRegistry:
 ///
-/// Two sources:
-///  1. AUTO-DISCOVERY (zero programmer code): every triple found in the compilation — from
-///     ShiftRepository&lt;DB, TEntity, TList, TView&gt; subclasses and from [ShiftEntityEndpoint*]
-///     attributes on entities — gets an auto-named internal mapper. These are what
-///     options.UseGeneratedMapper() and endpoint attributes with UseGeneratedMapper = true resolve.
-///  2. CUSTOMIZATION: a programmer-declared [ShiftEntityMapper] partial class implementing
-///     IShiftEntityMapper&lt;,,&gt;. The generator fills only the methods the programmer didn't write
-///     (user-implemented wins) and registers THAT class for the triple instead of an auto one.
+///  - TRIPLE mappers (IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;): auto-discovered from
+///    ShiftRepository&lt;DB, TEntity, TList, TView&gt; subclasses and [ShiftEntityEndpoint*] attributes,
+///    or programmer-declared [ShiftEntityMapper] partial classes (customization: user-implemented
+///    methods win and can call the emitted *Generated bodies; per-property Configure hook).
+///  - PAIR mappers (IShiftObjectMapper&lt;TChildEntity, TChildDto&gt;): auto-discovered from complex
+///    members of view DTOs (different-class child pairs, single or collection), generated recursively
+///    (grandchildren) with cycle detection, and COMPOSED automatically into the parents' MapToView.
+///    Declared [ShiftEntityMapper] partial pair classes replace the auto ones. Entity/list directions
+///    are never composed automatically (persistence and query-shape decisions) — the pair exposes
+///    MapBack and a conventions-only static list Projection for the explicit builder sugar
+///    (ForEntityChildren / ForListChildren).
 ///
-/// Conventions (the "simple cases"):
-///  - Scalars map by name when an implicit conversion exists.
-///  - DTO ShiftEntitySelectDTO property X ↔ entity FK "XID" (long/long?) via MappingHelpers.ToSelectDTO /
-///    ToForeignKey / ToNullableForeignKey; the optional nav property X supplies the display text.
-///  - DTO List&lt;ShiftFileDTO&gt; ↔ entity string via ToShiftFiles / ToJsonString.
-///  - View DTO audit/base fields via MapBaseFields; entity base/infrastructure fields are never written.
-///  - MapToList is an inline, SQL-translatable Select projection (long→string, enum→int casts inlined;
-///    SelectWithTags for taggable entities). Unmatched members are skipped.
-///  - CopyEntity is a generated property-by-property copy (same contract as ShallowCopyTo, without the
-///    reflection): every public read/write property including navigations, except ID, ReloadAfterSave,
-///    and AuditFieldsAreSet.
+/// Conventions: scalars by name + implicit conversion; entity T? → DTO T narrowing (?? default);
+/// long/long? → string and enum → int(?); FK ↔ ShiftEntitySelectDTO via MappingHelpers; string ↔
+/// List&lt;ShiftFileDTO&gt;; view base fields via MapBaseFields; CopyEntity = generated property-by-property
+/// copy. MapToList is an inline SQL-translatable projection (SelectWithTags for taggables).
+///
+/// Diagnostics: SHENGEN001 (not partial), SHENGEN002 (no mapper interface), SHENGEN003 (deep-mapping
+/// cycle — member skipped), SHENGEN004 (unmapped view members — warning).
+///
+/// NOTE: emission is centralized in one combined step (pair closure needs global knowledge), so
+/// incremental caching granularity is coarse — any relevant change regenerates all mappers. Correctness
+/// over incrementality; acceptable at framework-consumer scale.
 /// </summary>
 [Generator]
 public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
@@ -43,84 +46,63 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private const string AutoNamespace = "ShiftSoftware.ShiftEntity.GeneratedMappers";
 
     private static readonly DiagnosticDescriptor NotPartial = new(
-        id: "SHENGEN001",
-        title: "Mapper class must be partial",
-        messageFormat: "Class '{0}' is marked [ShiftEntityMapper] but is not declared partial; the generator cannot add the mapping methods",
-        category: "ShiftEntity.Mapping",
-        defaultSeverity: DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        "SHENGEN001", "Mapper class must be partial",
+        "Class '{0}' is marked [ShiftEntityMapper] but is not declared partial; the generator cannot add the mapping methods",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
 
     private static readonly DiagnosticDescriptor NoMapperInterface = new(
-        id: "SHENGEN002",
-        title: "Mapper class must implement IShiftEntityMapper<TEntity, TListDTO, TViewDTO>",
-        messageFormat: "Class '{0}' is marked [ShiftEntityMapper] but does not implement IShiftEntityMapper<TEntity, TListDTO, TViewDTO>",
-        category: "ShiftEntity.Mapping",
-        defaultSeverity: DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        "SHENGEN002", "Mapper class must implement a mapper interface",
+        "Class '{0}' is marked [ShiftEntityMapper] but implements neither IShiftEntityMapper<TEntity, TListDTO, TViewDTO> nor IShiftObjectMapper<TEntity, TDto>",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
+
+    private static readonly DiagnosticDescriptor MappingCycle = new(
+        "SHENGEN003", "Deep mapping cycle",
+        "Deep-mapping cycle detected ({0}); the member '{1}' is skipped — customize it via ForView/Configure or remove it from the DTO",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
+
+    private static readonly DiagnosticDescriptor UnmappedMembers = new(
+        "SHENGEN004", "Unmapped members",
+        "Generated mapper '{0}' does not map: {1} — no convention or deep composition applies; customize via ForView/Configure, take the method over, or adjust the DTO",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
+
+    // ─────────────────────────────────── pipeline ───────────────────────────────────
+
+    private sealed record DeclaredModel(INamedTypeSymbol Cls, string? Error, bool IsPair,
+        ITypeSymbol? Entity, ITypeSymbol? ListDto, ITypeSymbol? ViewDto);
+
+    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // 1. Programmer-declared [ShiftEntityMapper] partial classes (the customization path).
         var declared = context.SyntaxProvider.ForAttributeWithMetadataName(
-            AttributeFullName,
-            static (node, _) => node is ClassDeclarationSyntax,
-            static (ctx, _) => BuildDeclared(ctx));
+                AttributeFullName,
+                static (node, _) => node is ClassDeclarationSyntax,
+                static (ctx, _) => BuildDeclared(ctx))
+            .Collect();
 
-        context.RegisterSourceOutput(declared, static (spc, model) =>
-        {
-            if (model.Error is not null)
-                spc.ReportDiagnostic(Diagnostic.Create(
-                    model.Error == "partial" ? NotPartial : NoMapperInterface, Location.None, model.ClassName));
-
-            if (model.Source is not null && model.HintName is not null)
-                spc.AddSource(model.HintName, model.Source);
-        });
-
-        // 2. Auto-discovery: triples from ShiftRepository<DB, TEntity, TList, TView> subclasses.
         var repoTriples = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { BaseList: not null },
                 static (ctx, _) => BuildFromRepository(ctx))
             .Where(static m => m is not null)
-            .Select(static (m, _) => m!);
+            .Select(static (m, _) => m!)
+            .Collect();
 
-        // 3. Auto-discovery: triples from [ShiftEntityEndpoint*<TList, TView, …>] attributes on entities.
         var endpointTriples = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { AttributeLists.Count: > 0 },
                 static (ctx, _) => BuildFromEndpointAttributes(ctx))
-            .SelectMany(static (models, _) => models);
-
-        // Auto mappers are emitted only for triples WITHOUT a programmer-declared mapper class
-        // (the declared class is registered for the triple instead — customization wins).
-        var declaredKeys = declared
-            .Where(static m => m.TripleKey is not null)
-            .Select(static (m, _) => m.TripleKey!)
+            .SelectMany(static (models, _) => models)
             .Collect();
 
-        var autoMappers = repoTriples.Collect()
-            .Combine(endpointTriples.Collect())
-            .Combine(declaredKeys);
+        var everything = declared.Combine(repoTriples).Combine(endpointTriples).Combine(context.CompilationProvider);
 
-        context.RegisterSourceOutput(autoMappers, static (spc, data) =>
+        context.RegisterSourceOutput(everything, static (spc, data) =>
         {
-            var ((fromRepos, fromEndpoints), declaredTriples) = data;
-            var declaredSet = new HashSet<string>(declaredTriples, StringComparer.Ordinal);
-            var emitted = new HashSet<string>(StringComparer.Ordinal);
-
-            foreach (var model in fromRepos.Concat(fromEndpoints))
-            {
-                if (declaredSet.Contains(model.TripleKey!) || !emitted.Add(model.TripleKey!))
-                    continue;
-
-                spc.AddSource(model.HintName!, model.Source!);
-            }
+            var (((declaredModels, fromRepos), fromEndpoints), compilation) = data;
+            GenerateAll(spc, declaredModels, fromRepos, fromEndpoints, compilation);
         });
     }
 
-    private sealed record MapperModel(string? HintName, string? Source, string? Error, string ClassName, string? TripleKey);
-
-    // ─────────────────────────────────── discovery ───────────────────────────────────
-
-    private static MapperModel BuildDeclared(GeneratorAttributeSyntaxContext ctx)
+    private static DeclaredModel BuildDeclared(GeneratorAttributeSyntaxContext ctx)
     {
         var cls = (INamedTypeSymbol)ctx.TargetSymbol;
 
@@ -130,126 +112,240 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             .Any(s => s.Modifiers.Any(SyntaxKind.PartialKeyword));
 
         if (!isPartial)
-            return new MapperModel(null, null, "partial", cls.Name, null);
+            return new DeclaredModel(cls, "partial", false, null, null, null);
 
-        var mapperInterface = cls.AllInterfaces.FirstOrDefault(i =>
-            i.Name == "IShiftEntityMapper" &&
-            i.TypeArguments.Length == 3 &&
-            i.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal));
+        var tripleInterface = cls.AllInterfaces.FirstOrDefault(i =>
+            i.Name == "IShiftEntityMapper" && i.TypeArguments.Length == 3 && IsShiftNamespace(i));
 
-        if (mapperInterface is null)
-            return new MapperModel(null, null, "interface", cls.Name, null);
+        if (tripleInterface is not null)
+            return new DeclaredModel(cls, null, false,
+                tripleInterface.TypeArguments[0], tripleInterface.TypeArguments[1], tripleInterface.TypeArguments[2]);
 
-        var entity = mapperInterface.TypeArguments[0];
-        var listDto = mapperInterface.TypeArguments[1];
-        var viewDto = mapperInterface.TypeArguments[2];
+        var pairInterface = cls.AllInterfaces.FirstOrDefault(i =>
+            i.Name == "IShiftObjectMapper" && i.TypeArguments.Length == 2 && IsShiftNamespace(i));
 
-        var ns = cls.ContainingNamespace.IsGlobalNamespace ? null : cls.ContainingNamespace.ToDisplayString();
-        var source = Emit(ns, cls.Name, declareInterface: false, cls, entity, listDto, viewDto, ctx.SemanticModel.Compilation);
-        var hintName = $"{(ns ?? "global").Replace('.', '_')}_{cls.Name}.g.cs";
+        if (pairInterface is not null)
+            return new DeclaredModel(cls, null, true,
+                pairInterface.TypeArguments[0], null, pairInterface.TypeArguments[1]);
 
-        return new MapperModel(hintName, source, null, cls.Name, TripleKey(entity, listDto, viewDto));
+        return new DeclaredModel(cls, "interface", false, null, null, null);
     }
 
-    private static MapperModel? BuildFromRepository(GeneratorSyntaxContext ctx)
+    private static TripleModel? BuildFromRepository(GeneratorSyntaxContext ctx)
     {
         if (ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) is not INamedTypeSymbol cls)
             return null;
 
         for (var current = cls.BaseType; current is not null; current = current.BaseType)
         {
-            if (current.Name != "ShiftRepository" ||
-                current.TypeArguments.Length != 4 ||
-                !current.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+            if (current.Name != "ShiftRepository" || current.TypeArguments.Length != 4 || !IsShiftNamespace(current))
                 continue;
 
-            // ShiftRepository<DB, TEntity, TListDTO, TViewAndUpsertDTO>
             var entity = current.TypeArguments[1];
             var listDto = current.TypeArguments[2];
             var viewDto = current.TypeArguments[3];
 
-            return BuildAuto(entity, listDto, viewDto, ctx.SemanticModel.Compilation);
+            if (IsOpenOrError(entity) || IsOpenOrError(listDto) || IsOpenOrError(viewDto))
+                return null;
+
+            return new TripleModel(entity, listDto, viewDto);
         }
 
         return null;
     }
 
-    private static ImmutableArray<MapperModel> BuildFromEndpointAttributes(GeneratorSyntaxContext ctx, System.Threading.CancellationToken _ = default)
+    private static ImmutableArray<TripleModel> BuildFromEndpointAttributes(GeneratorSyntaxContext ctx)
     {
         if (ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) is not INamedTypeSymbol entity ||
             !DerivesFrom(entity, "ShiftEntity"))
-            return ImmutableArray<MapperModel>.Empty;
+            return ImmutableArray<TripleModel>.Empty;
 
-        var models = ImmutableArray.CreateBuilder<MapperModel>();
+        var models = ImmutableArray.CreateBuilder<TripleModel>();
 
         foreach (var attribute in entity.GetAttributes())
         {
             var attrClass = attribute.AttributeClass;
 
-            // All endpoint attribute variants declare TListDTO, TViewDTO as their first two type arguments.
             if (attrClass is null ||
                 !attrClass.Name.StartsWith("ShiftEntity", StringComparison.Ordinal) ||
                 !attrClass.Name.Contains("Endpoint") ||
                 attrClass.TypeArguments.Length < 2 ||
-                !attrClass.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+                !IsShiftNamespace(attrClass))
                 continue;
 
-            var model = BuildAuto(entity, attrClass.TypeArguments[0], attrClass.TypeArguments[1], ctx.SemanticModel.Compilation);
-            if (model is not null)
-                models.Add(model);
+            var listDto = attrClass.TypeArguments[0];
+            var viewDto = attrClass.TypeArguments[1];
+
+            if (!IsOpenOrError(listDto) && !IsOpenOrError(viewDto))
+                models.Add(new TripleModel(entity, listDto, viewDto));
         }
 
         return models.ToImmutable();
     }
 
-    private static MapperModel? BuildAuto(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto, Compilation compilation)
+    private static bool IsOpenOrError(ITypeSymbol t) => t is ITypeParameterSymbol || t.TypeKind == TypeKind.Error;
+
+    // ─────────────────────────────────── the combined generation step ───────────────────────────────────
+
+    private sealed class PairInfo
     {
-        // Open generic bases (e.g. RepositoryBase<TEntity, TList, TView>) carry type parameters — skip;
-        // the concrete subclasses produce the closed triples.
-        if (entity is ITypeParameterSymbol || listDto is ITypeParameterSymbol || viewDto is ITypeParameterSymbol ||
-            entity.TypeKind == TypeKind.Error || listDto.TypeKind == TypeKind.Error || viewDto.TypeKind == TypeKind.Error)
-            return null;
-
-        var key = TripleKey(entity, listDto, viewDto);
-        var className = $"Generated_{entity.Name}_{listDto.Name}_{viewDto.Name}_{Fnv8(key)}";
-        var source = Emit(AutoNamespace, className, declareInterface: true, userClass: null, entity, listDto, viewDto, compilation);
-
-        return new MapperModel($"{className}.g.cs", source, null, className, key);
+        public ITypeSymbol Entity = null!;
+        public ITypeSymbol Dto = null!;
+        public INamedTypeSymbol? UserClass;
+        public string ClassName = "";   // simple name (auto) — for declared pairs the user class name
+        public string TypeRef = "";     // fully qualified reference used by consumers
     }
 
-    private static string TripleKey(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto)
-        => $"{Fq(entity)}|{Fq(listDto)}|{Fq(viewDto)}";
-
-    private static string Fnv8(string value)
+    private static void GenerateAll(SourceProductionContext spc,
+        ImmutableArray<DeclaredModel> declaredModels,
+        ImmutableArray<TripleModel> fromRepos,
+        ImmutableArray<TripleModel> fromEndpoints,
+        Compilation compilation)
     {
-        unchecked
+        // 1. Declared classes: report errors; index valid ones.
+        var declaredTriples = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
+        var declaredPairs = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
+
+        foreach (var model in declaredModels)
         {
-            var hash = 2166136261u;
-            foreach (var ch in value)
+            if (model.Error is not null)
             {
-                hash ^= ch;
-                hash *= 16777619u;
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    model.Error == "partial" ? NotPartial : NoMapperInterface,
+                    model.Cls.Locations.FirstOrDefault() ?? Location.None, model.Cls.Name));
+                continue;
             }
-            return hash.ToString("x8");
+
+            if (model.IsPair)
+                declaredPairs[PairKey(model.Entity!, model.ViewDto!)] = model;
+            else
+                declaredTriples[TripleKey(model.Entity!, model.ListDto!, model.ViewDto!)] = model;
         }
+
+        // 2. All triples (declared + auto, deduped; declared wins its key).
+        var triples = new Dictionary<string, (TripleModel Triple, INamedTypeSymbol? UserClass)>(StringComparer.Ordinal);
+
+        foreach (var model in declaredTriples.Values)
+            triples[TripleKey(model.Entity!, model.ListDto!, model.ViewDto!)] =
+                (new TripleModel(model.Entity!, model.ListDto!, model.ViewDto!), model.Cls);
+
+        foreach (var triple in fromRepos.Concat(fromEndpoints))
+            if (!triples.ContainsKey(TripleKey(triple.Entity, triple.ListDto, triple.ViewDto)))
+                triples[TripleKey(triple.Entity, triple.ListDto, triple.ViewDto)] = (triple, null);
+
+        // 3. Pair closure over all view DTOs, with cycle detection (cycle edge → warn + skip).
+        var pairs = new Dictionary<string, PairInfo>(StringComparer.Ordinal);
+        var skippedEdges = new HashSet<string>(StringComparer.Ordinal);   // "<ownerKey>|<member>"
+        var stack = new List<string>();
+
+        void Discover(string ownerKey, string ownerDisplay, ITypeSymbol entity, ITypeSymbol viewDto)
+        {
+            var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
+
+            foreach (var dtoProp in AllProps(viewDto).Where(IsSettable))
+            {
+                if (ViewHandledMembers.Contains(dtoProp.Name) ||
+                    ViewConvention(entityProps, dtoProp, compilation) is not null ||
+                    !TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out _))
+                    continue;
+
+                var key = PairKey(childEntity, childDto);
+
+                if (stack.Contains(key))
+                {
+                    spc.ReportDiagnostic(Diagnostic.Create(MappingCycle, Location.None,
+                        string.Join(" → ", stack.Concat(new[] { key }).Select(ShortPair)),
+                        $"{ownerDisplay}.{dtoProp.Name}"));
+                    skippedEdges.Add(ownerKey + "|" + dtoProp.Name);
+                    continue;
+                }
+
+                if (pairs.ContainsKey(key))
+                    continue;
+
+                declaredPairs.TryGetValue(key, out var declaredPair);
+
+                var info = new PairInfo { Entity = childEntity, Dto = childDto, UserClass = declaredPair?.Cls };
+
+                if (declaredPair is not null)
+                {
+                    info.ClassName = declaredPair.Cls.Name;
+                    info.TypeRef = Fq(declaredPair.Cls);
+                }
+                else
+                {
+                    info.ClassName = $"Generated_Pair_{childEntity.Name}_{childDto.Name}_{Fnv8(key)}";
+                    info.TypeRef = $"global::{AutoNamespace}.{info.ClassName}";
+                }
+
+                pairs[key] = info;
+
+                stack.Add(key);
+                Discover(key, ShortPair(key), childEntity, childDto);
+                stack.RemoveAt(stack.Count - 1);
+            }
+        }
+
+        foreach (var (key, (triple, _)) in triples.Select(kv => (kv.Key, kv.Value)))
+        {
+            stack.Clear();
+            Discover(key, triple.Entity.Name, triple.Entity, triple.ViewDto);
+        }
+
+        // Declared pairs that no triple references still get generated (they may be used explicitly).
+        foreach (var kv in declaredPairs)
+        {
+            if (pairs.ContainsKey(kv.Key))
+                continue;
+
+            var model = kv.Value;
+            pairs[kv.Key] = new PairInfo
+            {
+                Entity = model.Entity!,
+                Dto = model.ViewDto!,
+                UserClass = model.Cls,
+                ClassName = model.Cls.Name,
+                TypeRef = Fq(model.Cls),
+            };
+
+            stack.Clear();
+            stack.Add(kv.Key);
+            Discover(kv.Key, ShortPair(kv.Key), model.Entity!, model.ViewDto!);
+        }
+
+        // 4. Emit pair mappers.
+        foreach (var (key, pair) in pairs.Select(kv => (kv.Key, kv.Value)))
+            EmitPair(spc, key, pair, pairs, skippedEdges, compilation);
+
+        // 5. Emit triple mappers.
+        foreach (var (key, (triple, userClass)) in triples.Select(kv => (kv.Key, kv.Value)))
+            EmitTriple(spc, key, triple, userClass, pairs, skippedEdges, compilation);
     }
 
-    // ─────────────────────────────────── emission ───────────────────────────────────
-
-    private static string Emit(
-        string? ns, string className, bool declareInterface, INamedTypeSymbol? userClass,
-        ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto, Compilation compilation)
+    private static string TripleKey(ITypeSymbol e, ITypeSymbol l, ITypeSymbol v) => $"{Fq(e)}|{Fq(l)}|{Fq(v)}";
+    private static string PairKey(ITypeSymbol e, ITypeSymbol d) => $"{Fq(e)}~{Fq(d)}";
+    private static string ShortPair(string pairKey)
     {
-        var entityName = Fq(entity);
-        var listName = Fq(listDto);
-        var viewName = Fq(viewDto);
+        var parts = pairKey.Split('~');
+        return $"({parts[0].Split('.').Last()}, {parts[1].Split('.').Last()})";
+    }
 
-        var builderType = $"global::ShiftSoftware.ShiftEntity.Core.ShiftMapperBuilder<{entityName}, {listName}, {viewName}>";
-        var configurableInterface = $"global::ShiftSoftware.ShiftEntity.Core.IShiftMapperConfigurable<{entityName}, {listName}, {viewName}>";
+    // ─────────────────────────────────── emission: shared infra ───────────────────────────────────
 
+    private static readonly HashSet<string> ViewHandledMembers = new(StringComparer.Ordinal)
+    { "ID", "IsDeleted", "CreateDate", "LastSaveDate", "CreatedByUserID", "LastSavedByUserID", "Tags", "Revisions" };
+
+    private static readonly HashSet<string> EntityExcludedMembers = new(StringComparer.Ordinal)
+    { "ID", "CreateDate", "LastSaveDate", "IsDeleted", "CreatedByUserID", "LastSavedByUserID", "ReloadAfterSave", "AuditFieldsAreSet", "IdempotencyKey", "Tags" };
+
+    private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
+    { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
+
+    private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName)
+    {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated/>");
-        sb.AppendLine("// Generated by ShiftSoftware.ShiftEntity.SourceGenerator — convention-based IShiftEntityMapper implementation.");
+        sb.AppendLine("// Generated by ShiftSoftware.ShiftEntity.SourceGenerator — convention-based mapper implementation.");
         sb.AppendLine("#nullable disable");
         sb.AppendLine("#pragma warning disable 0169, 0414");
         sb.AppendLine();
@@ -260,16 +356,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.Append(declareInterface ? "internal sealed partial class " : "partial class ").Append(className);
-        sb.Append(" : ");
-        if (declareInterface)
-            sb.Append($"global::ShiftSoftware.ShiftEntity.Core.IShiftEntityMapper<{entityName}, {listName}, {viewName}>, ");
-        sb.AppendLine(configurableInterface);
+        sb.AppendLine(declaration);
         sb.AppendLine("{");
 
-        // Per-property customization infrastructure: the builder is created lazily; the mapper's own
-        // Configure partial hook runs first, then external configuration (the repository's
-        // UseGeneratedMapper(configure)) is appended via IShiftMapperConfigurable — later wins.
         sb.AppendLine($"    private {builderType} __shiftMapperBuilder;");
         sb.AppendLine($"    private global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftComposedListProjection;");
         sb.AppendLine();
@@ -288,7 +377,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();
-        sb.AppendLine("    /// <summary>Per-property customization hook (ForView/ForList/ForEntity/ForCopy) — implement in your partial class half. Registering a member suppresses the generated convention for it.</summary>");
+        sb.AppendLine("    /// <summary>Per-property customization hook — implement in your partial class half. Registering a member suppresses the generated convention for it.</summary>");
         sb.AppendLine($"    partial void Configure({builderType} map);");
         sb.AppendLine();
         sb.AppendLine($"    void {configurableInterface}.AddConfiguration(global::System.Action<{builderType}> configure)");
@@ -298,101 +387,163 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("    }");
         sb.AppendLine();
 
-        var emitted = new List<string>();
-
-        void EmitDirection(string methodName, Func<bool, string> emit)
-        {
-            // If the programmer declared the *Generated method themselves, they own the whole direction.
-            if (userClass is not null && HasUserMethod(userClass, methodName + "Generated"))
-                return;
-
-            // A user-implemented interface method takes the direction over — but the *Generated body is
-            // still emitted so the implementation can call it (the partial-class analog of the
-            // repository's base.MapToView(...) pattern; builder customizations keep applying inside it).
-            var userImplemented = userClass is not null && HasUserMethod(userClass, methodName);
-            emitted.Add(emit(!userImplemented));
-        }
-
-        EmitDirection("MapToView", withPublic => EmitMapToView(entity, viewDto, entityName, viewName, compilation, withPublic));
-        EmitDirection("MapToEntity", withPublic => EmitMapToEntity(entity, viewDto, entityName, viewName, compilation, withPublic));
-        EmitDirection("MapToList", withPublic => EmitMapToList(entity, listDto, entityName, listName, compilation, withPublic));
-        EmitDirection("CopyEntity", withPublic => EmitCopyEntity(entity, entityName, withPublic));
-
-        sb.Append(string.Join("\n", emitted));
-        sb.AppendLine("}");
-
-        // Register the mapper in the runtime registry (keyed by the triple) at module load, so
-        // options.UseGeneratedMapper() and endpoint attributes with UseGeneratedMapper = true can find it
-        // without any DI registration.
-        var mapperTypeName = ns is null ? className : $"global::{ns}.{className}";
-        sb.AppendLine();
-        sb.AppendLine($"internal static class {className}Registration");
-        sb.AppendLine("{");
-        sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
-        sb.AppendLine("    internal static void Register()");
-        sb.AppendLine("    {");
-        sb.AppendLine("        global::ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperRegistry.Register(");
-        sb.AppendLine($"            typeof({entityName}), typeof({listName}), typeof({viewName}), typeof({mapperTypeName}));");
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
-
-        return sb.ToString();
+        return sb;
     }
 
-    private static string EmitMapToView(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation, bool includePublicMethod)
+    /// <summary>Convention RHS for a view-direction member, or null (accessor = the source parameter name).</summary>
+    private static string? ViewConvention(Dictionary<string, IPropertySymbol> entityProps, IPropertySymbol dtoProp, Compilation compilation, string accessor = "entity")
     {
-        // Base fields are handled by MapBaseFields; Tags by the framework's tagging pipeline. Both can
-        // still be customized — those customizations run AFTER MapBaseFields so they win.
-        var handled = new HashSet<string>(StringComparer.Ordinal)
-        { "ID", "IsDeleted", "CreateDate", "LastSaveDate", "CreatedByUserID", "LastSavedByUserID", "Tags" };
-
-        var entityProps = AllProps(entity).Where(p => IsReadable(p)).ToDictionary(p => p.Name, p => p);
-
-        string? Convention(IPropertySymbol dtoProp)
+        if (IsShiftType(dtoProp.Type, "ShiftEntitySelectDTO"))
         {
-            // FK → ShiftEntitySelectDTO (nav property supplies the text when present).
-            if (IsShiftType(dtoProp.Type, "ShiftEntitySelectDTO"))
+            if (entityProps.TryGetValue(dtoProp.Name + "ID", out var fk) && (IsLong(fk.Type) || IsNullableLong(fk.Type)))
             {
-                if (entityProps.TryGetValue(dtoProp.Name + "ID", out var fk) && (IsLong(fk.Type) || IsNullableLong(fk.Type)))
-                {
-                    var text = entityProps.TryGetValue(dtoProp.Name, out var nav) && HasStringName(nav.Type)
-                        ? $", entity.{dtoProp.Name} != null ? entity.{dtoProp.Name}.Name : null"
-                        : "";
-                    return $"{Helpers}.ToSelectDTO(entity.{dtoProp.Name}ID{text})";
-                }
-
-                return null;
+                var text = entityProps.TryGetValue(dtoProp.Name, out var nav) && HasStringName(nav.Type)
+                    ? $", {accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.Name : null"
+                    : "";
+                return $"{Helpers}.ToSelectDTO({accessor}.{dtoProp.Name}ID{text})";
             }
-
-            // string (JSON) → List<ShiftFileDTO>
-            if (IsShiftFileList(dtoProp.Type))
-                return entityProps.TryGetValue(dtoProp.Name, out var src) && src.Type.SpecialType == SpecialType.System_String
-                    ? $"{Helpers}.ToShiftFiles(entity.{dtoProp.Name})"
-                    : null;
-
-            if (!entityProps.TryGetValue(dtoProp.Name, out var match))
-                return null;
-
-            // Name + implicitly-convertible type match.
-            if (IsImplicit(compilation, match.Type, dtoProp.Type))
-                return $"entity.{dtoProp.Name}";
-
-            // entity T? → DTO T (value types): narrow with default fallback (mirrors MapToEntity's reverse rule).
-            if (UnwrapNullable(match.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
-                return $"entity.{dtoProp.Name} ?? default";
 
             return null;
         }
 
+        if (IsShiftFileList(dtoProp.Type))
+            return entityProps.TryGetValue(dtoProp.Name, out var src) && src.Type.SpecialType == SpecialType.System_String
+                ? $"{Helpers}.ToShiftFiles({accessor}.{dtoProp.Name})"
+                : null;
+
+        if (!entityProps.TryGetValue(dtoProp.Name, out var match))
+            return null;
+
+        if (IsImplicit(compilation, match.Type, dtoProp.Type))
+            return $"{accessor}.{dtoProp.Name}";
+
+        if (UnwrapNullable(match.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
+            return $"{accessor}.{dtoProp.Name} ?? default";
+
+        // long / long? → string and enum → int(?) — useful for pair DTOs that don't get MapBaseFields.
+        if (dtoProp.Type.SpecialType == SpecialType.System_String && IsLong(match.Type))
+            return $"{accessor}.{dtoProp.Name}.ToString()";
+
+        if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableLong(match.Type))
+            return $"{accessor}.{dtoProp.Name}.HasValue ? {accessor}.{dtoProp.Name}.Value.ToString() : null";
+
+        var srcEnum = match.Type.TypeKind == TypeKind.Enum ? match.Type : UnwrapNullable(match.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
+        if (srcEnum is not null)
+        {
+            if (dtoProp.Type.SpecialType == SpecialType.System_Int32 && match.Type.TypeKind == TypeKind.Enum)
+                return $"(int){accessor}.{dtoProp.Name}";
+            if (UnwrapNullable(dtoProp.Type)?.SpecialType == SpecialType.System_Int32)
+                return $"(int?){accessor}.{dtoProp.Name}";
+        }
+
+        return null;
+    }
+
+    /// <summary>A different-class child pair (single object or collection element) eligible for deep composition.</summary>
+    private static bool TryGetComposableChild(Dictionary<string, IPropertySymbol> entityProps, IPropertySymbol dtoProp,
+        out ITypeSymbol childEntity, out ITypeSymbol childDto, out bool isCollection)
+    {
+        childEntity = null!;
+        childDto = null!;
+        isCollection = false;
+
+        if (!entityProps.TryGetValue(dtoProp.Name, out var src))
+            return false;
+
+        if (TryGetElement(dtoProp.Type, out var dtoElement) && TryGetElement(src.Type, out var entityElement))
+        {
+            if (!IsPairable(entityElement, dtoElement))
+                return false;
+
+            childEntity = entityElement;
+            childDto = dtoElement;
+            isCollection = true;
+            return true;
+        }
+
+        if (IsPairable(src.Type, dtoProp.Type) &&
+            src.Type is INamedTypeSymbol { IsGenericType: false } && dtoProp.Type is INamedTypeSymbol { IsGenericType: false })
+        {
+            childEntity = src.Type;
+            childDto = dtoProp.Type;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetElement(ITypeSymbol type, out ITypeSymbol element)
+    {
+        element = null!;
+
+        if (type is not INamedTypeSymbol { TypeArguments.Length: 1 } named ||
+            named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            return false;
+
+        var argument = named.TypeArguments[0];
+
+        var enumerable =
+            named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T ||
+            named.AllInterfaces.Any(i =>
+                i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T &&
+                SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], argument));
+
+        if (!enumerable)
+            return false;
+
+        element = argument;
+        return true;
+    }
+
+    private static bool IsPairable(ITypeSymbol entityType, ITypeSymbol dtoType) =>
+        entityType.TypeKind == TypeKind.Class && dtoType.TypeKind == TypeKind.Class &&
+        entityType.SpecialType == SpecialType.None && dtoType.SpecialType == SpecialType.None &&
+        !SymbolEqualityComparer.Default.Equals(entityType, dtoType) &&       // same class → identity assignment already applies
+        !dtoType.IsAbstract &&
+        !DerivesFromShiftEntityBase(dtoType) &&                               // the target must be a DTO, not an entity
+        !IsShiftType(dtoType, "ShiftEntitySelectDTO") && !IsShiftType(dtoType, "ShiftFileDTO");
+
+    // ─────────────────────────────────── emission: bodies ───────────────────────────────────
+
+    private sealed record ViewEmission(List<string> Lines, List<string> UsedPairKeys, List<string> Unmapped);
+
+    private static ViewEmission BuildViewBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
+        string entityName, string viewName, string accessor,
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+    {
+        var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var lines = new List<string>();
+        var usedPairs = new List<string>();
+        var unmapped = new List<string>();
 
         void Emit(IPropertySymbol dtoProp, bool withConvention)
         {
             var cast = $"global::System.Func<{entityName}, global::System.IServiceProvider, {Fq(dtoProp.Type)}>";
-            var rhs = withConvention ? Convention(dtoProp) : null;
+            string? rhs = null;
+
+            if (withConvention)
+            {
+                rhs = ViewConvention(entityProps, dtoProp, compilation, accessor);
+
+                if (rhs is null &&
+                    !skippedEdges.Contains(ownerKey + "|" + dtoProp.Name) &&
+                    TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out var isCollection) &&
+                    pairs.TryGetValue(PairKey(childEntity, childDto), out var pair))
+                {
+                    var field = $"__shiftPair_{Fnv8(PairKey(childEntity, childDto))}";
+                    usedPairs.Add(PairKey(childEntity, childDto));
+
+                    rhs = isCollection
+                        ? $"{accessor}.{dtoProp.Name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({accessor}.{dtoProp.Name}, __child => {field}.Map(__child, serviceProvider)))"
+                        : $"{accessor}.{dtoProp.Name} == null ? null : {field}.Map({accessor}.{dtoProp.Name}, serviceProvider)";
+                }
+
+                if (rhs is null)
+                    unmapped.Add(dtoProp.Name);
+            }
 
             lines.Add($"        if (this.__ShiftMap.TryGetViewValue(\"{dtoProp.Name}\", out var __v_{dtoProp.Name}))");
-            lines.Add($"            dto.{dtoProp.Name} = (({cast})__v_{dtoProp.Name})(entity, serviceProvider);");
+            lines.Add($"            dto.{dtoProp.Name} = (({cast})__v_{dtoProp.Name})({accessor}, serviceProvider);");
 
             if (rhs is not null)
             {
@@ -405,85 +556,60 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var settable = AllProps(viewDto).Where(IsSettable).ToList();
 
-        foreach (var dtoProp in settable.Where(p => !handled.Contains(p.Name)))
+        foreach (var dtoProp in settable.Where(p => !ViewHandledMembers.Contains(p.Name)))
             Emit(dtoProp, withConvention: true);
 
         if (DerivesFrom(viewDto, "ShiftEntityViewAndUpsertDTO") && DerivesFrom(entity, "ShiftEntity"))
         {
-            lines.Add($"        {Helpers}.MapBaseFields(dto, entity);");
+            lines.Add($"        {Helpers}.MapBaseFields(dto, {accessor});");
             lines.Add("");
         }
 
-        // Base/framework-handled members: customization-only, applied after MapBaseFields so it wins.
-        foreach (var dtoProp in settable.Where(p => handled.Contains(p.Name)))
+        foreach (var dtoProp in settable.Where(p => ViewHandledMembers.Contains(p.Name)))
             Emit(dtoProp, withConvention: false);
 
-        var wrapper = includePublicMethod
-            ? $@"
-    public {viewName} MapToView({entityName} entity, global::System.IServiceProvider serviceProvider = null)
-        => MapToViewGenerated(entity, serviceProvider);
-"
-            : "";
-
-        return
-$@"    private {viewName} MapToViewGenerated({entityName} entity, global::System.IServiceProvider serviceProvider = null)
-    {{
-        var dto = new {viewName}();
-
-{string.Join("\n", lines)}        return dto;
-    }}
-{wrapper}";
+        return new ViewEmission(lines, usedPairs, unmapped);
     }
 
-    private static string EmitMapToEntity(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation, bool includePublicMethod)
+    private static string? EntityConvention(Dictionary<string, IPropertySymbol> dtoProps, IPropertySymbol entityProp, Compilation compilation)
     {
-        // Never written by the CONVENTIONS: key, audit fields, framework-managed state, tags, navigations.
-        // They remain customizable — an explicit ForEntity registration is a deliberate choice.
-        var excluded = new HashSet<string>(StringComparer.Ordinal)
-        { "ID", "CreateDate", "LastSaveDate", "IsDeleted", "CreatedByUserID", "LastSavedByUserID", "ReloadAfterSave", "AuditFieldsAreSet", "IdempotencyKey", "Tags" };
-
-        var dtoProps = AllProps(viewDto).Where(p => IsReadable(p)).ToDictionary(p => p.Name, p => p);
-
-        string? Convention(IPropertySymbol entityProp)
+        if (entityProp.Name.EndsWith("ID", StringComparison.Ordinal) && entityProp.Name.Length > 2)
         {
-            // FK "XID" ← DTO ShiftEntitySelectDTO "X"
-            if (entityProp.Name.EndsWith("ID", StringComparison.Ordinal) && entityProp.Name.Length > 2)
+            var baseName = entityProp.Name.Substring(0, entityProp.Name.Length - 2);
+            if (dtoProps.TryGetValue(baseName, out var select) && IsShiftType(select.Type, "ShiftEntitySelectDTO"))
             {
-                var baseName = entityProp.Name.Substring(0, entityProp.Name.Length - 2);
-                if (dtoProps.TryGetValue(baseName, out var select) && IsShiftType(select.Type, "ShiftEntitySelectDTO"))
-                {
-                    if (IsLong(entityProp.Type))
-                        return $"{Helpers}.ToForeignKey(dto.{baseName})";
+                if (IsLong(entityProp.Type))
+                    return $"{Helpers}.ToForeignKey(dto.{baseName})";
 
-                    if (IsNullableLong(entityProp.Type))
-                        return $"{Helpers}.ToNullableForeignKey(dto.{baseName})";
-                }
+                if (IsNullableLong(entityProp.Type))
+                    return $"{Helpers}.ToNullableForeignKey(dto.{baseName})";
             }
-
-            if (!dtoProps.TryGetValue(entityProp.Name, out var dtoProp))
-                return null;
-
-            // List<ShiftFileDTO> → string (JSON)
-            if (entityProp.Type.SpecialType == SpecialType.System_String && IsShiftFileList(dtoProp.Type))
-                return $"{Helpers}.ToJsonString(dto.{entityProp.Name})";
-
-            // Implicitly-convertible name match.
-            if (IsImplicit(compilation, dtoProp.Type, entityProp.Type))
-                return $"dto.{entityProp.Name}";
-
-            // DTO T? → entity T (value types): fall back to default when the DTO carries null.
-            if (UnwrapNullable(dtoProp.Type) is { } inner && SymbolEqualityComparer.Default.Equals(inner, entityProp.Type))
-                return $"dto.{entityProp.Name} ?? default";
-
-            return null;
         }
 
+        if (!dtoProps.TryGetValue(entityProp.Name, out var dtoProp))
+            return null;
+
+        if (entityProp.Type.SpecialType == SpecialType.System_String && IsShiftFileList(dtoProp.Type))
+            return $"{Helpers}.ToJsonString(dto.{entityProp.Name})";
+
+        if (IsImplicit(compilation, dtoProp.Type, entityProp.Type))
+            return $"dto.{entityProp.Name}";
+
+        if (UnwrapNullable(dtoProp.Type) is { } inner && SymbolEqualityComparer.Default.Equals(inner, entityProp.Type))
+            return $"dto.{entityProp.Name} ?? default";
+
+        return null;
+    }
+
+    private static List<string> BuildEntityBody(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation)
+    {
+        var dtoProps = AllProps(viewDto).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var lines = new List<string>();
 
         void Emit(IPropertySymbol entityProp, bool withConvention)
         {
             var cast = $"global::System.Func<{viewName}, global::System.IServiceProvider, {Fq(entityProp.Type)}>";
-            var rhs = withConvention ? Convention(entityProp) : null;
+            var rhs = withConvention ? EntityConvention(dtoProps, entityProp, compilation) : null;
 
             lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{entityProp.Name}\", out var __e_{entityProp.Name}))");
             lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, serviceProvider);");
@@ -499,32 +625,18 @@ $@"    private {viewName} MapToViewGenerated({entityName} entity, global::System
 
         var settable = AllProps(entity).Where(IsSettable).ToList();
 
-        foreach (var entityProp in settable.Where(p => !excluded.Contains(p.Name) && !IsEntityNavigation(p.Type)))
+        foreach (var entityProp in settable.Where(p => !EntityExcludedMembers.Contains(p.Name) && !IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: true);
 
-        // Framework-managed fields and navigations: customization-only (no conventions).
-        foreach (var entityProp in settable.Where(p => excluded.Contains(p.Name) || IsEntityNavigation(p.Type)))
+        foreach (var entityProp in settable.Where(p => EntityExcludedMembers.Contains(p.Name) || IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: false);
 
-        var wrapper = includePublicMethod
-            ? $@"
-    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)
-        => MapToEntityGenerated(dto, existing, serviceProvider);
-"
-            : "";
-
-        return
-$@"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)
-    {{
-{string.Join("\n", lines)}        return existing;
-    }}
-{wrapper}";
+        return lines;
     }
 
-    private static string EmitMapToList(ITypeSymbol entity, ITypeSymbol listDto, string entityName, string listName, Compilation compilation, bool includePublicMethod)
+    private static List<string> BuildListAssignments(ITypeSymbol entity, ITypeSymbol listDto, Compilation compilation)
     {
-        var entityProps = AllProps(entity).Where(p => IsReadable(p)).ToDictionary(p => p.Name, p => p);
-
+        var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var assignments = new List<string>();
 
         foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && p.Name != "Tags"))
@@ -532,21 +644,18 @@ $@"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} ex
             if (!entityProps.TryGetValue(dtoProp.Name, out var src))
                 continue;
 
-            // Implicitly-convertible name match (covers identity, T→T?, enum→enum?).
             if (IsImplicit(compilation, src.Type, dtoProp.Type))
             {
                 assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name},");
                 continue;
             }
 
-            // entity T? → DTO T (value types): narrow with default fallback (translates to COALESCE).
             if (UnwrapNullable(src.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
             {
                 assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name} ?? default,");
                 continue;
             }
 
-            // long / long? → string (IDs and FKs on list DTOs).
             if (dtoProp.Type.SpecialType == SpecialType.System_String && IsLong(src.Type))
             {
                 assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name}.ToString(),");
@@ -559,7 +668,6 @@ $@"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} ex
                 continue;
             }
 
-            // enum → int / enum? → int?
             var srcEnum = src.Type.TypeKind == TypeKind.Enum ? src.Type : UnwrapNullable(src.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
             if (srcEnum is not null)
             {
@@ -570,55 +678,11 @@ $@"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} ex
             }
         }
 
-        // Taggable entity + taggable list DTO → SelectWithTags appends the canonical Tags projection.
-        var taggable =
-            entity.AllInterfaces.Any(i => i.Name == "IShiftEntityTaggable") &&
-            listDto.AllInterfaces.Any(i => i.Name == "IShiftEntityTaggableDTO");
-
-        var select = taggable
-            ? $"{TaggableExtensions}.SelectWithTags"
-            : "global::System.Linq.Queryable.Select";
-
-        // The convention projection is a static expression; ForList customizations are composed into it
-        // once (bindings of customized members are REPLACED — their conventions never run), keeping one
-        // pure member-init lambda so OData/paging/SelectWithTags are unaffected.
-        var wrapper = includePublicMethod
-            ? $@"
-    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)
-        => MapToListGenerated(queryable, serviceProvider);
-"
-            : "";
-
-        return
-$@"    private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftListProjection = e => new {listName}
-    {{
-{string.Join("\n", assignments)}
-    }};
-
-    private global::System.Linq.IQueryable<{listName}> MapToListGenerated(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)
-    {{
-        var projection = this.__shiftComposedListProjection;
-
-        if (projection == null)
-        {{
-            projection = this.__ShiftMap.ComposeList(__shiftListProjection);
-            this.__shiftComposedListProjection = projection;
-        }}
-
-        return {select}(queryable, projection);
-    }}
-{wrapper}";
+        return assignments;
     }
 
-    private static string EmitCopyEntity(ITypeSymbol entity, string entityName, bool includePublicMethod)
+    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName)
     {
-        // Same contract as MappingHelpers.ShallowCopyTo, but as generated assignments (no reflection):
-        // copy every public read/write property — navigations included, since CopyEntity's job is to
-        // bring freshly-loaded state onto the tracked instance — except the key and framework flags
-        // (which remain customizable via ForCopy: an explicit registration is a deliberate choice).
-        var excluded = new HashSet<string>(StringComparer.Ordinal)
-        { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
-
         var lines = new List<string>();
 
         void Emit(IPropertySymbol prop, bool withConvention)
@@ -639,29 +703,278 @@ $@"    private static readonly global::System.Linq.Expressions.Expression<global
 
         var copyable = AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)).ToList();
 
-        foreach (var prop in copyable.Where(p => !excluded.Contains(p.Name)))
+        foreach (var prop in copyable.Where(p => !CopyExcludedMembers.Contains(p.Name)))
             Emit(prop, withConvention: true);
 
-        foreach (var prop in copyable.Where(p => excluded.Contains(p.Name)))
+        foreach (var prop in copyable.Where(p => CopyExcludedMembers.Contains(p.Name)))
             Emit(prop, withConvention: false);
 
-        var wrapper = includePublicMethod
-            ? $@"
-    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
-        => CopyEntityGenerated(source, target, serviceProvider);
-"
-            : "";
+        return lines;
+    }
 
-        return
-$@"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)
-    {{
-{string.Join("\n", lines)}    }}
-{wrapper}";
+    private static void AppendPairFields(StringBuilder sb, IEnumerable<string> usedPairKeys, Dictionary<string, PairInfo> pairs)
+    {
+        foreach (var key in usedPairKeys.Distinct())
+        {
+            var pair = pairs[key];
+            sb.AppendLine($"    private static readonly {pair.TypeRef} __shiftPair_{Fnv8(key)} = new {pair.TypeRef}();");
+        }
+
+        sb.AppendLine();
+    }
+
+    // ─────────────────────────────────── emission: pair mappers ───────────────────────────────────
+
+    private static void EmitPair(SourceProductionContext spc, string key, PairInfo pair,
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+    {
+        var entityName = Fq(pair.Entity);
+        var dtoName = Fq(pair.Dto);
+        var builderType = $"global::ShiftSoftware.ShiftEntity.Core.ShiftMapperBuilder<{entityName}, {dtoName}, {dtoName}>";
+        var configurable = $"global::ShiftSoftware.ShiftEntity.Core.IShiftMapperConfigurable<{entityName}, {dtoName}, {dtoName}>";
+
+        string? ns;
+        string declaration;
+
+        if (pair.UserClass is not null)
+        {
+            ns = pair.UserClass.ContainingNamespace.IsGlobalNamespace ? null : pair.UserClass.ContainingNamespace.ToDisplayString();
+            declaration = $"partial class {pair.ClassName} : {configurable}";
+        }
+        else
+        {
+            ns = AutoNamespace;
+            declaration = $"internal sealed partial class {pair.ClassName} : global::ShiftSoftware.ShiftEntity.Core.IShiftObjectMapper<{entityName}, {dtoName}>, {configurable}";
+        }
+
+        var sb = StartClass(ns, pair.ClassName, declaration, builderType, configurable, entityName, dtoName);
+
+        var view = BuildViewBody(key, pair.Entity, pair.Dto, entityName, dtoName, "source", pairs, skippedEdges, compilation);
+        AppendPairFields(sb, view.UsedPairKeys, pairs);
+
+        var hasUserMap = pair.UserClass is not null && HasUserMethod(pair.UserClass, "Map");
+        var hasUserMapGen = pair.UserClass is not null && HasUserMethod(pair.UserClass, "MapGenerated");
+        var hasUserMapBack = pair.UserClass is not null && HasUserMethod(pair.UserClass, "MapBack");
+        var hasUserMapBackGen = pair.UserClass is not null && HasUserMethod(pair.UserClass, "MapBackGenerated");
+
+        if (!hasUserMapGen)
+        {
+            sb.AppendLine($"    private {dtoName} MapGenerated({entityName} source, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        var dto = new {dtoName}();");
+            sb.AppendLine();
+            sb.Append(string.Join("\n", view.Lines));
+            sb.AppendLine("        return dto;");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!hasUserMap)
+            {
+                sb.AppendLine($"    public {dtoName} Map({entityName} source, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => MapGenerated(source, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        if (!hasUserMapBackGen)
+        {
+            sb.AppendLine($"    private {entityName} MapBackGenerated({dtoName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.Append(string.Join("\n", BuildEntityBody(pair.Entity, pair.Dto, entityName, dtoName, compilation)));
+            sb.AppendLine("        return existing;");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!hasUserMapBack)
+            {
+                sb.AppendLine($"    public {entityName} MapBack({dtoName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => MapBackGenerated(dto, existing, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        // Conventions-only, SQL-translatable projection — used by ForListChildren/ForListChild.
+        sb.AppendLine($"    public static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {dtoName}>> Projection = e => new {dtoName}");
+        sb.AppendLine("    {");
+        sb.Append(string.Join("\n", BuildListAssignments(pair.Entity, pair.Dto, compilation)));
+        sb.AppendLine();
+        sb.AppendLine("    };");
+        sb.AppendLine("}");
+
+        sb.AppendLine();
+        sb.AppendLine($"internal static class {pair.ClassName}Registration");
+        sb.AppendLine("{");
+        sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("    internal static void Register()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        global::ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperRegistry.RegisterPair(");
+        sb.AppendLine($"            typeof({entityName}), typeof({dtoName}), typeof({pair.TypeRef.TrimStart()}), {pair.TypeRef}.Projection);");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        if (view.Unmapped.Count > 0)
+            spc.ReportDiagnostic(Diagnostic.Create(UnmappedMembers,
+                pair.UserClass?.Locations.FirstOrDefault() ?? Location.None,
+                pair.ClassName, string.Join(", ", view.Unmapped)));
+
+        spc.AddSource($"{pair.ClassName}.g.cs", sb.ToString());
+    }
+
+    // ─────────────────────────────────── emission: triple mappers ───────────────────────────────────
+
+    private static void EmitTriple(SourceProductionContext spc, string key, TripleModel triple, INamedTypeSymbol? userClass,
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+    {
+        var entityName = Fq(triple.Entity);
+        var listName = Fq(triple.ListDto);
+        var viewName = Fq(triple.ViewDto);
+        var builderType = $"global::ShiftSoftware.ShiftEntity.Core.ShiftMapperBuilder<{entityName}, {listName}, {viewName}>";
+        var configurable = $"global::ShiftSoftware.ShiftEntity.Core.IShiftMapperConfigurable<{entityName}, {listName}, {viewName}>";
+
+        string? ns;
+        string className;
+        string declaration;
+
+        if (userClass is not null)
+        {
+            ns = userClass.ContainingNamespace.IsGlobalNamespace ? null : userClass.ContainingNamespace.ToDisplayString();
+            className = userClass.Name;
+            declaration = $"partial class {className} : {configurable}";
+        }
+        else
+        {
+            ns = AutoNamespace;
+            className = $"Generated_{triple.Entity.Name}_{triple.ListDto.Name}_{triple.ViewDto.Name}_{Fnv8(key)}";
+            declaration = $"internal sealed partial class {className} : global::ShiftSoftware.ShiftEntity.Core.IShiftEntityMapper<{entityName}, {listName}, {viewName}>, {configurable}";
+        }
+
+        var typeRef = userClass is not null ? Fq(userClass) : $"global::{AutoNamespace}.{className}";
+
+        var sb = StartClass(ns, className, declaration, builderType, configurable, entityName, listName);
+
+        var view = BuildViewBody(key, triple.Entity, triple.ViewDto, entityName, viewName, "entity", pairs, skippedEdges, compilation);
+        AppendPairFields(sb, view.UsedPairKeys, pairs);
+
+        bool HasUser(string name) => userClass is not null && HasUserMethod(userClass, name);
+
+        if (!HasUser("MapToViewGenerated"))
+        {
+            sb.AppendLine($"    private {viewName} MapToViewGenerated({entityName} entity, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        var dto = new {viewName}();");
+            sb.AppendLine();
+            sb.Append(string.Join("\n", view.Lines));
+            sb.AppendLine("        return dto;");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!HasUser("MapToView"))
+            {
+                sb.AppendLine($"    public {viewName} MapToView({entityName} entity, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => MapToViewGenerated(entity, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        if (!HasUser("MapToEntityGenerated"))
+        {
+            sb.AppendLine($"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.Append(string.Join("\n", BuildEntityBody(triple.Entity, triple.ViewDto, entityName, viewName, compilation)));
+            sb.AppendLine("        return existing;");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!HasUser("MapToEntity"))
+            {
+                sb.AppendLine($"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => MapToEntityGenerated(dto, existing, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        if (!HasUser("MapToListGenerated"))
+        {
+            var taggable =
+                triple.Entity.AllInterfaces.Any(i => i.Name == "IShiftEntityTaggable") &&
+                triple.ListDto.AllInterfaces.Any(i => i.Name == "IShiftEntityTaggableDTO");
+
+            var select = taggable ? $"{TaggableExtensions}.SelectWithTags" : "global::System.Linq.Queryable.Select";
+
+            sb.AppendLine($"    private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftListProjection = e => new {listName}");
+            sb.AppendLine("    {");
+            sb.Append(string.Join("\n", BuildListAssignments(triple.Entity, triple.ListDto, compilation)));
+            sb.AppendLine();
+            sb.AppendLine("    };");
+            sb.AppendLine();
+            sb.AppendLine($"    private global::System.Linq.IQueryable<{listName}> MapToListGenerated(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        var projection = this.__shiftComposedListProjection;");
+            sb.AppendLine();
+            sb.AppendLine("        if (projection == null)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            projection = this.__ShiftMap.ComposeList(__shiftListProjection);");
+            sb.AppendLine("            this.__shiftComposedListProjection = projection;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine($"        return {select}(queryable, projection);");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!HasUser("MapToList"))
+            {
+                sb.AppendLine($"    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => MapToListGenerated(queryable, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        if (!HasUser("CopyEntityGenerated"))
+        {
+            sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine("    {");
+            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName)));
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            if (!HasUser("CopyEntity"))
+            {
+                sb.AppendLine($"    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)");
+                sb.AppendLine("        => CopyEntityGenerated(source, target, serviceProvider);");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("}");
+        sb.AppendLine();
+        sb.AppendLine($"internal static class {className}Registration");
+        sb.AppendLine("{");
+        sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("    internal static void Register()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        global::ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperRegistry.Register(");
+        sb.AppendLine($"            typeof({entityName}), typeof({listName}), typeof({viewName}), typeof({typeRef}));");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        if (view.Unmapped.Count > 0)
+            spc.ReportDiagnostic(Diagnostic.Create(UnmappedMembers,
+                userClass?.Locations.FirstOrDefault() ?? Location.None,
+                className, string.Join(", ", view.Unmapped)));
+
+        var hintName = userClass is not null
+            ? $"{(ns ?? "global").Replace('.', '_')}_{className}.g.cs"
+            : $"{className}.g.cs";
+
+        spc.AddSource(hintName, sb.ToString());
     }
 
     // ─────────────────────────────────── symbol helpers ───────────────────────────────────
 
     private static string Fq(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    private static bool IsShiftNamespace(INamedTypeSymbol symbol) =>
+        symbol.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal);
 
     private static bool HasUserMethod(INamedTypeSymbol cls, string name) =>
         cls.GetMembers(name).OfType<IMethodSymbol>().Any(m => m.MethodKind == MethodKind.Ordinary);
@@ -683,9 +996,7 @@ $@"    private void CopyEntityGenerated({entityName} source, {entityName} target
         p.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
     private static bool IsShiftType(ITypeSymbol type, string name) =>
-        type is INamedTypeSymbol named &&
-        named.Name == name &&
-        named.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal);
+        type is INamedTypeSymbol named && named.Name == name && IsShiftNamespace(named);
 
     private static bool IsShiftFileList(ITypeSymbol type) =>
         type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } named &&
@@ -710,8 +1021,7 @@ $@"    private void CopyEntityGenerated({entityName} source, {entityName} target
     private static bool DerivesFrom(ITypeSymbol type, string baseName)
     {
         for (var current = type.BaseType; current is not null; current = current.BaseType)
-            if (current.Name == baseName &&
-                current.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+            if (current.Name == baseName && IsShiftNamespace(current))
                 return true;
 
         return false;
@@ -725,17 +1035,29 @@ $@"    private void CopyEntityGenerated({entityName} source, {entityName} target
         if (DerivesFromShiftEntityBase(type))
             return true;
 
-        // Collections of entities (ICollection<T>, List<T>, IEnumerable<T>, ...).
         return type is INamedTypeSymbol { TypeArguments.Length: 1 } named && DerivesFromShiftEntityBase(named.TypeArguments[0]);
     }
 
     private static bool DerivesFromShiftEntityBase(ITypeSymbol type)
     {
         for (var current = type; current is not null; current = current.BaseType)
-            if (current.Name == "ShiftEntityBase" &&
-                current.ContainingNamespace.ToDisplayString().StartsWith("ShiftSoftware.ShiftEntity", StringComparison.Ordinal))
+            if (current.Name == "ShiftEntityBase" && current is INamedTypeSymbol named && IsShiftNamespace(named))
                 return true;
 
         return false;
+    }
+
+    private static string Fnv8(string value)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var ch in value)
+            {
+                hash ^= ch;
+                hash *= 16777619u;
+            }
+            return hash.ToString("x8");
+        }
     }
 }
