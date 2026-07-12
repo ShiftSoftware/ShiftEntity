@@ -734,9 +734,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && p.Name != "Tags"))
         {
             // FK → ShiftEntitySelectDTO, inlined so the projection stays SQL-translatable (the ToSelectDTO
-            // helper is a method call EF can't translate; a member-init + navigation access it can). This is
-            // ViewConvention's SelectDTO rule expressed for the query/list direction — required for list DTOs
-            // that carry a SelectDTO child (e.g. via a ForListChild(ren) call).
+            // helper is a method call EF can't translate; a member-init + navigation access it can). A
+            // SelectDTO is a LEAF reference (id + name), so it maps by convention — unlike a complex child
+            // object or a collection, which are composed only when explicitly told via ForListChild(ren).
             if (IsShiftType(dtoProp.Type, "ShiftEntitySelectDTO") &&
                 entityProps.TryGetValue(dtoProp.Name + "ID", out var listFk) && (IsLong(listFk.Type) || IsNullableLong(listFk.Type)))
             {

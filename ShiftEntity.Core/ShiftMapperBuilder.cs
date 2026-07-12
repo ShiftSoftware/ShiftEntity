@@ -24,7 +24,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private readonly Dictionary<string, object> entityValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> copyValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Value)> listValues = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Source, Type ChildEntity, Type ChildDto, bool IsCollection)> listChildren = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Source, Type ChildEntity, Type ChildDto, bool IsCollection, Func<LambdaExpression> Projection)> listChildren = new(StringComparer.Ordinal);
 
     private static readonly MethodInfo EnumerableSelect = typeof(Enumerable).GetMethods()
         .First(m => m.Name == nameof(Enumerable.Select) && m.GetParameters().Length == 2 &&
@@ -143,23 +143,37 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// Projects a child COLLECTION inside the <c>MapToList</c> SQL projection, using the pair's
     /// source-generated, conventions-only projection expression (a correlated collection query —
     /// deliberate, visible query-shape change). For a custom child list shape use <see cref="ForList"/>.
+    /// <para>
+    /// Pass <paramref name="configureChild"/> to shape the child EXPLICITLY: the callback receives a
+    /// builder for the child pair, so you customize a child property (<c>child.ForList(...)</c>) or
+    /// compose ONE LEVEL DEEPER (<c>child.ForListChild(...)</c>) — same builder, any depth. A child
+    /// object is only composed when you say so; nothing goes deep automatically in the list direction.
+    /// </para>
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChildren<TChildEntity, TChildDto>(
-        Expression<Func<TListDTO, IEnumerable<TChildDto>>> member, Expression<Func<TEntity, IEnumerable<TChildEntity>>> source)
+        Expression<Func<TListDTO, IEnumerable<TChildDto>>> member, Expression<Func<TEntity, IEnumerable<TChildEntity>>> source,
+        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
     {
         var memberInfo = MemberOf(member);
-        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), true);
+        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), true,
+            () => ComposedChildProjection(configureChild));
         return this;
     }
 
-    /// <summary>Projects a single child object inside the <c>MapToList</c> SQL projection (null-safe), using the pair's generated projection.</summary>
+    /// <summary>
+    /// Projects a single child object inside the <c>MapToList</c> SQL projection (null-safe), using the
+    /// pair's generated projection. Pass <paramref name="configureChild"/> to customize the child's
+    /// properties or compose deeper children explicitly (see <see cref="ForListChildren"/>).
+    /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChild<TChildEntity, TChildDto>(
-        Expression<Func<TListDTO, TChildDto>> member, Expression<Func<TEntity, TChildEntity>> source)
+        Expression<Func<TListDTO, TChildDto>> member, Expression<Func<TEntity, TChildEntity>> source,
+        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
         where TChildEntity : class
         where TChildDto : class
     {
         var memberInfo = MemberOf(member);
-        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), false);
+        this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), false,
+            () => ComposedChildProjection(configureChild));
         return this;
     }
 
@@ -172,6 +186,29 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
                 "or declare a [ShiftEntityMapper] partial class implementing IShiftObjectMapper for this exact pair.");
 
         return (IShiftObjectMapper<TChildEntity, TChildDto>)Activator.CreateInstance(mapperType)!;
+    }
+
+    /// <summary>
+    /// The child pair's list projection, optionally CUSTOMIZED by <paramref name="configureChild"/>. With
+    /// no callback this is the source-generated conventions-only projection. With one, the child's
+    /// customizations and its own (explicit) deeper ForListChild(ren) are composed into it via the child
+    /// builder's <see cref="ComposeList"/> — so the whole thing is one SQL-translatable expression tree,
+    /// recursively, to whatever depth was configured.
+    /// </summary>
+    private static LambdaExpression ComposedChildProjection<TChildEntity, TChildDto>(
+        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild)
+    {
+        var projection = ShiftEntityMapperRegistry.FindPairListProjection(typeof(TChildEntity), typeof(TChildDto))
+            ?? throw new InvalidOperationException(
+                $"No pair list projection is registered for ({typeof(TChildEntity).Name}, {typeof(TChildDto).Name}). " +
+                "Ensure the ShiftEntity source generator runs on the assembly declaring the pair (a ForListChild(ren) call opts it in).");
+
+        if (configureChild is null)
+            return projection;
+
+        var childBuilder = new ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>();
+        configureChild(childBuilder);
+        return childBuilder.ComposeList((Expression<Func<TChildEntity, TChildDto>>)projection);
     }
 
     // ─── consumed by the generated code (not part of the customization API) ───
@@ -269,10 +306,9 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
         foreach (var child in this.listChildren.Values)
         {
-            var childProjection = ShiftEntityMapperRegistry.FindPairListProjection(child.ChildEntity, child.ChildDto)
-                ?? throw new InvalidOperationException(
-                    $"No pair list projection is registered for ({child.ChildEntity.Name}, {child.ChildDto.Name}). " +
-                    "Ensure the ShiftEntity source generator runs on the assembly declaring the pair.");
+            // Static pair projection, or — when the ForListChild(ren) call passed a configureChild callback —
+            // that projection with the child's own customizations and deeper children composed in (recursive).
+            var childProjection = child.Projection();
 
             var sourceBody = new ParameterReplacer(child.Source.Parameters[0], parameter).Visit(child.Source.Body)!;
 

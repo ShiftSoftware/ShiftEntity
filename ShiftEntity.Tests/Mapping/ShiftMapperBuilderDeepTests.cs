@@ -182,4 +182,42 @@ public class ShiftMapperBuilderDeepTests
 
         Assert.IsType<MemberInitExpression>(composed.Body);
     }
+
+    // ─── nested config: explicit per-property customization of the composed child ───
+
+    [Fact]
+    public void ForListChildren_ChildConfig_CustomizesChildProperty()
+    {
+        Expression<Func<ParentEntity, ParentListDTO>> projection = e => new ParentListDTO { ID = e.ID.ToString() };
+
+        // The child callback customizes the child's own projected property, using the same ForList as the parent.
+        var composed = Builder()
+            .ForListChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children,
+                child => child.ForList(c => c.Name, e => e.Name + "!"))
+            .ComposeList(projection);
+
+        var parent = new ParentEntity { ID = 3, Children = new() { new ChildEntity { ID = 10, Name = "X" } } };
+        var result = new[] { parent }.AsQueryable().Select(composed).Single();
+
+        Assert.Equal("10", result.Children![0].ID);    // convention kept
+        Assert.Equal("X!", result.Children[0].Name);   // child customization applied
+    }
+
+    [Fact]
+    public void ForListChild_ChildConfig_CustomizesSingleChildProperty()
+    {
+        Expression<Func<ParentEntity, ParentListDTO>> projection = e => new ParentListDTO { ID = e.ID.ToString() };
+
+        var composed = Builder()
+            .ForListChild<ChildEntity, ChildDto>(d => d.Single, e => e.Single,
+                child => child.ForList(c => c.Name, e => e.Name + " (custom)"))
+            .ComposeList(projection);
+
+        var withChild = new ParentEntity { ID = 1, Single = new ChildEntity { ID = 5, Name = "Z" } };
+        var withNull = new ParentEntity { ID = 2, Single = null };
+        var results = new[] { withChild, withNull }.AsQueryable().Select(composed).ToList();
+
+        Assert.Equal("Z (custom)", results[0].Single!.Name);
+        Assert.Null(results[1].Single);   // still null-safe
+    }
 }
