@@ -72,6 +72,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto);
 
+    private sealed record PairSeed(ITypeSymbol Entity, ITypeSymbol Dto);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var declared = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -93,13 +95,45 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             .SelectMany(static (models, _) => models)
             .Collect();
 
-        var everything = declared.Combine(repoTriples).Combine(endpointTriples).Combine(context.CompilationProvider);
+        // Pairs opted-in by a deep-mapping builder CALL — ForListChild(ren)/ForEntityChild(ren). The call
+        // site itself is the opt-in and already carries both the (child entity, child DTO) types and the
+        // direction, so simple cases need no [ShiftEntityMapper] partial and no attribute, and no method
+        // signature changes. Discovered here, generated + registered exactly like a declared pair.
+        var configPairs = context.SyntaxProvider.CreateSyntaxProvider(
+                static (node, _) => node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax mae } &&
+                    IsDeepMappingMethod(mae.Name.Identifier.ValueText),
+                static (ctx, _) => BuildConfigPair(ctx))
+            .Where(static m => m is not null)
+            .Select(static (m, _) => m!)
+            .Collect();
+
+        var everything = declared.Combine(repoTriples).Combine(endpointTriples).Combine(configPairs).Combine(context.CompilationProvider);
 
         context.RegisterSourceOutput(everything, static (spc, data) =>
         {
-            var (((declaredModels, fromRepos), fromEndpoints), compilation) = data;
-            GenerateAll(spc, declaredModels, fromRepos, fromEndpoints, compilation);
+            var ((((declaredModels, fromRepos), fromEndpoints), configSeeds), compilation) = data;
+            GenerateAll(spc, declaredModels, fromRepos, fromEndpoints, configSeeds, compilation);
         });
+    }
+
+    private static bool IsDeepMappingMethod(string name) =>
+        name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild";
+
+    // Every deep-mapping builder method is <TChildEntity, TChildDto>(...) in that order — read the pair
+    // straight off the (inference-resolved) call symbol. Guards keep it to genuine ShiftMapperBuilder calls.
+    private static PairSeed? BuildConfigPair(GeneratorSyntaxContext ctx)
+    {
+        if (ctx.SemanticModel.GetSymbolInfo((InvocationExpressionSyntax)ctx.Node).Symbol is not IMethodSymbol method ||
+            !IsDeepMappingMethod(method.Name) ||
+            method.TypeArguments.Length != 2 ||
+            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
+            !IsShiftNamespace(container))
+            return null;
+
+        var entity = method.TypeArguments[0];
+        var dto = method.TypeArguments[1];
+
+        return IsOpenOrError(entity) || IsOpenOrError(dto) ? null : new PairSeed(entity, dto);
     }
 
     private static DeclaredModel BuildDeclared(GeneratorAttributeSyntaxContext ctx)
@@ -200,6 +234,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         ImmutableArray<DeclaredModel> declaredModels,
         ImmutableArray<TripleModel> fromRepos,
         ImmutableArray<TripleModel> fromEndpoints,
+        ImmutableArray<PairSeed> configSeeds,
         Compilation compilation)
     {
         // 1. Declared classes: report errors; index valid ones.
@@ -311,6 +346,38 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             stack.Clear();
             stack.Add(kv.Key);
             Discover(kv.Key, ShortPair(kv.Key), model.Entity!, model.ViewDto!);
+        }
+
+        // Pairs opted-in by a ForListChild(ren)/ForEntityChild(ren) call site — the call is the opt-in, so
+        // no partial/attribute is needed. Seeded like a declared pair: generate, register, and recurse for
+        // grandchildren. (A pair a triple/view already covers is skipped by the ContainsKey guard.)
+        foreach (var seed in configSeeds)
+        {
+            var key = PairKey(seed.Entity, seed.Dto);
+
+            if (pairs.ContainsKey(key))
+                continue;
+
+            declaredPairs.TryGetValue(key, out var declaredForSeed);
+
+            var info = new PairInfo { Entity = seed.Entity, Dto = seed.Dto, UserClass = declaredForSeed?.Cls };
+
+            if (declaredForSeed is not null)
+            {
+                info.ClassName = declaredForSeed.Cls.Name;
+                info.TypeRef = Fq(declaredForSeed.Cls);
+            }
+            else
+            {
+                info.ClassName = $"Generated_Pair_{seed.Entity.Name}_{seed.Dto.Name}_{Fnv8(key)}";
+                info.TypeRef = $"global::{AutoNamespace}.{info.ClassName}";
+            }
+
+            pairs[key] = info;
+
+            stack.Clear();
+            stack.Add(key);
+            Discover(key, ShortPair(key), seed.Entity, seed.Dto);
         }
 
         // 4. Emit pair mappers.
@@ -666,6 +733,24 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && p.Name != "Tags"))
         {
+            // FK → ShiftEntitySelectDTO, inlined so the projection stays SQL-translatable (the ToSelectDTO
+            // helper is a method call EF can't translate; a member-init + navigation access it can). This is
+            // ViewConvention's SelectDTO rule expressed for the query/list direction — required for list DTOs
+            // that carry a SelectDTO child (e.g. via a ForListChild(ren) call).
+            if (IsShiftType(dtoProp.Type, "ShiftEntitySelectDTO") &&
+                entityProps.TryGetValue(dtoProp.Name + "ID", out var listFk) && (IsLong(listFk.Type) || IsNullableLong(listFk.Type)))
+            {
+                const string selectDto = "global::ShiftSoftware.ShiftEntity.Model.Dtos.ShiftEntitySelectDTO";
+                var text = entityProps.TryGetValue(dtoProp.Name, out var listNav) && HasStringName(listNav.Type)
+                    ? $"e.{dtoProp.Name} != null ? e.{dtoProp.Name}.Name : null"
+                    : "null";
+
+                assignments.Add(IsLong(listFk.Type)
+                    ? $"            {dtoProp.Name} = new {selectDto} {{ Value = e.{dtoProp.Name}ID.ToString(), Text = {text} }},"
+                    : $"            {dtoProp.Name} = e.{dtoProp.Name}ID == null ? null : new {selectDto} {{ Value = e.{dtoProp.Name}ID.Value.ToString(), Text = {text} }},");
+                continue;
+            }
+
             if (!entityProps.TryGetValue(dtoProp.Name, out var src))
                 continue;
 
