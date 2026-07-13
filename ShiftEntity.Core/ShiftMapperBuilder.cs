@@ -34,7 +34,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
     /// <summary>Customizes a view-DTO property in <c>MapToView</c> (in-memory; full C# + services).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForView<TProp>(
-        Expression<Func<TViewDTO, TProp>> member, Func<TEntity, IServiceProvider?, TProp> value)
+        Expression<Func<TViewDTO, TProp>> member, Func<TEntity, MappingContext, TProp> value)
     {
         this.viewValues[MemberOf(member).Name] = value;
         return this;
@@ -47,7 +47,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
     /// <summary>Customizes an entity property in <c>MapToEntity</c> (the upsert direction).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntity<TProp>(
-        Expression<Func<TEntity, TProp>> member, Func<TViewDTO, IServiceProvider?, TProp> value)
+        Expression<Func<TEntity, TProp>> member, Func<TViewDTO, MappingContext, TProp> value)
     {
         this.entityValues[MemberOf(member).Name] = value;
         return this;
@@ -60,7 +60,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
     /// <summary>Customizes an entity property in <c>CopyEntity</c> (value computed from the fresh source entity).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForCopy<TProp>(
-        Expression<Func<TEntity, TProp>> member, Func<TEntity, IServiceProvider?, TProp> value)
+        Expression<Func<TEntity, TProp>> member, Func<TEntity, MappingContext, TProp> value)
     {
         this.copyValues[MemberOf(member).Name] = value;
         return this;
@@ -103,7 +103,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         var pair = ResolvePair<TChildEntity, TChildDto>();
         ApplyChildConfig(pair, configureChild);
 
-        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, List<TChildEntity>?>((dto, sp) =>
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, List<TChildEntity>?>((dto, sp) =>
         {
             var source = from(dto);
             return source == null ? null : source.Select(c => pair.MapBack(c, new TChildEntity(), sp)).ToList();
@@ -121,7 +121,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         var pair = ResolvePair<TChildEntity, TChildDto>();
         ApplyChildConfig(pair, configureChild);
 
-        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, ICollection<TChildEntity>?>((dto, sp) =>
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, ICollection<TChildEntity>?>((dto, sp) =>
         {
             var source = from(dto);
             return source == null ? null : source.Select(c => pair.MapBack(c, new TChildEntity(), sp)).ToList();
@@ -144,7 +144,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         var pair = ResolvePair<TChildEntity, TChildDto>();
         ApplyChildConfig(pair, configureChild);
 
-        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, IServiceProvider?, TChildEntity?>((dto, sp) =>
+        this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, TChildEntity?>((dto, sp) =>
         {
             var source = from(dto);
             return source == null ? null : pair.MapBack(source, new TChildEntity(), sp);
@@ -167,7 +167,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         var pair = ResolvePair<TChildEntity, TChildDto>();
         ApplyChildConfig(pair, configureChild);
 
-        this.viewValues[MemberOf(member).Name] = new Func<TEntity, IServiceProvider?, List<TChildDto>?>((entity, sp) =>
+        this.viewValues[MemberOf(member).Name] = new Func<TEntity, MappingContext, List<TChildDto>?>((entity, sp) =>
         {
             var source = from(entity);
             return source == null ? null : source.Select(c => pair.Map(c, sp)).ToList();
@@ -186,7 +186,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         var pair = ResolvePair<TChildEntity, TChildDto>();
         ApplyChildConfig(pair, configureChild);
 
-        this.viewValues[MemberOf(member).Name] = new Func<TEntity, IServiceProvider?, TChildDto?>((entity, sp) =>
+        this.viewValues[MemberOf(member).Name] = new Func<TEntity, MappingContext, TChildDto?>((entity, sp) =>
         {
             var source = from(entity);
             return source == null ? null : pair.Map(source, sp);
@@ -290,23 +290,23 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// member is not customized (guard-before-execute — a customized convention that would throw is skipped).
     /// </summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveView<TProp>(TEntity entity, IServiceProvider? serviceProvider, string memberName, Func<TEntity, IServiceProvider?, TProp> convention)
+    public TProp ResolveView<TProp>(TEntity entity, MappingContext serviceProvider, string memberName, Func<TEntity, MappingContext, TProp> convention)
         => this.viewValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(entity, serviceProvider)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(entity, serviceProvider)
             : convention(entity, serviceProvider);
 
     /// <summary>Resolves an entity member in <c>MapToEntity</c>: the <c>ForEntity</c> customization, else the generated convention.</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveEntity<TProp>(TViewDTO dto, IServiceProvider? serviceProvider, string memberName, Func<TViewDTO, IServiceProvider?, TProp> convention)
+    public TProp ResolveEntity<TProp>(TViewDTO dto, MappingContext serviceProvider, string memberName, Func<TViewDTO, MappingContext, TProp> convention)
         => this.entityValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TViewDTO, IServiceProvider?, TProp>)custom)(dto, serviceProvider)
+            ? ((Func<TViewDTO, MappingContext, TProp>)custom)(dto, serviceProvider)
             : convention(dto, serviceProvider);
 
     /// <summary>Resolves an entity member in <c>CopyEntity</c>: the <c>ForCopy</c> customization, else the generated convention.</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveCopy<TProp>(TEntity source, IServiceProvider? serviceProvider, string memberName, Func<TEntity, IServiceProvider?, TProp> convention)
+    public TProp ResolveCopy<TProp>(TEntity source, MappingContext serviceProvider, string memberName, Func<TEntity, MappingContext, TProp> convention)
         => this.copyValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(source, serviceProvider)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(source, serviceProvider)
             : convention(source, serviceProvider);
 
     // Value-fallback overloads for customization-only members (base/audit/navigation/excluded — no
@@ -316,23 +316,23 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
     /// <summary>View member with no convention: the <c>ForView</c> customization if present, else <paramref name="current"/> (unchanged).</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveView<TProp>(TEntity entity, IServiceProvider? serviceProvider, string memberName, TProp current)
+    public TProp ResolveView<TProp>(TEntity entity, MappingContext serviceProvider, string memberName, TProp current)
         => this.viewValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(entity, serviceProvider)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(entity, serviceProvider)
             : current;
 
     /// <summary>Entity member with no convention: the <c>ForEntity</c> customization if present, else <paramref name="current"/> (unchanged).</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveEntity<TProp>(TViewDTO dto, IServiceProvider? serviceProvider, string memberName, TProp current)
+    public TProp ResolveEntity<TProp>(TViewDTO dto, MappingContext serviceProvider, string memberName, TProp current)
         => this.entityValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TViewDTO, IServiceProvider?, TProp>)custom)(dto, serviceProvider)
+            ? ((Func<TViewDTO, MappingContext, TProp>)custom)(dto, serviceProvider)
             : current;
 
     /// <summary>Copy member with no convention: the <c>ForCopy</c> customization if present, else <paramref name="current"/> (target unchanged).</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public TProp ResolveCopy<TProp>(TEntity source, IServiceProvider? serviceProvider, string memberName, TProp current)
+    public TProp ResolveCopy<TProp>(TEntity source, MappingContext serviceProvider, string memberName, TProp current)
         => this.copyValues.TryGetValue(memberName, out var custom)
-            ? ((Func<TEntity, IServiceProvider?, TProp>)custom)(source, serviceProvider)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(source, serviceProvider)
             : current;
 
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]

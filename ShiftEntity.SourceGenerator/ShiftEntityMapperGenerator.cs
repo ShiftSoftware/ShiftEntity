@@ -599,7 +599,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         void Emit(IPropertySymbol dtoProp, bool withConvention)
         {
             var propType = Fq(dtoProp.Type);
-            // Convention body written over the lambda parameters (e = entity/source, sp = serviceProvider).
+            // Convention body written over the lambda parameters (e = entity/source, sp = context).
             string? conv = null;
 
             if (withConvention)
@@ -617,13 +617,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (conv is not null)
             {
                 // One reusable call: the ForView customization wins, else the convention lambda runs.
-                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, serviceProvider, \"{dtoProp.Name}\", static (e, sp) => {conv});");
+                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, context, \"{dtoProp.Name}\", static (e, sp) => {conv});");
             }
             else
             {
                 // Customization-only member (base/framework field or unmapped): the customization if present,
                 // else keep the current value (what MapBaseFields set, or the DTO default). No if-guard.
-                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, serviceProvider, \"{dtoProp.Name}\", dto.{dtoProp.Name});");
+                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, context, \"{dtoProp.Name}\", dto.{dtoProp.Name});");
             }
 
             lines.Add("");
@@ -688,20 +688,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (conv is not null)
             {
-                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, serviceProvider, \"{entityProp.Name}\", static (d, sp) => {conv});");
+                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, context, \"{entityProp.Name}\", static (d, sp) => {conv});");
             }
             else if (IsEntityNavigation(entityProp.Type))
             {
                 // Navigation: apply the customization if present, but NEVER read existing.<nav>
                 // (avoids triggering lazy loading) — so a guard, not the value-fallback overload.
-                var cast = $"global::System.Func<{viewName}, global::System.IServiceProvider, {propType}>";
+                var cast = $"global::System.Func<{viewName}, global::ShiftSoftware.ShiftEntity.Core.MappingContext, {propType}>";
                 lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{entityProp.Name}\", out var __e_{entityProp.Name}))");
-                lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, serviceProvider);");
+                lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, context);");
             }
             else
             {
                 // Key/audit/excluded scalar: the customization if present, else keep the existing value.
-                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, serviceProvider, \"{entityProp.Name}\", existing.{entityProp.Name});");
+                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, context, \"{entityProp.Name}\", existing.{entityProp.Name});");
             }
 
             lines.Add("");
@@ -793,13 +793,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (withConvention)
             {
-                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, serviceProvider, \"{prop.Name}\", static (s, sp) => s.{prop.Name});");
+                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, context, \"{prop.Name}\", static (s, sp) => s.{prop.Name});");
             }
             else
             {
                 // Excluded member (key/flags — all scalar): the customization if present, else keep target's value
                 // (so e.g. ReloadAfterSave is preserved, never copied from source). No if-guard.
-                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, serviceProvider, \"{prop.Name}\", target.{prop.Name});");
+                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, context, \"{prop.Name}\", target.{prop.Name});");
             }
 
             lines.Add("");
@@ -863,7 +863,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         if (!hasUserMapGen)
         {
-            sb.AppendLine($"    private {dtoName} MapGenerated({entityName} source, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private {dtoName} MapGenerated({entityName} source, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.AppendLine($"        var dto = new {dtoName}();");
             sb.AppendLine();
@@ -874,15 +874,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!hasUserMap)
             {
-                sb.AppendLine($"    public {dtoName} Map({entityName} source, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => MapGenerated(source, serviceProvider);");
+                sb.AppendLine($"    public {dtoName} Map({entityName} source, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => MapGenerated(source, context);");
                 sb.AppendLine();
             }
         }
 
         if (!hasUserMapBackGen)
         {
-            sb.AppendLine($"    private {entityName} MapBackGenerated({dtoName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private {entityName} MapBackGenerated({dtoName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.Append(string.Join("\n", BuildEntityBody(pair.Entity, pair.Dto, entityName, dtoName, compilation)));
             sb.AppendLine("        return existing;");
@@ -891,8 +891,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!hasUserMapBack)
             {
-                sb.AppendLine($"    public {entityName} MapBack({dtoName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => MapBackGenerated(dto, existing, serviceProvider);");
+                sb.AppendLine($"    public {entityName} MapBack({dtoName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => MapBackGenerated(dto, existing, context);");
                 sb.AppendLine();
             }
         }
@@ -963,7 +963,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         if (!HasUser("MapToViewGenerated"))
         {
-            sb.AppendLine($"    private {viewName} MapToViewGenerated({entityName} entity, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private {viewName} MapToViewGenerated({entityName} entity, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.AppendLine($"        var dto = new {viewName}();");
             sb.AppendLine();
@@ -974,15 +974,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!HasUser("MapToView"))
             {
-                sb.AppendLine($"    public {viewName} MapToView({entityName} entity, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => MapToViewGenerated(entity, serviceProvider);");
+                sb.AppendLine($"    public {viewName} MapToView({entityName} entity, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => MapToViewGenerated(entity, context);");
                 sb.AppendLine();
             }
         }
 
         if (!HasUser("MapToEntityGenerated"))
         {
-            sb.AppendLine($"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.Append(string.Join("\n", BuildEntityBody(triple.Entity, triple.ViewDto, entityName, viewName, compilation)));
             sb.AppendLine("        return existing;");
@@ -991,8 +991,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!HasUser("MapToEntity"))
             {
-                sb.AppendLine($"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => MapToEntityGenerated(dto, existing, serviceProvider);");
+                sb.AppendLine($"    public {entityName} MapToEntity({viewName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => MapToEntityGenerated(dto, existing, context);");
                 sb.AppendLine();
             }
         }
@@ -1011,7 +1011,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             sb.AppendLine();
             sb.AppendLine("    };");
             sb.AppendLine();
-            sb.AppendLine($"    private global::System.Linq.IQueryable<{listName}> MapToListGenerated(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private global::System.Linq.IQueryable<{listName}> MapToListGenerated(global::System.Linq.IQueryable<{entityName}> queryable, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.AppendLine("        var projection = this.__shiftComposedListProjection;");
             sb.AppendLine();
@@ -1027,15 +1027,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!HasUser("MapToList"))
             {
-                sb.AppendLine($"    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => MapToListGenerated(queryable, serviceProvider);");
+                sb.AppendLine($"    public global::System.Linq.IQueryable<{listName}> MapToList(global::System.Linq.IQueryable<{entityName}> queryable, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => MapToListGenerated(queryable, context);");
                 sb.AppendLine();
             }
         }
 
         if (!HasUser("CopyEntityGenerated"))
         {
-            sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)");
+            sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName)));
             sb.AppendLine("    }");
@@ -1043,8 +1043,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (!HasUser("CopyEntity"))
             {
-                sb.AppendLine($"    public void CopyEntity({entityName} source, {entityName} target, global::System.IServiceProvider serviceProvider = null)");
-                sb.AppendLine("        => CopyEntityGenerated(source, target, serviceProvider);");
+                sb.AppendLine($"    public void CopyEntity({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
+                sb.AppendLine("        => CopyEntityGenerated(source, target, context);");
                 sb.AppendLine();
             }
         }

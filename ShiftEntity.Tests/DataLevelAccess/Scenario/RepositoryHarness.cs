@@ -35,10 +35,10 @@ public class VehicleListDTO : ShiftEntityDTOBase
 /// </summary>
 public sealed class ThrowingVehicleMapper : IShiftEntityMapper<VehicleEntity, VehicleListDTO, VehicleListDTO>
 {
-    public VehicleListDTO MapToView(VehicleEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public VehicleEntity MapToEntity(VehicleListDTO dto, VehicleEntity existing, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public IQueryable<VehicleListDTO> MapToList(IQueryable<VehicleEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public void CopyEntity(VehicleEntity source, VehicleEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+    public VehicleListDTO MapToView(VehicleEntity entity, MappingContext context = default) => throw new NotSupportedException();
+    public VehicleEntity MapToEntity(VehicleListDTO dto, VehicleEntity existing, MappingContext context = default) => throw new NotSupportedException();
+    public IQueryable<VehicleListDTO> MapToList(IQueryable<VehicleEntity> query, MappingContext context = default) => throw new NotSupportedException();
+    public void CopyEntity(VehicleEntity source, VehicleEntity target, MappingContext context = default) => throw new NotSupportedException();
 }
 
 /// <summary>
@@ -48,7 +48,7 @@ public sealed class ThrowingVehicleMapper : IShiftEntityMapper<VehicleEntity, Ve
 /// </summary>
 public sealed class UpsertVehicleMapper : IShiftEntityMapper<VehicleEntity, VehicleListDTO, VehicleListDTO>
 {
-    public VehicleEntity MapToEntity(VehicleListDTO dto, VehicleEntity existing, IServiceProvider? serviceProvider = null)
+    public VehicleEntity MapToEntity(VehicleListDTO dto, VehicleEntity existing, MappingContext context = default)
     {
         existing.Name = dto.Name;
         existing.CompanyID = dto.CompanyID;
@@ -56,9 +56,9 @@ public sealed class UpsertVehicleMapper : IShiftEntityMapper<VehicleEntity, Vehi
         return existing;
     }
 
-    public VehicleListDTO MapToView(VehicleEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public IQueryable<VehicleListDTO> MapToList(IQueryable<VehicleEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public void CopyEntity(VehicleEntity source, VehicleEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+    public VehicleListDTO MapToView(VehicleEntity entity, MappingContext context = default) => throw new NotSupportedException();
+    public IQueryable<VehicleListDTO> MapToList(IQueryable<VehicleEntity> query, MappingContext context = default) => throw new NotSupportedException();
+    public void CopyEntity(VehicleEntity source, VehicleEntity target, MappingContext context = default) => throw new NotSupportedException();
 }
 
 /// <summary>

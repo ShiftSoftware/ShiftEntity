@@ -15,11 +15,11 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public interface IShiftObjectMapper<TEntity, TDto>
 {
     /// <summary>Entity → DTO (the view direction; composed automatically into parents' MapToView).</summary>
-    TDto Map(TEntity source, IServiceProvider? serviceProvider = null);
+    TDto Map(TEntity source, MappingContext context = default);
 
     /// <summary>
     /// DTO → entity (the upsert direction). NEVER called automatically — writing children is a
     /// persistence-pattern decision; wire it explicitly (e.g. <c>ForEntityChildren</c>).
     /// </summary>
-    TEntity MapBack(TDto dto, TEntity existing, IServiceProvider? serviceProvider = null);
+    TEntity MapBack(TDto dto, TEntity existing, MappingContext context = default);
 }

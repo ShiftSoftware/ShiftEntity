@@ -16,15 +16,15 @@ public class AutoMapperShiftEntityMapper<TEntity, TListDTO, TViewDTO>
     }
 
     // AutoMapper resolves its own dependencies through its IMapper, so the service provider is unused here.
-    public IQueryable<TListDTO> MapToList(IQueryable<TEntity> query, IServiceProvider? serviceProvider = null)
+    public IQueryable<TListDTO> MapToList(IQueryable<TEntity> query, MappingContext context = default)
         => Mapper.ProjectTo<TListDTO>(query.AsNoTracking());
 
-    public TViewDTO MapToView(TEntity entity, IServiceProvider? serviceProvider = null)
+    public TViewDTO MapToView(TEntity entity, MappingContext context = default)
         => Mapper.Map<TViewDTO>(entity);
 
-    public TEntity MapToEntity(TViewDTO dto, TEntity existing, IServiceProvider? serviceProvider = null)
+    public TEntity MapToEntity(TViewDTO dto, TEntity existing, MappingContext context = default)
         => Mapper.Map(dto, existing);
 
-    public void CopyEntity(TEntity source, TEntity target, IServiceProvider? serviceProvider = null)
+    public void CopyEntity(TEntity source, TEntity target, MappingContext context = default)
         => Mapper.Map(source, target);
 }

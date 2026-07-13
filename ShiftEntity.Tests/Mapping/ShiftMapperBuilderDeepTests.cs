@@ -50,10 +50,10 @@ public class ShiftMapperBuilderDeepTests
 
     private sealed class FakeChildPairMapper : IShiftObjectMapper<ChildEntity, ChildDto>
     {
-        public ChildDto Map(ChildEntity source, IServiceProvider? sp = null)
+        public ChildDto Map(ChildEntity source, MappingContext context = default)
             => new() { ID = source.ID.ToString(), Name = source.Name };
 
-        public ChildEntity MapBack(ChildDto dto, ChildEntity existing, IServiceProvider? sp = null)
+        public ChildEntity MapBack(ChildDto dto, ChildEntity existing, MappingContext context = default)
         {
             existing.Name = dto.Name ?? "";
             return existing;
@@ -76,10 +76,10 @@ public class ShiftMapperBuilderDeepTests
         var builder = Builder().ForEntityChildren(x => x.Children, d => d.Children);
 
         Assert.True(builder.TryGetEntityValue(nameof(ParentEntity.Children), out var value));
-        var func = (Func<ParentViewDTO, IServiceProvider?, List<ChildEntity>?>)value!;
+        var func = (Func<ParentViewDTO, MappingContext, List<ChildEntity>?>)value!;
 
         var dto = new ParentViewDTO { Children = new() { new ChildDto { Name = "A" }, new ChildDto { Name = "B" } } };
-        var result = func(dto, null);
+        var result = func(dto, default);
 
         Assert.Equal(2, result!.Count);
         Assert.Equal("A", result[0].Name);
@@ -93,7 +93,7 @@ public class ShiftMapperBuilderDeepTests
         var builder = Builder().ForEntityChildren(x => x.Children, d => d.Children);
         builder.TryGetEntityValue(nameof(ParentEntity.Children), out var value);
 
-        var result = ((Func<ParentViewDTO, IServiceProvider?, List<ChildEntity>?>)value!)(new ParentViewDTO { Children = null }, null);
+        var result = ((Func<ParentViewDTO, MappingContext, List<ChildEntity>?>)value!)(new ParentViewDTO { Children = null }, default);
 
         Assert.Null(result);
     }
@@ -104,8 +104,8 @@ public class ShiftMapperBuilderDeepTests
         var builder = Builder().ForEntityChild(x => x.Single, d => d.Single);
         builder.TryGetEntityValue(nameof(ParentEntity.Single), out var value);
 
-        var result = ((Func<ParentViewDTO, IServiceProvider?, ChildEntity?>)value!)(
-            new ParentViewDTO { Single = new ChildDto { Name = "S" } }, null);
+        var result = ((Func<ParentViewDTO, MappingContext, ChildEntity?>)value!)(
+            new ParentViewDTO { Single = new ChildDto { Name = "S" } }, default);
 
         Assert.NotNull(result);
         Assert.Equal("S", result!.Name);
@@ -229,10 +229,10 @@ public class ShiftMapperBuilderDeepTests
         var builder = Builder().ForViewChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children);
 
         Assert.True(builder.TryGetViewValue(nameof(ParentViewDTO.Children), out var value));
-        var func = (Func<ParentEntity, IServiceProvider?, List<ChildDto>?>)value!;
+        var func = (Func<ParentEntity, MappingContext, List<ChildDto>?>)value!;
 
         var parent = new ParentEntity { Children = new() { new ChildEntity { ID = 10, Name = "X" }, new ChildEntity { ID = 11, Name = "Y" } } };
-        var result = func(parent, null);
+        var result = func(parent, default);
 
         Assert.Equal(2, result!.Count);
         Assert.Equal("10", result[0].ID);     // via the pair mapper's Map
@@ -244,10 +244,10 @@ public class ShiftMapperBuilderDeepTests
     {
         var builder = Builder().ForViewChild<ChildEntity, ChildDto>(d => d.Single, e => e.Single);
         builder.TryGetViewValue(nameof(ParentViewDTO.Single), out var value);
-        var func = (Func<ParentEntity, IServiceProvider?, ChildDto?>)value!;
+        var func = (Func<ParentEntity, MappingContext, ChildDto?>)value!;
 
-        Assert.Equal("Z", func(new ParentEntity { Single = new ChildEntity { ID = 5, Name = "Z" } }, null)!.Name);
-        Assert.Null(func(new ParentEntity { Single = null }, null));   // null-safe
+        Assert.Equal("Z", func(new ParentEntity { Single = new ChildEntity { ID = 5, Name = "Z" } }, default)!.Name);
+        Assert.Null(func(new ParentEntity { Single = null }, default));   // null-safe
     }
 
     [Fact]

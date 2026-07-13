@@ -141,17 +141,17 @@ public class WidgetDTO : ShiftEntityDTOBase
 /// </summary>
 public sealed class ThrowingGadgetMapper : IShiftEntityMapper<GadgetEntity, GadgetDTO, GadgetDTO>
 {
-    public GadgetDTO MapToView(GadgetEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public GadgetEntity MapToEntity(GadgetDTO dto, GadgetEntity existing, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public IQueryable<GadgetDTO> MapToList(IQueryable<GadgetEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public void CopyEntity(GadgetEntity source, GadgetEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+    public GadgetDTO MapToView(GadgetEntity entity, MappingContext context = default) => throw new NotSupportedException();
+    public GadgetEntity MapToEntity(GadgetDTO dto, GadgetEntity existing, MappingContext context = default) => throw new NotSupportedException();
+    public IQueryable<GadgetDTO> MapToList(IQueryable<GadgetEntity> query, MappingContext context = default) => throw new NotSupportedException();
+    public void CopyEntity(GadgetEntity source, GadgetEntity target, MappingContext context = default) => throw new NotSupportedException();
 }
 
 /// <inheritdoc cref="ThrowingGadgetMapper"/>
 public sealed class ThrowingWidgetMapper : IShiftEntityMapper<WidgetEntity, WidgetDTO, WidgetDTO>
 {
-    public WidgetDTO MapToView(WidgetEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public WidgetEntity MapToEntity(WidgetDTO dto, WidgetEntity existing, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public IQueryable<WidgetDTO> MapToList(IQueryable<WidgetEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public void CopyEntity(WidgetEntity source, WidgetEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+    public WidgetDTO MapToView(WidgetEntity entity, MappingContext context = default) => throw new NotSupportedException();
+    public WidgetEntity MapToEntity(WidgetDTO dto, WidgetEntity existing, MappingContext context = default) => throw new NotSupportedException();
+    public IQueryable<WidgetDTO> MapToList(IQueryable<WidgetEntity> query, MappingContext context = default) => throw new NotSupportedException();
+    public void CopyEntity(WidgetEntity source, WidgetEntity target, MappingContext context = default) => throw new NotSupportedException();
 }

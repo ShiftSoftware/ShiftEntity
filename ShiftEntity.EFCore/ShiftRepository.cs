@@ -151,34 +151,34 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     #region Mapping Methods (public virtual — implements IShiftEntityMapper; default delegates to innerMapper)
 
-    public virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable, IServiceProvider? serviceProvider = null)
+    public virtual IQueryable<ListDTO> MapToList(IQueryable<EntityType> queryable, MappingContext context = default)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToList() or set one via UseMapper().");
-        return innerMapper.MapToList(queryable, serviceProvider ?? MapperServiceProvider);
+        return innerMapper.MapToList(queryable, context.WithFallbackServices(MapperServiceProvider));
     }
 
-    public virtual ViewAndUpsertDTO MapToView(EntityType entity, IServiceProvider? serviceProvider = null)
+    public virtual ViewAndUpsertDTO MapToView(EntityType entity, MappingContext context = default)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToView() or set one via UseMapper().");
-        return innerMapper.MapToView(entity, serviceProvider ?? MapperServiceProvider);
+        return innerMapper.MapToView(entity, context.WithFallbackServices(MapperServiceProvider));
     }
 
-    public virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing, IServiceProvider? serviceProvider = null)
+    public virtual EntityType MapToEntity(ViewAndUpsertDTO dto, EntityType existing, MappingContext context = default)
     {
         if (innerMapper is null)
             throw new InvalidOperationException(
                 "No mapper configured. Override MapToEntity() or set one via UseMapper().");
-        return innerMapper.MapToEntity(dto, existing, serviceProvider ?? MapperServiceProvider);
+        return innerMapper.MapToEntity(dto, existing, context.WithFallbackServices(MapperServiceProvider));
     }
 
-    public virtual void CopyEntity(EntityType source, EntityType target, IServiceProvider? serviceProvider = null)
+    public virtual void CopyEntity(EntityType source, EntityType target, MappingContext context = default)
     {
         if (innerMapper is not null)
-            innerMapper.CopyEntity(source, target, serviceProvider ?? MapperServiceProvider);
+            innerMapper.CopyEntity(source, target, context.WithFallbackServices(MapperServiceProvider));
         else
             source.ShallowCopyTo(target);
     }
@@ -190,12 +190,12 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (queryable is null)
             queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
-        return MapToList(queryable, MapperServiceProvider);
+        return MapToList(queryable, new MappingContext(MapperServiceProvider));
     }
 
     public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
     {
-        var dto = MapToView(entity, MapperServiceProvider);
+        var dto = MapToView(entity, new MappingContext(MapperServiceProvider));
 
         // Read-side tagging is owned by the framework, not the entity mapper: when both the
         // entity and its DTO opt into tagging, populate the DTO's Tags from the entity's
@@ -219,7 +219,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         bool disableGlobalFilters
     )
     {
-        entity = MapToEntity(dto, entity, MapperServiceProvider);
+        entity = MapToEntity(dto, entity, new MappingContext(MapperServiceProvider, actionType));
 
         if (_hasTaggableInterface && dto is IShiftEntityTaggableDTO taggableDto && entity is IShiftEntityTaggable taggableEntity)
         {
@@ -799,7 +799,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
-                    CopyEntity(freshEntity, trackedEntity, MapperServiceProvider);
+                    CopyEntity(freshEntity, trackedEntity, new MappingContext(MapperServiceProvider));
             }
         }
 

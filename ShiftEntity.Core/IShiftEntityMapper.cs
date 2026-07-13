@@ -13,13 +13,13 @@ public interface IShiftEntityMapper { }
 
 public interface IShiftEntityMapper<TEntity, TListDTO, TViewDTO> : IShiftEntityMapper
 {
-    // Each method receives an optional IServiceProvider so a mapper can resolve services on demand
-    // (e.g. a lookup/localization service) instead of having them constructor-injected. This lets a
-    // mapper stay unregistered — plugged via options.UseMapper(new MyMapper()) — yet still reach DI.
-    // The repository passes its DbContext's application service provider when it calls these; it is
-    // null only when a mapper is invoked directly without one.
-    TViewDTO MapToView(TEntity entity, IServiceProvider? serviceProvider = null);
-    TEntity MapToEntity(TViewDTO dto, TEntity existing, IServiceProvider? serviceProvider = null);
-    IQueryable<TListDTO> MapToList(IQueryable<TEntity> query, IServiceProvider? serviceProvider = null);
-    void CopyEntity(TEntity source, TEntity target, IServiceProvider? serviceProvider = null);
+    // Each method receives a MappingContext carrying the service provider (so a mapper can resolve services
+    // on demand — a lookup/localization service — instead of constructor-injecting them) plus the action
+    // being performed when known. This lets a mapper stay unregistered — plugged via
+    // options.UseMapper(new MyMapper()) — yet still reach DI. The repository passes its DbContext's
+    // application service provider when it calls these; a bare IServiceProvider converts implicitly.
+    TViewDTO MapToView(TEntity entity, MappingContext context = default);
+    TEntity MapToEntity(TViewDTO dto, TEntity existing, MappingContext context = default);
+    IQueryable<TListDTO> MapToList(IQueryable<TEntity> query, MappingContext context = default);
+    void CopyEntity(TEntity source, TEntity target, MappingContext context = default);
 }

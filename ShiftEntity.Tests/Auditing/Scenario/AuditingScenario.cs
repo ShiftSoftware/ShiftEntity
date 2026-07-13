@@ -165,10 +165,10 @@ public sealed class ThrowingMapper<TEntity, TDto> : IShiftEntityMapper<TEntity, 
     where TEntity : ShiftEntity<TEntity>, new()
     where TDto : ShiftEntityDTOBase
 {
-    public TDto MapToView(TEntity entity, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public TEntity MapToEntity(TDto dto, TEntity existing, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public IQueryable<TDto> MapToList(IQueryable<TEntity> query, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
-    public void CopyEntity(TEntity source, TEntity target, IServiceProvider? serviceProvider = null) => throw new NotSupportedException();
+    public TDto MapToView(TEntity entity, MappingContext context = default) => throw new NotSupportedException();
+    public TEntity MapToEntity(TDto dto, TEntity existing, MappingContext context = default) => throw new NotSupportedException();
+    public IQueryable<TDto> MapToList(IQueryable<TEntity> query, MappingContext context = default) => throw new NotSupportedException();
+    public void CopyEntity(TEntity source, TEntity target, MappingContext context = default) => throw new NotSupportedException();
 }
 
 /// <summary>
