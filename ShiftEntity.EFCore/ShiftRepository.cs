@@ -96,6 +96,23 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
+        // No manual builder: let the ENTITY configure the built-in (auto-CRUD) repository if it opts in via
+        // IConfiguresShiftRepository<Entity, List, View> — includes, a small mapping tweak, etc. Fires only
+        // for the exact built-in repository type (a custom subclass configures itself), and is keyed by the
+        // endpoint's DTO triple so an entity with several endpoints resolves the matching implementation.
+        else if (GetType().IsGenericType && GetType().GetGenericTypeDefinition() == typeof(ShiftRepository<,,,>)
+            && typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
+        {
+            // Filters / data-level-access in the config need these providers; the null-builder path skipped
+            // them, so set them before invoking the entity's configuration.
+            this.ShiftRepositoryOptions.SetCurrentUserProvider(this.currentUserProvider);
+            this.ShiftRepositoryOptions.SetTypeAuthService(TryGetService<ITypeAuthService>(db)!);
+            this.ShiftRepositoryOptions.SetHashIdService(TryGetService<IHashIdService>(db)!);
+
+            ((IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>)new EntityType())
+                .ConfigureRepository(new ShiftRepositoryConfigurationContext<EntityType, ListDTO, ViewAndUpsertDTO>(
+                    this.ShiftRepositoryOptions, MapperServiceProvider));
+        }
 
         // Apply the default mapper only when the builder didn't call UseMapper(...) — so UseMapper(custom)
         // and UseMapper(null) both win over the default. Preference order:
