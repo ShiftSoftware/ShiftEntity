@@ -220,4 +220,45 @@ public class ShiftMapperBuilderDeepTests
         Assert.Equal("Z (custom)", results[0].Single!.Name);
         Assert.Null(results[1].Single);   // still null-safe
     }
+
+    // ─── ForViewChild(ren) — explicit composition in the view direction, via the pair's Map ───
+
+    [Fact]
+    public void ForViewChildren_ComposesCollection_ViaPairMap()
+    {
+        var builder = Builder().ForViewChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children);
+
+        Assert.True(builder.TryGetViewValue(nameof(ParentViewDTO.Children), out var value));
+        var func = (Func<ParentEntity, IServiceProvider?, List<ChildDto>?>)value!;
+
+        var parent = new ParentEntity { Children = new() { new ChildEntity { ID = 10, Name = "X" }, new ChildEntity { ID = 11, Name = "Y" } } };
+        var result = func(parent, null);
+
+        Assert.Equal(2, result!.Count);
+        Assert.Equal("10", result[0].ID);     // via the pair mapper's Map
+        Assert.Equal("X", result[0].Name);
+    }
+
+    [Fact]
+    public void ForViewChild_ComposesSingle_NullSafe()
+    {
+        var builder = Builder().ForViewChild<ChildEntity, ChildDto>(d => d.Single, e => e.Single);
+        builder.TryGetViewValue(nameof(ParentViewDTO.Single), out var value);
+        var func = (Func<ParentEntity, IServiceProvider?, ChildDto?>)value!;
+
+        Assert.Equal("Z", func(new ParentEntity { Single = new ChildEntity { ID = 5, Name = "Z" } }, null)!.Name);
+        Assert.Null(func(new ParentEntity { Single = null }, null));   // null-safe
+    }
+
+    [Fact]
+    public void EntityOrViewChild_ChildConfig_OnNonConfigurablePair_Throws()
+    {
+        // The fake pair does not implement IShiftMapperConfigurable, so nested customization is rejected
+        // with a clear error (real source-generated / [ShiftEntityMapper] pairs are configurable).
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            Builder().ForViewChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children,
+                child => child.ForView(c => c.Name, e => e.Name + "!")));
+
+        Assert.Contains("not configurable", ex.Message);
+    }
 }

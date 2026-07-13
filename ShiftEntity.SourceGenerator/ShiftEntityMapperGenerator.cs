@@ -117,7 +117,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     }
 
     private static bool IsDeepMappingMethod(string name) =>
-        name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild";
+        name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild"
+             or "ForViewChildren" or "ForViewChild";
 
     // Every deep-mapping builder method is <TChildEntity, TChildDto>(...) in that order — read the pair
     // straight off the (inference-resolved) call symbol. Guards keep it to genuine ShiftMapperBuilder calls.
@@ -605,20 +606,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             {
                 conv = ViewConvention(entityProps, dtoProp, compilation, "e");
 
-                if (conv is null &&
-                    !skippedEdges.Contains(ownerKey + "|" + dtoProp.Name) &&
-                    TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out var isCollection) &&
-                    pairs.TryGetValue(PairKey(childEntity, childDto), out var pair))
-                {
-                    var field = $"__shiftPair_{Fnv8(PairKey(childEntity, childDto))}";
-                    usedPairs.Add(PairKey(childEntity, childDto));
-
-                    conv = isCollection
-                        ? $"e.{dtoProp.Name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(e.{dtoProp.Name}, __child => {field}.Map(__child, sp)))"
-                        : $"e.{dtoProp.Name} == null ? null : {field}.Map(e.{dtoProp.Name}, sp)";
-                }
-
-                if (conv is null)
+                // Complex children are NOT auto-composed in the view direction — they compose only when
+                // explicitly told via ForViewChild(ren) (same principle as list/entity: the programmer decides
+                // how deep and in which direction). Such a member gets no convention (keeps its default until a
+                // ForView(Child) sets it) and is NOT flagged unmapped. A SelectDTO stays a convention (leaf).
+                if (conv is null && !TryGetComposableChild(entityProps, dtoProp, out _, out _, out _))
                     unmapped.Add(dtoProp.Name);
             }
 
