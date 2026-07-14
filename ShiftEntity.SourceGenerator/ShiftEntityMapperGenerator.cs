@@ -44,6 +44,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private const string Helpers = "global::ShiftSoftware.ShiftEntity.Core.MappingHelpers";
     private const string TaggableExtensions = "global::ShiftSoftware.ShiftEntity.EFCore.Tagging.TaggableProjectionExtensions";
     private const string AutoNamespace = "ShiftSoftware.ShiftEntity.GeneratedMappers";
+    private const int DefaultMaxDepth = 10;   // mirror of ShiftEntityMapperDefaults.MaxDepth
 
     private static readonly DiagnosticDescriptor NotPartial = new(
         "SHENGEN001", "Mapper class must be partial",
@@ -65,12 +66,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         "Generated mapper '{0}' does not map: {1} — no convention or deep composition applies; customize via ForView/Configure, take the method over, or adjust the DTO",
         "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
 
+    private static readonly DiagnosticDescriptor ConditionalConfig = new(
+        "SHENGEN005", "Conditional mapper configuration",
+        "Mapper configuration '{0}' is registered conditionally (inside an if/else/switch/loop/?: or &&/||/??). The generator bakes customization decisions at build time, so a skipped branch would silently drop the member to its default. Register it UNCONDITIONALLY and put the condition INSIDE the value delegate instead — e.g. map.ForView(d => d.X, (e, _) => cond ? a : b).",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
+
     // ─────────────────────────────────── pipeline ───────────────────────────────────
 
     private sealed record DeclaredModel(INamedTypeSymbol Cls, string? Error, bool IsPair,
         ITypeSymbol? Entity, ITypeSymbol? ListDto, ITypeSymbol? ViewDto);
 
-    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto);
+    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null);
 
     private sealed record PairSeed(ITypeSymbol Entity, ITypeSymbol Dto);
 
@@ -107,18 +113,32 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             .Select(static (m, _) => m!)
             .Collect();
 
-        var everything = declared.Combine(repoTriples).Combine(endpointTriples).Combine(configPairs).Combine(context.CompilationProvider);
+        // Per-property configuration read STATICALLY from the fluent tree — ForView/ForEntity/ForList/ForCopy
+        // (+ the ForXxxChild(ren) explicit-deep calls) mark a member customized; Ignore(View/Entity/List/Copy)
+        // marks it excluded; MaxDepth(n) sets the cap. Discovered wherever they appear (a mapper's Configure,
+        // a repository's UseGeneratedMapper(map => …), a nested configureChild) because the receiver's generic
+        // arguments identify the (entity, list, view) triple. The generator BAKES the decision — no runtime branch.
+        var configCalls = context.SyntaxProvider.CreateSyntaxProvider(
+                static (node, _) => node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax mae } &&
+                    IsConfigMethod(mae.Name.Identifier.ValueText),
+                static (ctx, _) => BuildConfigCall(ctx))
+            .Where(static m => m is not null)
+            .Select(static (m, _) => m!)
+            .Collect();
+
+        var everything = declared.Combine(repoTriples).Combine(endpointTriples).Combine(configPairs)
+            .Combine(configCalls).Combine(context.CompilationProvider);
 
         context.RegisterSourceOutput(everything, static (spc, data) =>
         {
-            var ((((declaredModels, fromRepos), fromEndpoints), configSeeds), compilation) = data;
-            GenerateAll(spc, declaredModels, fromRepos, fromEndpoints, configSeeds, compilation);
+            var (((((declaredModels, fromRepos), fromEndpoints), configSeeds), configuration), compilation) = data;
+            GenerateAll(spc, declaredModels, fromRepos, fromEndpoints, configSeeds, configuration, compilation);
         });
     }
 
     private static bool IsDeepMappingMethod(string name) =>
         name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild"
-             or "ForViewChildren" or "ForViewChild";
+             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild";
 
     // Every deep-mapping builder method is <TChildEntity, TChildDto>(...) in that order — read the pair
     // straight off the (inference-resolved) call symbol. Guards keep it to genuine ShiftMapperBuilder calls.
@@ -135,6 +155,127 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var dto = method.TypeArguments[1];
 
         return IsOpenOrError(entity) || IsOpenOrError(dto) ? null : new PairSeed(entity, dto);
+    }
+
+    // ─────────────────────────────────── build-time config scan ───────────────────────────────────
+
+    private enum MapDir { View, Entity, List, Copy, All }
+    private enum MapKind { Custom, Ignore, MaxDepth }
+
+    // One statically-read fluent config call: which triple it targets, what it does, to which member.
+    // Conditional = the call sits inside a branch (if/switch/loop/?:/&&/||/??) within its config body — the
+    // generator bakes decisions, so conditional registration is an error (SHENGEN005).
+    private sealed record ConfigCall(string TripleKey, MapKind Kind, MapDir Dir, string? Member, int Depth,
+        bool Conditional, Location Location, string MethodName);
+
+    private static bool IsConfigMethod(string name) =>
+        name is "ForView" or "ForEntity" or "ForList" or "ForCopy"
+             or "ForViewChild" or "ForViewChildren" or "ForEntityChild" or "ForEntityChildren"
+             or "ForListChild" or "ForListChildren" or "ForCopyChild" or "ForCopyChildren"
+             or "Ignore" or "IgnoreView" or "IgnoreEntity" or "IgnoreList" or "IgnoreCopy"
+             or "MaxDepth";
+
+    private static ConfigCall? BuildConfigCall(GeneratorSyntaxContext ctx)
+    {
+        var invocation = (InvocationExpressionSyntax)ctx.Node;
+
+        if (ctx.SemanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method ||
+            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
+            container.TypeArguments.Length != 3 ||
+            !IsShiftNamespace(container))
+            return null;
+
+        var e = container.TypeArguments[0];
+        var l = container.TypeArguments[1];
+        var v = container.TypeArguments[2];
+
+        if (IsOpenOrError(e) || IsOpenOrError(l) || IsOpenOrError(v))
+            return null;
+
+        var key = TripleKey(e, l, v);
+        var name = method.Name;
+        var conditional = IsInConditionalContext(invocation);
+        var location = invocation.GetLocation();
+
+        if (name == "MaxDepth")
+        {
+            var arg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+            if (arg is not null && ctx.SemanticModel.GetConstantValue(arg) is { HasValue: true, Value: int depth })
+                return new ConfigCall(key, MapKind.MaxDepth, MapDir.All, null, depth, conditional, location, name);
+            return null;   // non-constant depth can't be baked
+        }
+
+        var member = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
+        if (member is null)
+            return null;
+
+        var dir =
+            name.Contains("View") ? MapDir.View :
+            name.Contains("Entity") ? MapDir.Entity :
+            name.Contains("List") ? MapDir.List :
+            name.Contains("Copy") ? MapDir.Copy :
+            MapDir.All;   // bare Ignore
+
+        var kind = name.StartsWith("Ignore", StringComparison.Ordinal) ? MapKind.Ignore : MapKind.Custom;
+
+        return new ConfigCall(key, kind, dir, member, 0, conditional, location, name);
+    }
+
+    // True if the fluent config call is registered conditionally — i.e. some branch node sits between it and
+    // its enclosing config body (the Configure method or a UseGeneratedMapper / configureChild lambda). The
+    // value delegate is a DESCENDANT of the call, so a condition INSIDE the value (map.ForView(x, e => c ? a : b))
+    // is correctly NOT flagged — only a condition AROUND the registration is.
+    private static bool IsInConditionalContext(SyntaxNode node)
+    {
+        for (var current = node.Parent; current is not null; current = current.Parent)
+        {
+            switch (current)
+            {
+                // Reached the config body boundary without crossing a branch → unconditional.
+                case SimpleLambdaExpressionSyntax:
+                case ParenthesizedLambdaExpressionSyntax:
+                case AnonymousMethodExpressionSyntax:
+                case MethodDeclarationSyntax:
+                case LocalFunctionStatementSyntax:
+                    return false;
+
+                case IfStatementSyntax:
+                case ElseClauseSyntax:
+                case ConditionalExpressionSyntax:
+                case SwitchStatementSyntax:
+                case SwitchExpressionSyntax:
+                case SwitchExpressionArmSyntax:
+                case WhileStatementSyntax:
+                case DoStatementSyntax:
+                case ForStatementSyntax:
+                case ForEachStatementSyntax:
+                case CatchClauseSyntax:
+                    return true;
+
+                case BinaryExpressionSyntax bin when bin.IsKind(SyntaxKind.LogicalAndExpression) ||
+                                                     bin.IsKind(SyntaxKind.LogicalOrExpression) ||
+                                                     bin.IsKind(SyntaxKind.CoalesceExpression):
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The member name from a `d => d.X` selector (unwraps a Convert the compiler may add).
+    private static string? MemberNameFromSelector(ExpressionSyntax? arg)
+    {
+        var body = arg switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body,
+            ParenthesizedLambdaExpressionSyntax paren => paren.Body,
+            _ => null,
+        };
+
+        while (body is CastExpressionSyntax cast)
+            body = cast.Expression;
+
+        return body is MemberAccessExpressionSyntax { Name.Identifier.ValueText: var text } ? text : null;
     }
 
     private static DeclaredModel BuildDeclared(GeneratorAttributeSyntaxContext ctx)
@@ -183,10 +324,34 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (IsOpenOrError(entity) || IsOpenOrError(listDto) || IsOpenOrError(viewDto))
                 return null;
 
-            return new TripleModel(entity, listDto, viewDto);
+            // Per-repository knob (the intended home for MaxDepth): read off the repo class.
+            return new TripleModel(entity, listDto, viewDto, ReadMaxDepthAttr(cls));
         }
 
         return null;
+    }
+
+    private static int? ReadMaxDepthAttr(ISymbol symbol) =>
+        symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name == "ShiftEntityMapperMaxDepthAttribute" &&
+            a.AttributeClass is { } c && IsShiftNamespace(c)) is { ConstructorArguments.Length: > 0 } attr &&
+            attr.ConstructorArguments[0].Value is int depth ? depth : null;
+
+    private static bool HasIgnoreAttr(ISymbol symbol) =>
+        symbol.GetAttributes().Any(a => a.AttributeClass?.Name == "ShiftEntityMapperIgnoreAttribute" &&
+            a.AttributeClass is { } c && IsShiftNamespace(c));
+
+    // Member names carrying [ShiftEntityMapperIgnore] on ANY side (entity / view DTO / list DTO). A single
+    // attribute excludes the member in every direction, matching the all-directions fluent Ignore.
+    private static HashSet<string> CollectAttrIgnored(params ITypeSymbol[] types)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var type in types)
+            foreach (var prop in AllProps(type))
+                if (HasIgnoreAttr(prop))
+                    set.Add(prop.Name);
+
+        return set;
     }
 
     private static ImmutableArray<TripleModel> BuildFromEndpointAttributes(GeneratorSyntaxContext ctx)
@@ -222,6 +387,75 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     // ─────────────────────────────────── the combined generation step ───────────────────────────────────
 
+    // The baked per-member decisions for one triple/pair, aggregated from every fluent config call that
+    // targets it. A member in a direction's Custom set → emit a reference to the runtime delegate (no branch);
+    // in the Ignore set → omit the member; otherwise → the generated convention / auto deep-composition.
+    private sealed class MapperDirectives
+    {
+        public readonly HashSet<string> ViewCustom = new(StringComparer.Ordinal);
+        public readonly HashSet<string> EntityCustom = new(StringComparer.Ordinal);
+        public readonly HashSet<string> ListCustom = new(StringComparer.Ordinal);
+        public readonly HashSet<string> CopyCustom = new(StringComparer.Ordinal);
+        public readonly HashSet<string> ViewIgnore = new(StringComparer.Ordinal);
+        public readonly HashSet<string> EntityIgnore = new(StringComparer.Ordinal);
+        public readonly HashSet<string> ListIgnore = new(StringComparer.Ordinal);
+        public readonly HashSet<string> CopyIgnore = new(StringComparer.Ordinal);
+        public int? MaxDepth;
+
+        public static readonly MapperDirectives Empty = new();
+
+        public bool IsCustom(MapDir d, string member) => CustomSet(d).Contains(member);
+        public bool IsIgnored(MapDir d, string member) => IgnoreSet(d).Contains(member);
+
+        public HashSet<string> CustomSet(MapDir d) => d switch
+        {
+            MapDir.Entity => EntityCustom,
+            MapDir.List => ListCustom,
+            MapDir.Copy => CopyCustom,
+            _ => ViewCustom,
+        };
+
+        public HashSet<string> IgnoreSet(MapDir d) => d switch
+        {
+            MapDir.Entity => EntityIgnore,
+            MapDir.List => ListIgnore,
+            MapDir.Copy => CopyIgnore,
+            _ => ViewIgnore,
+        };
+
+        public void AddCustom(MapDir d, string member)
+        {
+            if (d == MapDir.All) { ViewCustom.Add(member); EntityCustom.Add(member); ListCustom.Add(member); CopyCustom.Add(member); }
+            else CustomSet(d).Add(member);
+        }
+
+        public void AddIgnore(MapDir d, string member)
+        {
+            if (d == MapDir.All) { ViewIgnore.Add(member); EntityIgnore.Add(member); ListIgnore.Add(member); CopyIgnore.Add(member); }
+            else IgnoreSet(d).Add(member);
+        }
+    }
+
+    private static Dictionary<string, MapperDirectives> BuildDirectives(ImmutableArray<ConfigCall> calls)
+    {
+        var map = new Dictionary<string, MapperDirectives>(StringComparer.Ordinal);
+
+        foreach (var call in calls)
+        {
+            if (!map.TryGetValue(call.TripleKey, out var d))
+                map[call.TripleKey] = d = new MapperDirectives();
+
+            switch (call.Kind)
+            {
+                case MapKind.MaxDepth: d.MaxDepth = call.Depth; break;
+                case MapKind.Custom: d.AddCustom(call.Dir, call.Member!); break;
+                case MapKind.Ignore: d.AddIgnore(call.Dir, call.Member!); break;
+            }
+        }
+
+        return map;
+    }
+
     private sealed class PairInfo
     {
         public ITypeSymbol Entity = null!;
@@ -236,8 +470,19 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         ImmutableArray<TripleModel> fromRepos,
         ImmutableArray<TripleModel> fromEndpoints,
         ImmutableArray<PairSeed> configSeeds,
+        ImmutableArray<ConfigCall> configuration,
         Compilation compilation)
     {
+        // Per-member baked decisions read from the fluent config, plus the compilation-wide depth default.
+        var directives = BuildDirectives(configuration);
+        var assemblyMaxDepth = ReadMaxDepthAttr(compilation.Assembly) ?? DefaultMaxDepth;
+
+        // Conditional registration can't be baked (a skipped branch would silently drop the member) — error out.
+        foreach (var call in configuration)
+            if (call.Conditional)
+                spc.ReportDiagnostic(Diagnostic.Create(ConditionalConfig, call.Location,
+                    call.Member is null ? call.MethodName : $"{call.MethodName}({call.Member})"));
+
         // 1. Declared classes: report errors; index valid ones.
         var declaredTriples = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
         var declaredPairs = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
@@ -381,13 +626,67 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             Discover(key, ShortPair(key), seed.Entity, seed.Dto);
         }
 
+        // 3b. Shortest composition depth per pair (BFS from every root view DTO at depth 0 → its children at
+        // depth 1, …). A pair reached shallowest at depth d auto-composes its own children (depth d+1) iff
+        // d+1 ≤ maxDepth. Independent of the DFS above so the depth is a true shortest path.
+        var minDepth = ComputeMinDepth(triples.Values.Select(t => t.Triple), pairs, compilation);
+
+        // Resolves the effective config + depth for a mapper keyed by its (entity,list,view) triple.
+        MapperDirectives Dir(string key) => directives.TryGetValue(key, out var d) ? d : MapperDirectives.Empty;
+        int MaxDepthFor(string key, int? repoOrClass) =>
+            (directives.TryGetValue(key, out var d) ? d.MaxDepth : null) ?? repoOrClass ?? assemblyMaxDepth;
+
         // 4. Emit pair mappers.
         foreach (var (key, pair) in pairs.Select(kv => (kv.Key, kv.Value)))
-            EmitPair(spc, key, pair, pairs, skippedEdges, compilation);
+        {
+            var pairTripleKey = TripleKey(pair.Entity, pair.Dto, pair.Dto);
+            var depth = minDepth.TryGetValue(key, out var md) ? md : 1;
+            EmitPair(spc, key, pair, pairs, skippedEdges, compilation,
+                Dir(pairTripleKey), Dir, depth, MaxDepthFor(pairTripleKey, ReadMaxDepthAttr(pair.UserClass ?? (ISymbol)pair.Entity)));
+        }
 
         // 5. Emit triple mappers.
         foreach (var (key, (triple, userClass)) in triples.Select(kv => (kv.Key, kv.Value)))
-            EmitTriple(spc, key, triple, userClass, pairs, skippedEdges, compilation);
+            EmitTriple(spc, key, triple, userClass, pairs, skippedEdges, compilation,
+                Dir(key), Dir, MaxDepthFor(key, triple.MaxDepth ?? ReadMaxDepthAttr(userClass ?? (ISymbol)triple.Entity)));
+    }
+
+    // BFS shortest composition depth for every discovered pair, from each triple root (root children = depth 1).
+    private static Dictionary<string, int> ComputeMinDepth(
+        IEnumerable<TripleModel> roots, Dictionary<string, PairInfo> pairs, Compilation compilation)
+    {
+        var minDepth = new Dictionary<string, int>(StringComparer.Ordinal);
+        var queue = new Queue<(ITypeSymbol Entity, ITypeSymbol Dto, int Depth)>();
+
+        foreach (var root in roots)
+            queue.Enqueue((root.Entity, root.ViewDto, 0));
+
+        while (queue.Count > 0)
+        {
+            var (entity, dto, depth) = queue.Dequeue();
+            var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
+
+            foreach (var dtoProp in AllProps(dto).Where(IsSettable))
+            {
+                if (ViewHandledMembers.Contains(dtoProp.Name) ||
+                    ViewConvention(entityProps, dtoProp, compilation) is not null ||
+                    !TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out _))
+                    continue;
+
+                var key = PairKey(childEntity, childDto);
+                var childDepth = depth + 1;
+
+                if (minDepth.TryGetValue(key, out var existing) && existing <= childDepth)
+                    continue;   // already reached at least this shallow — no improvement, prevents cycles looping
+
+                minDepth[key] = childDepth;
+
+                if (pairs.ContainsKey(key))
+                    queue.Enqueue((childEntity, childDto, childDepth));
+            }
+        }
+
+        return minDepth;
     }
 
     private static string TripleKey(ITypeSymbol e, ITypeSymbol l, ITypeSymbol v) => $"{Fq(e)}|{Fq(l)}|{Fq(v)}";
@@ -589,7 +888,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private static ViewEmission BuildViewBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
         string entityName, string viewName, string accessor,
-        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation,
+        MapperDirectives directives, HashSet<string> attrIgnored, int ownerDepth, int maxDepth)
     {
         var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var lines = new List<string>();
@@ -598,35 +898,61 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         void Emit(IPropertySymbol dtoProp, bool withConvention)
         {
+            var name = dtoProp.Name;
             var propType = Fq(dtoProp.Type);
-            // Convention body written over the lambda parameters (e = entity/source, sp = context).
-            string? conv = null;
+
+            // Ignore → OMIT the member (build-time removal; a complex child's subtree is pruned by never composing it).
+            if (directives.IsIgnored(MapDir.View, name) || attrIgnored.Contains(name))
+                return;
+
+            // Customized (ForView, or explicit ForViewChild(ren)) → reference the runtime delegate directly.
+            // No custom-vs-convention branch: the DECISION was made here at build time. The delegate keeps the
+            // member's current value when unregistered, so a mapper used without its config never throws.
+            if (directives.IsCustom(MapDir.View, name))
+            {
+                lines.Add($"        dto.{name} = this.__ShiftMap.InvokeView<{propType}>({accessor}, context, \"{name}\", dto.{name});");
+                lines.Add("");
+                return;
+            }
 
             if (withConvention)
             {
-                conv = ViewConvention(entityProps, dtoProp, compilation, "e");
+                var conv = ViewConvention(entityProps, dtoProp, compilation, accessor);
+                if (conv is not null)
+                {
+                    lines.Add($"        dto.{name} = {conv};");   // baked convention — no dictionary, no branch
+                    lines.Add("");
+                    return;
+                }
 
-                // Complex children are NOT auto-composed in the view direction — they compose only when
-                // explicitly told via ForViewChild(ren) (same principle as list/entity: the programmer decides
-                // how deep and in which direction). Such a member gets no convention (keeps its default until a
-                // ForView(Child) sets it) and is NOT flagged unmapped. A SelectDTO stays a convention (leaf).
-                if (conv is null && !TryGetComposableChild(entityProps, dtoProp, out _, out _, out _))
-                    unmapped.Add(dtoProp.Name);
+                // Automatic deep composition (view direction), up to maxDepth. A child object/collection is
+                // composed through its source-generated pair; beyond the cap (or a cycle edge) it is left at
+                // its default — an explicit ForViewChild(ren) still composes it past the cap.
+                if (TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out var isCollection))
+                {
+                    var key = PairKey(childEntity, childDto);
+
+                    if (ownerDepth + 1 <= maxDepth && !skippedEdges.Contains(ownerKey + "|" + name) &&
+                        pairs.TryGetValue(key, out _))
+                    {
+                        usedPairs.Add(key);
+                        var field = $"__shiftPair_{Fnv8(key)}";
+                        var src = $"{accessor}.{name}";
+
+                        lines.Add(isCollection
+                            ? $"        dto.{name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, __c => {field}.Map(__c, context)));"
+                            : $"        dto.{name} = {src} == null ? null : {field}.Map({src}, context);");
+                        lines.Add("");
+                    }
+
+                    return;   // composable child (composed or intentionally left for explicit/beyond-cap) — not "unmapped"
+                }
+
+                unmapped.Add(name);
+                return;
             }
 
-            if (conv is not null)
-            {
-                // One reusable call: the ForView customization wins, else the convention lambda runs.
-                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, context, \"{dtoProp.Name}\", static (e, sp) => {conv});");
-            }
-            else
-            {
-                // Customization-only member (base/framework field or unmapped): the customization if present,
-                // else keep the current value (what MapBaseFields set, or the DTO default). No if-guard.
-                lines.Add($"        dto.{dtoProp.Name} = this.__ShiftMap.ResolveView<{propType}>({accessor}, context, \"{dtoProp.Name}\", dto.{dtoProp.Name});");
-            }
-
-            lines.Add("");
+            // withConvention == false (base/handled field) and not customized → leave what MapBaseFields set.
         }
 
         var settable = AllProps(viewDto).Where(IsSettable).ToList();
@@ -676,35 +1002,75 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static List<string> BuildEntityBody(ITypeSymbol entity, ITypeSymbol viewDto, string entityName, string viewName, Compilation compilation)
+    private static (List<string> Lines, List<string> UsedPairs) BuildEntityBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
+        string entityName, string viewName, Compilation compilation, MapperDirectives directives, HashSet<string> attrIgnored,
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, int ownerDepth, int maxDepth)
     {
         var dtoProps = AllProps(viewDto).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var lines = new List<string>();
+        var usedPairs = new List<string>();
 
         void Emit(IPropertySymbol entityProp, bool withConvention)
         {
+            var name = entityProp.Name;
             var propType = Fq(entityProp.Type);
-            var conv = withConvention ? EntityConvention(dtoProps, entityProp, compilation, "d") : null;
 
-            if (conv is not null)
+            if (directives.IsIgnored(MapDir.Entity, name) || attrIgnored.Contains(name))
+                return;
+
+            if (directives.IsCustom(MapDir.Entity, name))
             {
-                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, context, \"{entityProp.Name}\", static (d, sp) => {conv});");
-            }
-            else if (IsEntityNavigation(entityProp.Type))
-            {
-                // Navigation: apply the customization if present, but NEVER read existing.<nav>
-                // (avoids triggering lazy loading) — so a guard, not the value-fallback overload.
-                var cast = $"global::System.Func<{viewName}, global::ShiftSoftware.ShiftEntity.Core.MappingContext, {propType}>";
-                lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{entityProp.Name}\", out var __e_{entityProp.Name}))");
-                lines.Add($"            existing.{entityProp.Name} = (({cast})__e_{entityProp.Name})(dto, context);");
-            }
-            else
-            {
-                // Key/audit/excluded scalar: the customization if present, else keep the existing value.
-                lines.Add($"        existing.{entityProp.Name} = this.__ShiftMap.ResolveEntity<{propType}>(dto, context, \"{entityProp.Name}\", existing.{entityProp.Name});");
+                if (IsEntityNavigation(entityProp.Type))
+                {
+                    // Navigation (e.g. ForEntityChildren): apply the customization but NEVER read existing.<nav>
+                    // (avoids lazy loading) — a guard, not the value-fallback.
+                    var cast = $"global::System.Func<{viewName}, global::ShiftSoftware.ShiftEntity.Core.MappingContext, {propType}>";
+                    lines.Add($"        if (this.__ShiftMap.TryGetEntityValue(\"{name}\", out var __e_{name}))");
+                    lines.Add($"            existing.{name} = (({cast})__e_{name})(dto, context);");
+                }
+                else
+                {
+                    lines.Add($"        existing.{name} = this.__ShiftMap.InvokeEntity<{propType}>(dto, context, \"{name}\", existing.{name});");
+                }
+
+                lines.Add("");
+                return;
             }
 
-            lines.Add("");
+            if (withConvention)
+            {
+                var conv = EntityConvention(dtoProps, entityProp, compilation, "dto");
+                if (conv is not null)
+                {
+                    lines.Add($"        existing.{name} = {conv};");   // baked convention
+                    lines.Add("");
+                }
+                return;
+            }
+
+            // Navigation with no customization → AUTOMATIC deep write (replace-with-new) up to maxDepth. Every
+            // child DTO becomes a NEW child entity via the pair's MapBack (pair this with a repository that owns
+            // the previous children, e.g. delete-and-recreate). Beyond the cap / a cycle edge it is left untouched.
+            if (IsEntityNavigation(entityProp.Type) && ownerDepth + 1 <= maxDepth &&
+                !skippedEdges.Contains(ownerKey + "|" + name) &&
+                TryGetEntityComposableChild(entityProp, dtoProps, out var childEntity, out var childDto, out var isCollection))
+            {
+                var key = PairKey(childEntity, childDto);
+
+                if (pairs.TryGetValue(key, out _))
+                {
+                    usedPairs.Add(key);
+                    var field = $"__shiftPair_{Fnv8(key)}";
+                    var src = $"dto.{name}";
+                    var childEntityFq = Fq(childEntity);
+
+                    lines.Add(isCollection
+                        ? $"        existing.{name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, __d => {field}.MapBack(__d, new {childEntityFq}(), context)));"
+                        : $"        existing.{name} = {src} == null ? null : {field}.MapBack({src}, new {childEntityFq}(), context);");
+                    lines.Add("");
+                }
+            }
+            // Excluded/audit or beyond-cap navigation with no customization → leave existing.
         }
 
         var settable = AllProps(entity).Where(IsSettable).ToList();
@@ -715,94 +1081,170 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         foreach (var entityProp in settable.Where(p => EntityExcludedMembers.Contains(p.Name) || IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: false);
 
-        return lines;
+        return (lines, usedPairs);
     }
 
-    private static List<string> BuildListAssignments(ITypeSymbol entity, ITypeSymbol listDto, Compilation compilation)
+    // Entity-side composable child: an entity navigation (collection or single) whose same-named DTO member is a
+    // pairable different-class DTO (collection or single). MapBack requires a parameterless child-entity ctor.
+    private static bool TryGetEntityComposableChild(IPropertySymbol entityProp, Dictionary<string, IPropertySymbol> dtoProps,
+        out ITypeSymbol childEntity, out ITypeSymbol childDto, out bool isCollection)
+    {
+        childEntity = null!;
+        childDto = null!;
+        isCollection = false;
+
+        if (!dtoProps.TryGetValue(entityProp.Name, out var dtoProp))
+            return false;
+
+        if (TryGetElement(entityProp.Type, out var entityElement) && TryGetElement(dtoProp.Type, out var dtoElement))
+        {
+            if (!IsPairable(entityElement, dtoElement) || entityElement is not INamedTypeSymbol { Constructors: var ctors } ||
+                !ctors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public))
+                return false;
+
+            childEntity = entityElement;
+            childDto = dtoElement;
+            isCollection = true;
+            return true;
+        }
+
+        if (IsPairable(entityProp.Type, dtoProp.Type) &&
+            entityProp.Type is INamedTypeSymbol { IsGenericType: false, Constructors: var singleCtors } &&
+            dtoProp.Type is INamedTypeSymbol { IsGenericType: false } &&
+            singleCtors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public))
+        {
+            childEntity = entityProp.Type;
+            childDto = dtoProp.Type;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static List<string> BuildListAssignments(ITypeSymbol entity, ITypeSymbol listDto, Compilation compilation,
+        MapperDirectives directives, HashSet<string> attrIgnored, Func<string, MapperDirectives> dirFor,
+        string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys)
     {
         var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var assignments = new List<string>();
 
         foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && p.Name != "Tags"))
         {
+            // Ignore → omit the binding (a ForList customization is still composed at runtime by ComposeList).
+            if (directives.IsIgnored(MapDir.List, dtoProp.Name) || attrIgnored.Contains(dtoProp.Name))
+                continue;
+
             // FK → ShiftEntitySelectDTO, inlined so the projection stays SQL-translatable (the ToSelectDTO
             // helper is a method call EF can't translate; a member-init + navigation access it can). A
-            // SelectDTO is a LEAF reference (id + name), so it maps by convention — unlike a complex child
-            // object or a collection, which are composed only when explicitly told via ForListChild(ren).
+            // SelectDTO is a LEAF reference (id + name), so it maps by convention.
             if (IsShiftType(dtoProp.Type, "ShiftEntitySelectDTO") &&
                 entityProps.TryGetValue(dtoProp.Name + "ID", out var listFk) && (IsLong(listFk.Type) || IsNullableLong(listFk.Type)))
             {
                 const string selectDto = "global::ShiftSoftware.ShiftEntity.Model.Dtos.ShiftEntitySelectDTO";
                 var text = entityProps.TryGetValue(dtoProp.Name, out var listNav) && HasStringName(listNav.Type)
-                    ? $"e.{dtoProp.Name} != null ? e.{dtoProp.Name}.Name : null"
+                    ? $"{accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.Name : null"
                     : "null";
 
                 assignments.Add(IsLong(listFk.Type)
-                    ? $"            {dtoProp.Name} = new {selectDto} {{ Value = e.{dtoProp.Name}ID.ToString(), Text = {text} }},"
-                    : $"            {dtoProp.Name} = e.{dtoProp.Name}ID == null ? null : new {selectDto} {{ Value = e.{dtoProp.Name}ID.Value.ToString(), Text = {text} }},");
+                    ? $"            {dtoProp.Name} = new {selectDto} {{ Value = {accessor}.{dtoProp.Name}ID.ToString(), Text = {text} }},"
+                    : $"            {dtoProp.Name} = {accessor}.{dtoProp.Name}ID == null ? null : new {selectDto} {{ Value = {accessor}.{dtoProp.Name}ID.Value.ToString(), Text = {text} }},");
                 continue;
             }
 
-            if (!entityProps.TryGetValue(dtoProp.Name, out var src))
-                continue;
-
-            if (IsImplicit(compilation, src.Type, dtoProp.Type))
+            // AUTOMATIC deep composition (list direction): a composable child collection/object is projected
+            // INLINE as a correlated member-init (SQL-translatable), recursively, up to maxDepth. Skipped when
+            // an explicit ForListChild(ren) is configured (that member is composed at runtime by ComposeList).
+            if (TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out var isCollection))
             {
-                assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name},");
-                continue;
+                var childKey = PairKey(childEntity, childDto);
+
+                if (!directives.IsCustom(MapDir.List, dtoProp.Name) &&
+                    ownerDepth + 1 <= maxDepth && !pathKeys.Contains(childKey))
+                {
+                    var src = $"{accessor}.{dtoProp.Name}";
+                    var param = $"__l{ownerDepth}";
+                    // Collection → the child is projected inside a Select lambda (param). Single object → the child
+                    // is projected directly off the source navigation, so there is NO new parameter to introduce.
+                    var childAccessor = isCollection ? param : src;
+                    var childPath = new HashSet<string>(pathKeys, StringComparer.Ordinal) { childKey };
+                    var childBody = BuildListAssignments(childEntity, childDto, compilation,
+                        dirFor(TripleKey(childEntity, childDto, childDto)), CollectAttrIgnored(childEntity, childDto),
+                        dirFor, childAccessor, ownerDepth + 1, maxDepth, childPath);
+                    var childInit = $"new {Fq(childDto)}\n            {{\n{string.Join("\n", childBody)}\n            }}";
+
+                    assignments.Add(isCollection
+                        ? $"            {dtoProp.Name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, {param} => {childInit})),"
+                        : $"            {dtoProp.Name} = {src} == null ? null : {childInit},");
+                }
+
+                continue;   // composable child handled (composed, or left for ComposeList / beyond cap / cycle)
             }
 
-            if (UnwrapNullable(src.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
+            if (!entityProps.TryGetValue(dtoProp.Name, out var src2))
+                continue;
+
+            if (IsImplicit(compilation, src2.Type, dtoProp.Type))
             {
-                assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name} ?? default,");
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name},");
                 continue;
             }
 
-            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsLong(src.Type))
+            if (UnwrapNullable(src2.Type) is { } narrowed && SymbolEqualityComparer.Default.Equals(narrowed, dtoProp.Type))
             {
-                assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name}.ToString(),");
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name} ?? default,");
                 continue;
             }
 
-            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableLong(src.Type))
+            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsLong(src2.Type))
             {
-                assignments.Add($"            {dtoProp.Name} = e.{dtoProp.Name}.HasValue ? e.{dtoProp.Name}.Value.ToString() : null,");
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name}.ToString(),");
                 continue;
             }
 
-            var srcEnum = src.Type.TypeKind == TypeKind.Enum ? src.Type : UnwrapNullable(src.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
+            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableLong(src2.Type))
+            {
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name}.HasValue ? {accessor}.{dtoProp.Name}.Value.ToString() : null,");
+                continue;
+            }
+
+            var srcEnum = src2.Type.TypeKind == TypeKind.Enum ? src2.Type : UnwrapNullable(src2.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
             if (srcEnum is not null)
             {
-                if (dtoProp.Type.SpecialType == SpecialType.System_Int32 && src.Type.TypeKind == TypeKind.Enum)
-                    assignments.Add($"            {dtoProp.Name} = (int)e.{dtoProp.Name},");
+                if (dtoProp.Type.SpecialType == SpecialType.System_Int32 && src2.Type.TypeKind == TypeKind.Enum)
+                    assignments.Add($"            {dtoProp.Name} = (int){accessor}.{dtoProp.Name},");
                 else if (UnwrapNullable(dtoProp.Type)?.SpecialType == SpecialType.System_Int32)
-                    assignments.Add($"            {dtoProp.Name} = (int?)e.{dtoProp.Name},");
+                    assignments.Add($"            {dtoProp.Name} = (int?){accessor}.{dtoProp.Name},");
             }
         }
 
         return assignments;
     }
 
-    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName)
+    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives, HashSet<string> attrIgnored)
     {
         var lines = new List<string>();
 
         void Emit(IPropertySymbol prop, bool withConvention)
         {
+            var name = prop.Name;
             var propType = Fq(prop.Type);
+
+            if (directives.IsIgnored(MapDir.Copy, name) || attrIgnored.Contains(name))
+                return;
+
+            if (directives.IsCustom(MapDir.Copy, name))
+            {
+                lines.Add($"        target.{name} = this.__ShiftMap.InvokeCopy<{propType}>(source, context, \"{name}\", target.{name});");
+                lines.Add("");
+                return;
+            }
 
             if (withConvention)
             {
-                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, context, \"{prop.Name}\", static (s, sp) => s.{prop.Name});");
+                lines.Add($"        target.{name} = source.{name};");   // baked copy
+                lines.Add("");
             }
-            else
-            {
-                // Excluded member (key/flags — all scalar): the customization if present, else keep target's value
-                // (so e.g. ReloadAfterSave is preserved, never copied from source). No if-guard.
-                lines.Add($"        target.{prop.Name} = this.__ShiftMap.ResolveCopy<{propType}>(source, context, \"{prop.Name}\", target.{prop.Name});");
-            }
-
-            lines.Add("");
+            // Excluded member (key/flags) with no customization → keep target's value (e.g. ReloadAfterSave).
         }
 
         var copyable = AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)).ToList();
@@ -830,7 +1272,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     // ─────────────────────────────────── emission: pair mappers ───────────────────────────────────
 
     private static void EmitPair(SourceProductionContext spc, string key, PairInfo pair,
-        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation,
+        MapperDirectives directives, Func<string, MapperDirectives> dirFor, int ownerDepth, int maxDepth)
     {
         var entityName = Fq(pair.Entity);
         var dtoName = Fq(pair.Dto);
@@ -853,8 +1296,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var sb = StartClass(ns, pair.ClassName, declaration, builderType, configurable, entityName, dtoName);
 
-        var view = BuildViewBody(key, pair.Entity, pair.Dto, entityName, dtoName, "source", pairs, skippedEdges, compilation);
-        AppendPairFields(sb, view.UsedPairKeys, pairs);
+        var attrIgnored = CollectAttrIgnored(pair.Entity, pair.Dto);
+        var view = BuildViewBody(key, pair.Entity, pair.Dto, entityName, dtoName, "source", pairs, skippedEdges, compilation, directives, attrIgnored, ownerDepth, maxDepth);
+        var entityBody = BuildEntityBody(key, pair.Entity, pair.Dto, entityName, dtoName, compilation, directives, attrIgnored, pairs, skippedEdges, ownerDepth, maxDepth);
+        AppendPairFields(sb, view.UsedPairKeys.Concat(entityBody.UsedPairs).ToList(), pairs);
 
         var hasUserMap = pair.UserClass is not null && HasUserMethod(pair.UserClass, "Map");
         var hasUserMapGen = pair.UserClass is not null && HasUserMethod(pair.UserClass, "MapGenerated");
@@ -884,7 +1329,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private {entityName} MapBackGenerated({dtoName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildEntityBody(pair.Entity, pair.Dto, entityName, dtoName, compilation)));
+            sb.Append(string.Join("\n", entityBody.Lines));
             sb.AppendLine("        return existing;");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -900,7 +1345,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         // Conventions-only, SQL-translatable projection — used by ForListChildren/ForListChild.
         sb.AppendLine($"    public static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {dtoName}>> Projection = e => new {dtoName}");
         sb.AppendLine("    {");
-        sb.Append(string.Join("\n", BuildListAssignments(pair.Entity, pair.Dto, compilation)));
+        sb.Append(string.Join("\n", BuildListAssignments(pair.Entity, pair.Dto, compilation, directives, attrIgnored,
+            dirFor, "e", ownerDepth, maxDepth, new HashSet<string>(StringComparer.Ordinal) { key })));
         sb.AppendLine();
         sb.AppendLine("    };");
         sb.AppendLine("}");
@@ -927,7 +1373,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     // ─────────────────────────────────── emission: triple mappers ───────────────────────────────────
 
     private static void EmitTriple(SourceProductionContext spc, string key, TripleModel triple, INamedTypeSymbol? userClass,
-        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation)
+        Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, Compilation compilation,
+        MapperDirectives directives, Func<string, MapperDirectives> dirFor, int maxDepth)
     {
         var entityName = Fq(triple.Entity);
         var listName = Fq(triple.ListDto);
@@ -956,8 +1403,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var sb = StartClass(ns, className, declaration, builderType, configurable, entityName, listName);
 
-        var view = BuildViewBody(key, triple.Entity, triple.ViewDto, entityName, viewName, "entity", pairs, skippedEdges, compilation);
-        AppendPairFields(sb, view.UsedPairKeys, pairs);
+        var attrIgnored = CollectAttrIgnored(triple.Entity, triple.ViewDto, triple.ListDto);
+        var view = BuildViewBody(key, triple.Entity, triple.ViewDto, entityName, viewName, "entity", pairs, skippedEdges, compilation, directives, attrIgnored, 0, maxDepth);
+        var entityBody = BuildEntityBody(key, triple.Entity, triple.ViewDto, entityName, viewName, compilation, directives, attrIgnored, pairs, skippedEdges, 0, maxDepth);
+        AppendPairFields(sb, view.UsedPairKeys.Concat(entityBody.UsedPairs).ToList(), pairs);
 
         bool HasUser(string name) => userClass is not null && HasUserMethod(userClass, name);
 
@@ -984,7 +1433,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildEntityBody(triple.Entity, triple.ViewDto, entityName, viewName, compilation)));
+            sb.Append(string.Join("\n", entityBody.Lines));
             sb.AppendLine("        return existing;");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -1007,7 +1456,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             sb.AppendLine($"    private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftListProjection = e => new {listName}");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildListAssignments(triple.Entity, triple.ListDto, compilation)));
+            sb.Append(string.Join("\n", BuildListAssignments(triple.Entity, triple.ListDto, compilation, directives, attrIgnored,
+                dirFor, "e", 0, maxDepth, new HashSet<string>(StringComparer.Ordinal))));
             sb.AppendLine();
             sb.AppendLine("    };");
             sb.AppendLine();
@@ -1037,7 +1487,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName)));
+            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored)));
             sb.AppendLine("    }");
             sb.AppendLine();
 

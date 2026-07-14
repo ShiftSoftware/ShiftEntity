@@ -26,6 +26,15 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Value)> listValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Source, Type ChildEntity, Type ChildDto, bool IsCollection, Func<LambdaExpression> Projection)> listChildren = new(StringComparer.Ordinal);
 
+    // Build-time markers. The source generator reads Ignore/MaxDepth from the CALL SYNTAX at compile time
+    // (it bakes the decision into the generated code); the runtime records are kept only so the fluent
+    // calls compile and so the dynamic-config opt-out path can honour them.
+    private readonly HashSet<string> ignoredView = new(StringComparer.Ordinal);
+    private readonly HashSet<string> ignoredEntity = new(StringComparer.Ordinal);
+    private readonly HashSet<string> ignoredList = new(StringComparer.Ordinal);
+    private readonly HashSet<string> ignoredCopy = new(StringComparer.Ordinal);
+    private int? maxDepth;
+
     private static readonly MethodInfo EnumerableSelect = typeof(Enumerable).GetMethods()
         .First(m => m.Name == nameof(Enumerable.Select) && m.GetParameters().Length == 2 &&
                     m.GetParameters()[1].ParameterType.GetGenericTypeDefinition() == typeof(Func<,>));
@@ -81,6 +90,61 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     {
         var memberInfo = MemberOf(member);
         this.listValues[memberInfo.Name] = (memberInfo, value);
+        return this;
+    }
+
+    // ─── ignore + depth: build-time markers the generator reads from the call syntax ───
+
+    /// <summary>
+    /// Excludes a member from generated mapping in ALL four directions (the member is OMITTED from the
+    /// generated bodies; a complex child's deep subtree is pruned). Build-time marker — the generator
+    /// reads this call. The selector is a view-DTO property; the member NAME is matched across directions.
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> Ignore<TProp>(Expression<Func<TViewDTO, TProp>> member)
+    {
+        var name = MemberOf(member).Name;
+        this.ignoredView.Add(name);
+        this.ignoredEntity.Add(name);
+        this.ignoredList.Add(name);
+        this.ignoredCopy.Add(name);
+        return this;
+    }
+
+    /// <summary>Excludes a member from <c>MapToView</c> only. Build-time marker.</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> IgnoreView<TProp>(Expression<Func<TViewDTO, TProp>> member)
+    {
+        this.ignoredView.Add(MemberOf(member).Name);
+        return this;
+    }
+
+    /// <summary>Excludes a member from <c>MapToEntity</c> only. Build-time marker.</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> IgnoreEntity<TProp>(Expression<Func<TEntity, TProp>> member)
+    {
+        this.ignoredEntity.Add(MemberOf(member).Name);
+        return this;
+    }
+
+    /// <summary>Excludes a member from <c>MapToList</c> only. Build-time marker.</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> IgnoreList<TProp>(Expression<Func<TListDTO, TProp>> member)
+    {
+        this.ignoredList.Add(MemberOf(member).Name);
+        return this;
+    }
+
+    /// <summary>Excludes a member from <c>CopyEntity</c> only. Build-time marker.</summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> IgnoreCopy<TProp>(Expression<Func<TEntity, TProp>> member)
+    {
+        this.ignoredCopy.Add(MemberOf(member).Name);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum AUTO deep-mapping depth for this mapper (see <see cref="ShiftEntityMapperMaxDepthAttribute"/>).
+    /// Build-time marker — the generator reads this call. Explicit <c>ForXxxChild(ren)</c> composes beyond the cap.
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> MaxDepth(int depth)
+    {
+        this.maxDepth = depth;
         return this;
     }
 
@@ -333,6 +397,33 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     public TProp ResolveCopy<TProp>(TEntity source, MappingContext serviceProvider, string memberName, TProp current)
         => this.copyValues.TryGetValue(memberName, out var custom)
             ? ((Func<TEntity, MappingContext, TProp>)custom)(source, serviceProvider)
+            : current;
+
+    // ─── build-time-baked references: the generated code calls these for members the generator KNOWS are
+    // customized (no per-member custom-vs-convention branch — the decision was made at compile time). The
+    // customization VALUE stays a runtime delegate; only present customizations are invoked, otherwise the
+    // member keeps whatever it already holds (the DTO/target default), so a mapper used without its config
+    // never throws. ───
+
+    /// <summary>Invokes the registered <c>ForView</c> customization for <paramref name="memberName"/>, or returns <paramref name="current"/> if none is registered.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp InvokeView<TProp>(TEntity entity, MappingContext context, string memberName, TProp current = default!)
+        => this.viewValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(entity, context)
+            : current;
+
+    /// <summary>Invokes the registered <c>ForEntity</c> customization for <paramref name="memberName"/>, or returns <paramref name="current"/> if none is registered.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp InvokeEntity<TProp>(TViewDTO dto, MappingContext context, string memberName, TProp current = default!)
+        => this.entityValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TViewDTO, MappingContext, TProp>)custom)(dto, context)
+            : current;
+
+    /// <summary>Invokes the registered <c>ForCopy</c> customization for <paramref name="memberName"/>, or returns <paramref name="current"/> if none is registered.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp InvokeCopy<TProp>(TEntity source, MappingContext context, string memberName, TProp current = default!)
+        => this.copyValues.TryGetValue(memberName, out var custom)
+            ? ((Func<TEntity, MappingContext, TProp>)custom)(source, context)
             : current;
 
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
