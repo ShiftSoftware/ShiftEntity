@@ -14,7 +14,7 @@ public class UserModel :
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public string? IntegrationId { get; set; }
-    public bool BuiltIn { get; set; }
+    public bool IsProtected { get; set; }
     public long? CompanyID { get; set; }
     public long? CompanyBranchID { get; set; }
     public long? RegionID { get; set; }

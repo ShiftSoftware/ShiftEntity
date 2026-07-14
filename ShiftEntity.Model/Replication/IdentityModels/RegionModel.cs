@@ -10,7 +10,7 @@ public class RegionModel : ReplicationModel, IEntityHasRegion<RegionModel>, IEnt
     public string Name { get; set; } = default!;
     public string? IntegrationId { get; set; } = default!;
     public string? ShortCode { get; set; }
-    public bool BuiltIn { get; set; }
+    public bool IsProtected { get; set; }
     public string ItemType { get; set; } = default!;
     public string? Flag { get; set; }
     public int? DisplayOrder { get; set; }

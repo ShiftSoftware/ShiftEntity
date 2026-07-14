@@ -31,7 +31,7 @@ public class CompanyBranchModel : ReplicationModel,
     public string? WorkingHours { get; set; }
     public string? WorkingDays { get; set; }
 
-    public bool BuiltIn { get; set; }
+    public bool IsProtected { get; set; }
 
     public CityCompanyBranchModel City { get; set; }
     public CompanyModel Company { get; set; }

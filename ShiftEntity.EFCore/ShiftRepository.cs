@@ -1,6 +1,7 @@
 using AutoMapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
@@ -70,6 +71,17 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         this.identityClaimProvider = db.GetService<IdentityClaimProvider>();
         this.currentUserProvider = db.GetService<ICurrentUserProvider>();
         this.ShiftRepositoryOptions = new();
+
+        // Baseline the data-level-access options from a host-registered default when one exists (e.g. ShiftIdentity
+        // registers its ShiftIdentityDefaultDataLevelAccessOptions). A custom repository that assigns
+        // ShiftRepositoryOptions.DefaultDataLevelAccessOptions in its constructor body still wins — that runs after
+        // this base constructor. The value here matters for the built-in / auto-CRUD repository path, which has no
+        // such constructor: without this it would fall back to a new() (all default filters enabled) instead of the
+        // host's configured default. Absent a registration this resolves to null and the new() default stands, so
+        // consumers that don't register one are unaffected.
+        var registeredDefaultDataLevelAccessOptions = TryGetService<DefaultDataLevelAccessOptions>(db);
+        if (registeredDefaultDataLevelAccessOptions is not null)
+            this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions = registeredDefaultDataLevelAccessOptions;
 
         _hasUniqueHashInterface = typeof(EntityType).GetInterfaces()
             .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
@@ -219,6 +231,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         bool disableGlobalFilters
     )
     {
+        // Protected-row guard: an existing row marked IsProtected cannot be edited (checked before mapping, so the
+        // incoming DTO can't overwrite the flag first). On Insert the entity is a fresh new() with IsProtected = false,
+        // so this only blocks updates to protected/seeded rows — matching the per-repository guard it replaces. Opt in
+        // by implementing IShiftEntityProtectable on the entity.
+        if (entity is IShiftEntityProtectable { IsProtected: true })
+            throw new ShiftEntityException(
+                new Message("Forbidden", "This record is protected and cannot be modified or deleted."), (int)HttpStatusCode.Forbidden);
+
         entity = MapToEntity(dto, entity, new MappingContext(MapperServiceProvider, actionType));
 
         if (_hasTaggableInterface && dto is IShiftEntityTaggableDTO taggableDto && entity is IShiftEntityTaggable taggableEntity)
@@ -535,8 +555,38 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             identityClaimProvider.GetCompanyID(),
             identityClaimProvider.GetCompanyBranchID());
 
+    // Runs every DI-registered IShiftEntitySaveValidator against the pending unit of work before the repository
+    // persists it — the seam that lets cross-cutting, save-time rules (e.g. ShiftIdentity's feature locking) live
+    // outside any repository. Only repository saves reach here; direct DbContext saves (seeding/replication) do not.
+    // Resolution is optional: hosts that register no validator (or provide no application service provider) skip it.
+    private void RunSaveValidators()
+    {
+        // Resolve from the application (request-scoped) service provider — the same one the repository uses for its
+        // other on-demand services. GetServices never returns null (empty when none are registered), and resolves
+        // scoped validators correctly. EF's db.GetService<IEnumerable<T>>() does not bridge IEnumerable to the app
+        // provider, so it can't be used here.
+        var validators = MapperServiceProvider.GetServices<IShiftEntitySaveValidator>().ToList();
+        if (validators.Count == 0)
+            return;
+
+        List<EntityEntry>? pendingWrites = null;
+        foreach (var entry in db.ChangeTracker.Entries())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                (pendingWrites ??= new()).Add(entry);
+        }
+
+        if (pendingWrites is null)
+            return;
+
+        foreach (var validator in validators)
+            validator.Validate(pendingWrites);
+    }
+
     public virtual async Task<int> SaveChangesAsync()
     {
+        RunSaveValidators();
+
         var now = DateTimeOffset.UtcNow;
         var hashIdService = this.db.GetService<IHashIdService>();
         long? userId = this.currentUserProvider?.GetUser()?.GetUserID(hashIdService);
@@ -808,6 +858,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
+        // Protected-row guard (see UpsertAsync): a protected row can't be deleted. Checked before the data-level check
+        // so a protected row is reported as protected rather than as an access denial — matching the per-repository
+        // guard it replaces.
+        if (entity is IShiftEntityProtectable { IsProtected: true })
+            throw new ShiftEntityException(
+                new Message("Forbidden", "This record is protected and cannot be modified or deleted."), (int)HttpStatusCode.Forbidden);
+
         if (!disableDefaultDataLevelAccess)
         {
             // Delete ⇒ the Delete level (D6); denial happens before the soft-delete flag is touched.

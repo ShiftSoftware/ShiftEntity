@@ -11,7 +11,7 @@ public class CityModel : ReplicationModel,
     public string? IntegrationId { get; set; }
     public long? CountryID { get; set; } = default!;
     public long? RegionID { get; set; } = default!;
-    public bool BuiltIn { get; set; }
+    public bool IsProtected { get; set; }
     public string ItemType { get; set; } = default!;
     public long? CityID { get; set; }
     public int? DisplayOrder { get; set; }

@@ -15,7 +15,7 @@ public class CompanyModel : ReplicationModel, IEntityHasCompany<CompanyModel>
     public string? HQEmail { get; set; }
     public string? HQAddress { get; set; }
     public string? Website { get; set; }
-    public bool BuiltIn { get; set; }
+    public bool IsProtected { get; set; }
     public DateTime? TerminationDate { get; set; }
     public Dictionary<string, CustomField>? CustomFields { get; set; }
     public long? ParentCompanyID { get; set; }
