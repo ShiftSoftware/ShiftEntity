@@ -33,7 +33,6 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private readonly HashSet<string> ignoredEntity = new(StringComparer.Ordinal);
     private readonly HashSet<string> ignoredList = new(StringComparer.Ordinal);
     private readonly HashSet<string> ignoredCopy = new(StringComparer.Ordinal);
-    private int? maxDepth;
 
     private static readonly MethodInfo EnumerableSelect = typeof(Enumerable).GetMethods()
         .First(m => m.Name == nameof(Enumerable.Select) && m.GetParameters().Length == 2 &&
@@ -139,14 +138,12 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     }
 
     /// <summary>
-    /// Sets the maximum AUTO deep-mapping depth for this mapper (see <see cref="ShiftEntityMapperMaxDepthAttribute"/>).
-    /// Build-time marker — the generator reads this call. Explicit <c>ForXxxChild(ren)</c> composes beyond the cap.
+    /// Sets the maximum AUTOMATIC deep-mapping depth for this mapper (equivalent to
+    /// <see cref="ShiftEntityMapperMaxDepthAttribute"/>). Build-time marker — the generator reads the CONSTANT
+    /// argument of this call and bakes the cap into the generated code. Only automatic composition is bounded;
+    /// explicit <c>ForXxxChild(ren)</c> composes beyond the cap. (A non-constant argument can't be baked.)
     /// </summary>
-    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> MaxDepth(int depth)
-    {
-        this.maxDepth = depth;
-        return this;
-    }
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> MaxDepth(int depth) => this;
 
     // ─── deep-mapping sugar: wire the generated PAIR mappers explicitly, without boilerplate ───
 

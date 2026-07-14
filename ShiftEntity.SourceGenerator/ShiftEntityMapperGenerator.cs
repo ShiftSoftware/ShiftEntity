@@ -197,12 +197,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var conditional = IsInConditionalContext(invocation);
         var location = invocation.GetLocation();
 
+        // map.MaxDepth(constant) — read the CONSTANT depth at build time (a computed value can't be baked).
         if (name == "MaxDepth")
         {
             var arg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
             if (arg is not null && ctx.SemanticModel.GetConstantValue(arg) is { HasValue: true, Value: int depth })
                 return new ConfigCall(key, MapKind.MaxDepth, MapDir.All, null, depth, conditional, location, name);
-            return null;   // non-constant depth can't be baked
+            return null;
         }
 
         var member = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
@@ -626,23 +627,28 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             Discover(key, ShortPair(key), seed.Entity, seed.Dto);
         }
 
-        // 3b. Shortest composition depth per pair (BFS from every root view DTO at depth 0 → its children at
-        // depth 1, …). A pair reached shallowest at depth d auto-composes its own children (depth d+1) iff
-        // d+1 ≤ maxDepth. Independent of the DFS above so the depth is a true shortest path.
-        var minDepth = ComputeMinDepth(triples.Values.Select(t => t.Triple), pairs, compilation);
-
-        // Resolves the effective config + depth for a mapper keyed by its (entity,list,view) triple.
+        // Resolves the effective config + max depth for a mapper keyed by its (entity,list,view) triple.
+        // Max depth comes ONLY from [ShiftEntityMapperMaxDepth] (repo/mapper class → entity → assembly default).
         MapperDirectives Dir(string key) => directives.TryGetValue(key, out var d) ? d : MapperDirectives.Empty;
+        // Fluent map.MaxDepth(n) (in directives) wins; else the [ShiftEntityMapperMaxDepth] attribute; else default.
         int MaxDepthFor(string key, int? repoOrClass) =>
             (directives.TryGetValue(key, out var d) ? d.MaxDepth : null) ?? repoOrClass ?? assemblyMaxDepth;
+
+        // 3b. BFS from every root view DTO (depth 0 → children depth 1 …) carrying the ROOT's max depth, so each
+        // pair records both its shortest composition depth AND the (most permissive) root cap that reaches it.
+        // A pair reached shallowest at depth d auto-composes its own children (depth d+1) iff d+1 ≤ that root cap —
+        // this is what makes View/Entity honour the per-repo cap at EVERY level (like List), at BUILD time.
+        var rootsWithDepth = triples.Select(kv =>
+            (kv.Value.Triple, MaxDepthFor(kv.Key, kv.Value.Triple.MaxDepth ?? ReadMaxDepthAttr(kv.Value.UserClass ?? (ISymbol)kv.Value.Triple.Entity))));
+        var (minDepth, pairMaxDepth) = ComputeMinDepth(rootsWithDepth, pairs, compilation);
 
         // 4. Emit pair mappers.
         foreach (var (key, pair) in pairs.Select(kv => (kv.Key, kv.Value)))
         {
             var pairTripleKey = TripleKey(pair.Entity, pair.Dto, pair.Dto);
             var depth = minDepth.TryGetValue(key, out var md) ? md : 1;
-            EmitPair(spc, key, pair, pairs, skippedEdges, compilation,
-                Dir(pairTripleKey), Dir, depth, MaxDepthFor(pairTripleKey, ReadMaxDepthAttr(pair.UserClass ?? (ISymbol)pair.Entity)));
+            var cap = pairMaxDepth.TryGetValue(key, out var pm) ? pm : assemblyMaxDepth;
+            EmitPair(spc, key, pair, pairs, skippedEdges, compilation, Dir(pairTripleKey), Dir, depth, cap);
         }
 
         // 5. Emit triple mappers.
@@ -651,19 +657,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 Dir(key), Dir, MaxDepthFor(key, triple.MaxDepth ?? ReadMaxDepthAttr(userClass ?? (ISymbol)triple.Entity)));
     }
 
-    // BFS shortest composition depth for every discovered pair, from each triple root (root children = depth 1).
-    private static Dictionary<string, int> ComputeMinDepth(
-        IEnumerable<TripleModel> roots, Dictionary<string, PairInfo> pairs, Compilation compilation)
+    // BFS shortest composition depth + effective root cap for every discovered pair (root children = depth 1).
+    private static (Dictionary<string, int> MinDepth, Dictionary<string, int> PairMaxDepth) ComputeMinDepth(
+        IEnumerable<(TripleModel Triple, int MaxDepth)> roots, Dictionary<string, PairInfo> pairs, Compilation compilation)
     {
         var minDepth = new Dictionary<string, int>(StringComparer.Ordinal);
-        var queue = new Queue<(ITypeSymbol Entity, ITypeSymbol Dto, int Depth)>();
+        var pairMaxDepth = new Dictionary<string, int>(StringComparer.Ordinal);
+        var queue = new Queue<(ITypeSymbol Entity, ITypeSymbol Dto, int Depth, int RootMax)>();
 
-        foreach (var root in roots)
-            queue.Enqueue((root.Entity, root.ViewDto, 0));
+        foreach (var (triple, max) in roots)
+            queue.Enqueue((triple.Entity, triple.ViewDto, 0, max));
 
         while (queue.Count > 0)
         {
-            var (entity, dto, depth) = queue.Dequeue();
+            var (entity, dto, depth, rootMax) = queue.Dequeue();
             var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
 
             foreach (var dtoProp in AllProps(dto).Where(IsSettable))
@@ -676,17 +683,21 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 var key = PairKey(childEntity, childDto);
                 var childDepth = depth + 1;
 
+                // Most permissive root cap reaching this pair (a shared pair used by several roots composes as
+                // deep as any of them allows; distinct-DTO endpoints — the usual case — have exactly one root).
+                pairMaxDepth[key] = pairMaxDepth.TryGetValue(key, out var pm) ? System.Math.Max(pm, rootMax) : rootMax;
+
                 if (minDepth.TryGetValue(key, out var existing) && existing <= childDepth)
                     continue;   // already reached at least this shallow — no improvement, prevents cycles looping
 
                 minDepth[key] = childDepth;
 
                 if (pairs.ContainsKey(key))
-                    queue.Enqueue((childEntity, childDto, childDepth));
+                    queue.Enqueue((childEntity, childDto, childDepth, rootMax));
             }
         }
 
-        return minDepth;
+        return (minDepth, pairMaxDepth);
     }
 
     private static string TripleKey(ITypeSymbol e, ITypeSymbol l, ITypeSymbol v) => $"{Fq(e)}|{Fq(l)}|{Fq(v)}";
@@ -707,6 +718,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
     { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
+
+    // Deep-copied CHILD entities keep their real keys (a faithful copy — this is what ReloadAfterSave needs);
+    // only the internal framework flags are skipped. (The ROOT target keeps its own ID via CopyExcludedMembers.)
+    private static readonly HashSet<string> CloneExcludedMembers = new(StringComparer.Ordinal)
+    { "ReloadAfterSave", "AuditFieldsAreSet" };
 
     private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName)
     {
@@ -1220,7 +1236,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return assignments;
     }
 
-    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives, HashSet<string> attrIgnored)
+    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives,
+        HashSet<string> attrIgnored, int maxDepth)
     {
         var lines = new List<string>();
 
@@ -1239,9 +1256,23 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return;
             }
 
+            // AUTOMATIC deep clone of an OWNED child COLLECTION (1:N) into NEW instances (keys/audit excluded ⇒
+            // insert-as-new), recursively up to maxDepth. Only collections are cloned — single navigations are
+            // references (their FK scalar is copied) and are NOT duplicated. Use it for "duplicate this aggregate";
+            // ReloadAfterSave refreshes via ShallowCopyTo, so it never hits this clone.
+            if (withConvention && 0 + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity))
+            {
+                var param = "__k0";
+                var childPath = new HashSet<string>(StringComparer.Ordinal) { Fq(entity), Fq(childEntity) };
+                var childInit = $"new {Fq(childEntity)}\n        {{\n{string.Join("\n", BuildCloneInit(childEntity, param, 1, maxDepth, childPath))}\n        }}";
+                lines.Add($"        target.{name} = source.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(source.{name}, {param} => {childInit}));");
+                lines.Add("");
+                return;
+            }
+
             if (withConvention)
             {
-                lines.Add($"        target.{name} = source.{name};");   // baked copy
+                lines.Add($"        target.{name} = source.{name};");   // baked copy (scalar / single-nav reference)
                 lines.Add("");
             }
             // Excluded member (key/flags) with no customization → keep target's value (e.g. ReloadAfterSave).
@@ -1254,6 +1285,52 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         foreach (var prop in copyable.Where(p => CopyExcludedMembers.Contains(p.Name)))
             Emit(prop, withConvention: false);
+
+        return lines;
+    }
+
+    // An OWNED child collection eligible for deep clone: a collection of ShiftEntity children (parameterless
+    // ctor). "Tags" (the framework M:N) is never cloned — it points at shared rows.
+    private static bool TryGetCopyCloneCollection(IPropertySymbol prop, out ITypeSymbol childEntity)
+    {
+        childEntity = null!;
+
+        if (prop.Name == "Tags" || !TryGetElement(prop.Type, out var element) || !DerivesFromShiftEntityBase(element) ||
+            element is not INamedTypeSymbol named ||
+            !named.Constructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public))
+            return false;
+
+        childEntity = element;
+        return true;
+    }
+
+    // Faithful member-init copy of a child entity: everything is copied AS-IS (scalars, FK columns, and the
+    // real keys) EXCEPT the internal framework flags; owned child collections are deep-copied recursively (to
+    // maxDepth); a single navigation is REFERENCE-copied (the copy points at the SAME referenced row — never a
+    // duplicate). Keeping the keys is what makes ReloadAfterSave correct.
+    private static List<string> BuildCloneInit(ITypeSymbol entity, string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys)
+    {
+        var lines = new List<string>();
+
+        foreach (var prop in AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)))
+        {
+            var name = prop.Name;
+
+            if (CloneExcludedMembers.Contains(name))
+                continue;
+
+            if (ownerDepth + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity) && !pathKeys.Contains(Fq(childEntity)))
+            {
+                var param = $"__k{ownerDepth}";
+                var childPath = new HashSet<string>(pathKeys, StringComparer.Ordinal) { Fq(childEntity) };
+                var childInit = $"new {Fq(childEntity)}\n            {{\n{string.Join("\n", BuildCloneInit(childEntity, param, ownerDepth + 1, maxDepth, childPath))}\n            }}";
+                lines.Add($"            {name} = {accessor}.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({accessor}.{name}, {param} => {childInit})),");
+                continue;
+            }
+
+            // scalar / FK / real key, OR a single-nav or non-owned collection → reference-copy (same instance).
+            lines.Add($"            {name} = {accessor}.{name},");
+        }
 
         return lines;
     }
@@ -1487,7 +1564,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored)));
+            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored, maxDepth)));
             sb.AppendLine("    }");
             sb.AppendLine();
 
