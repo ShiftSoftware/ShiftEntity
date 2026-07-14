@@ -849,9 +849,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
-                    // Refresh the tracked entity from the fresh DB load via the mapper. CopyEntity is a FAITHFUL
-                    // deep copy — owned child collections are copied with their real keys, single navigations are
-                    // reference-copied — so the reloaded graph (incl. child IDs) is correct.
+                    // Refresh the tracked entity from the fresh DB load via the mapper's CopyEntity (a top-level
+                    // copy: scalars + navigation references, real keys preserved).
                     CopyEntity(freshEntity, trackedEntity, new MappingContext(MapperServiceProvider));
             }
         }

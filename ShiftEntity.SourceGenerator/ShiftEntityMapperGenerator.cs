@@ -719,11 +719,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
     { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
 
-    // Deep-copied CHILD entities keep their real keys (a faithful copy — this is what ReloadAfterSave needs);
-    // only the internal framework flags are skipped. (The ROOT target keeps its own ID via CopyExcludedMembers.)
-    private static readonly HashSet<string> CloneExcludedMembers = new(StringComparer.Ordinal)
-    { "ReloadAfterSave", "AuditFieldsAreSet" };
-
     private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName)
     {
         var sb = new StringBuilder();
@@ -1236,8 +1231,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return assignments;
     }
 
-    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives,
-        HashSet<string> attrIgnored, int maxDepth)
+    // CopyEntity is a TOP-LEVEL (shallow) copy — entity → entity, same type, so every property is copied as-is
+    // (scalars + navigation REFERENCES), excluding keys/flags. No auto deep-clone: it's used by ReloadAfterSave
+    // (a faithful refresh — nav references keep real keys) and copying child collections by reference is correct
+    // there. Deep or custom copy is done EXPLICITLY by the programmer (ForCopy / ForCopyChild).
+    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives, HashSet<string> attrIgnored)
     {
         var lines = new List<string>();
 
@@ -1256,23 +1254,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return;
             }
 
-            // AUTOMATIC deep clone of an OWNED child COLLECTION (1:N) into NEW instances (keys/audit excluded ⇒
-            // insert-as-new), recursively up to maxDepth. Only collections are cloned — single navigations are
-            // references (their FK scalar is copied) and are NOT duplicated. Use it for "duplicate this aggregate";
-            // ReloadAfterSave refreshes via ShallowCopyTo, so it never hits this clone.
-            if (withConvention && 0 + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity))
-            {
-                var param = "__k0";
-                var childPath = new HashSet<string>(StringComparer.Ordinal) { Fq(entity), Fq(childEntity) };
-                var childInit = $"new {Fq(childEntity)}\n        {{\n{string.Join("\n", BuildCloneInit(childEntity, param, 1, maxDepth, childPath))}\n        }}";
-                lines.Add($"        target.{name} = source.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(source.{name}, {param} => {childInit}));");
-                lines.Add("");
-                return;
-            }
-
             if (withConvention)
             {
-                lines.Add($"        target.{name} = source.{name};");   // baked copy (scalar / single-nav reference)
+                lines.Add($"        target.{name} = source.{name};");   // baked copy (scalar / navigation reference)
                 lines.Add("");
             }
             // Excluded member (key/flags) with no customization → keep target's value (e.g. ReloadAfterSave).
@@ -1285,52 +1269,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         foreach (var prop in copyable.Where(p => CopyExcludedMembers.Contains(p.Name)))
             Emit(prop, withConvention: false);
-
-        return lines;
-    }
-
-    // An OWNED child collection eligible for deep clone: a collection of ShiftEntity children (parameterless
-    // ctor). "Tags" (the framework M:N) is never cloned — it points at shared rows.
-    private static bool TryGetCopyCloneCollection(IPropertySymbol prop, out ITypeSymbol childEntity)
-    {
-        childEntity = null!;
-
-        if (prop.Name == "Tags" || !TryGetElement(prop.Type, out var element) || !DerivesFromShiftEntityBase(element) ||
-            element is not INamedTypeSymbol named ||
-            !named.Constructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public))
-            return false;
-
-        childEntity = element;
-        return true;
-    }
-
-    // Faithful member-init copy of a child entity: everything is copied AS-IS (scalars, FK columns, and the
-    // real keys) EXCEPT the internal framework flags; owned child collections are deep-copied recursively (to
-    // maxDepth); a single navigation is REFERENCE-copied (the copy points at the SAME referenced row — never a
-    // duplicate). Keeping the keys is what makes ReloadAfterSave correct.
-    private static List<string> BuildCloneInit(ITypeSymbol entity, string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys)
-    {
-        var lines = new List<string>();
-
-        foreach (var prop in AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)))
-        {
-            var name = prop.Name;
-
-            if (CloneExcludedMembers.Contains(name))
-                continue;
-
-            if (ownerDepth + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity) && !pathKeys.Contains(Fq(childEntity)))
-            {
-                var param = $"__k{ownerDepth}";
-                var childPath = new HashSet<string>(pathKeys, StringComparer.Ordinal) { Fq(childEntity) };
-                var childInit = $"new {Fq(childEntity)}\n            {{\n{string.Join("\n", BuildCloneInit(childEntity, param, ownerDepth + 1, maxDepth, childPath))}\n            }}";
-                lines.Add($"            {name} = {accessor}.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({accessor}.{name}, {param} => {childInit})),");
-                continue;
-            }
-
-            // scalar / FK / real key, OR a single-nav or non-owned collection → reference-copy (same instance).
-            lines.Add($"            {name} = {accessor}.{name},");
-        }
 
         return lines;
     }
@@ -1564,7 +1502,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored, maxDepth)));
+            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored)));
             sb.AppendLine("    }");
             sb.AppendLine();
 
