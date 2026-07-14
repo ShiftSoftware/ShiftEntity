@@ -138,7 +138,24 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private static bool IsDeepMappingMethod(string name) =>
         name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild"
-             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild";
+             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild"
+             // Direction-scoped child builders expose the deep methods without a direction in the name;
+             // the direction comes from the receiver type (ShiftXxxChildMapper) instead.
+             or "ForChild" or "ForChildren";
+
+    // A deep-mapping / config call receiver is either the root ShiftMapperBuilder<E,L,V> or one of the
+    // direction-scoped child builders ShiftXxxChildMapper<TChildEntity, TChildDto>.
+    private static bool IsBuilderOrChildMapper(INamedTypeSymbol type) =>
+        type.Name is "ShiftMapperBuilder" or "ShiftViewChildMapper" or "ShiftListChildMapper" or "ShiftEntityChildMapper";
+
+    // Direction implied by a direction-scoped child-mapper receiver type. null → not a child-mapper type.
+    private static MapDir? ChildMapperDirection(string typeName) => typeName switch
+    {
+        "ShiftViewChildMapper" => MapDir.View,
+        "ShiftListChildMapper" => MapDir.List,
+        "ShiftEntityChildMapper" => MapDir.Entity,
+        _ => (MapDir?)null,
+    };
 
     // Every deep-mapping builder method is <TChildEntity, TChildDto>(...) in that order — read the pair
     // straight off the (inference-resolved) call symbol. Guards keep it to genuine ShiftMapperBuilder calls.
@@ -147,7 +164,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         if (ctx.SemanticModel.GetSymbolInfo((InvocationExpressionSyntax)ctx.Node).Symbol is not IMethodSymbol method ||
             !IsDeepMappingMethod(method.Name) ||
             method.TypeArguments.Length != 2 ||
-            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
+            method.ContainingType is not { } container ||
+            !IsBuilderOrChildMapper(container) ||
             !IsShiftNamespace(container))
             return null;
 
@@ -173,16 +191,48 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
              or "ForViewChild" or "ForViewChildren" or "ForEntityChild" or "ForEntityChildren"
              or "ForListChild" or "ForListChildren" or "ForCopyChild" or "ForCopyChildren"
              or "Ignore" or "IgnoreView" or "IgnoreEntity" or "IgnoreList" or "IgnoreCopy"
-             or "MaxDepth";
+             or "MaxDepth"
+             // Direction-scoped child-builder surface (direction comes from the receiver type).
+             or "For" or "ForChild" or "ForChildren";
 
     private static ConfigCall? BuildConfigCall(GeneratorSyntaxContext ctx)
     {
         var invocation = (InvocationExpressionSyntax)ctx.Node;
 
         if (ctx.SemanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method ||
-            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
-            container.TypeArguments.Length != 3 ||
+            method.ContainingType is not { } container ||
             !IsShiftNamespace(container))
+            return null;
+
+        var name = method.Name;
+        var conditional = IsInConditionalContext(invocation);
+        var location = invocation.GetLocation();
+
+        // Nested child config: receiver is a direction-scoped ShiftXxxChildMapper<TChildEntity, TChildDto>.
+        // The pair mapper's baked directives are keyed by its (entity, dto, dto) triple; the direction comes
+        // from the receiver TYPE (For/Ignore/ForChild/ForChildren carry no direction in the name). Its member
+        // selector is over the child DTO (view/list) or the child entity (entity direction) — MemberNameFromSelector
+        // reads the name either way.
+        if (ChildMapperDirection(container.Name) is { } childDir)
+        {
+            if (container.TypeArguments.Length != 2)
+                return null;
+
+            var childEntity = container.TypeArguments[0];
+            var childDto = container.TypeArguments[1];
+
+            if (IsOpenOrError(childEntity) || IsOpenOrError(childDto))
+                return null;
+
+            var childMember = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
+            if (childMember is null)
+                return null;
+
+            var childKind = name == "Ignore" ? MapKind.Ignore : MapKind.Custom;
+            return new ConfigCall(TripleKey(childEntity, childDto, childDto), childKind, childDir, childMember, 0, conditional, location, name);
+        }
+
+        if (container.Name != "ShiftMapperBuilder" || container.TypeArguments.Length != 3)
             return null;
 
         var e = container.TypeArguments[0];
@@ -193,9 +243,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             return null;
 
         var key = TripleKey(e, l, v);
-        var name = method.Name;
-        var conditional = IsInConditionalContext(invocation);
-        var location = invocation.GetLocation();
 
         // map.MaxDepth(constant) — read the CONSTANT depth at build time (a computed value can't be baked).
         if (name == "MaxDepth")

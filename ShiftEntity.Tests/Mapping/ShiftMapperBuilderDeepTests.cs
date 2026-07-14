@@ -190,10 +190,10 @@ public class ShiftMapperBuilderDeepTests
     {
         Expression<Func<ParentEntity, ParentListDTO>> projection = e => new ParentListDTO { ID = e.ID.ToString() };
 
-        // The child callback customizes the child's own projected property, using the same ForList as the parent.
+        // The child callback customizes the child's own projected property via the direction-scoped For.
         var composed = Builder()
             .ForListChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children,
-                child => child.ForList(c => c.Name, e => e.Name + "!"))
+                child => child.For(c => c.Name, e => e.Name + "!"))
             .ComposeList(projection);
 
         var parent = new ParentEntity { ID = 3, Children = new() { new ChildEntity { ID = 10, Name = "X" } } };
@@ -210,7 +210,7 @@ public class ShiftMapperBuilderDeepTests
 
         var composed = Builder()
             .ForListChild<ChildEntity, ChildDto>(d => d.Single, e => e.Single,
-                child => child.ForList(c => c.Name, e => e.Name + " (custom)"))
+                child => child.For(c => c.Name, e => e.Name + " (custom)"))
             .ComposeList(projection);
 
         var withChild = new ParentEntity { ID = 1, Single = new ChildEntity { ID = 5, Name = "Z" } };
@@ -257,7 +257,7 @@ public class ShiftMapperBuilderDeepTests
         // with a clear error (real source-generated / [ShiftEntityMapper] pairs are configurable).
         var ex = Assert.Throws<InvalidOperationException>(() =>
             Builder().ForViewChildren<ChildEntity, ChildDto>(d => d.Children, e => e.Children,
-                child => child.ForView(c => c.Name, e => e.Name + "!")));
+                child => child.For(c => c.Name, e => e.Name + "!")));
 
         Assert.Contains("not configurable", ex.Message);
     }

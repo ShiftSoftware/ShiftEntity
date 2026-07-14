@@ -152,17 +152,17 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// Semantics: REPLACE-WITH-NEW — every child DTO becomes a new entity instance (pair this with a
     /// repository that owns the previous children, e.g. delete-and-recreate); it is NOT a merge/update-by-ID.
     /// <para>
-    /// Pass <paramref name="configureChild"/> to customize the child's write mapping (<c>child.ForEntity(...)</c>)
-    /// or compose deeper children explicitly (<c>child.ForEntityChild(...)</c>) — same builder, any depth.
+    /// Pass <paramref name="configureChild"/> to customize the child's write mapping (<c>child.For(...)</c>)
+    /// or compose deeper children explicitly (<c>child.ForChild(...)</c>) — direction-scoped, any depth.
     /// </para>
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChildren<TChildEntity, TChildDto>(
         Expression<Func<TEntity, List<TChildEntity>>> member, Func<TViewDTO, IEnumerable<TChildDto>?> from,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftEntityChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildEntity : class, new()
     {
         var pair = ResolvePair<TChildEntity, TChildDto>();
-        ApplyChildConfig(pair, configureChild);
+        ApplyChildConfig(pair, AsRaw(configureChild));
 
         this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, List<TChildEntity>?>((dto, sp) =>
         {
@@ -173,14 +173,14 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
         return this;
     }
 
-    /// <inheritdoc cref="ForEntityChildren{TChildEntity, TChildDto}(Expression{Func{TEntity, List{TChildEntity}}}, Func{TViewDTO, IEnumerable{TChildDto}}, Action{ShiftMapperBuilder{TChildEntity, TChildDto, TChildDto}})"/>
+    /// <inheritdoc cref="ForEntityChildren{TChildEntity, TChildDto}(Expression{Func{TEntity, List{TChildEntity}}}, Func{TViewDTO, IEnumerable{TChildDto}}, Action{ShiftEntityChildMapper{TChildEntity, TChildDto}})"/>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChildren<TChildEntity, TChildDto>(
         Expression<Func<TEntity, ICollection<TChildEntity>>> member, Func<TViewDTO, IEnumerable<TChildDto>?> from,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftEntityChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildEntity : class, new()
     {
         var pair = ResolvePair<TChildEntity, TChildDto>();
-        ApplyChildConfig(pair, configureChild);
+        ApplyChildConfig(pair, AsRaw(configureChild));
 
         this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, ICollection<TChildEntity>?>((dto, sp) =>
         {
@@ -194,16 +194,16 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// <summary>
     /// Maps a single child object in <c>MapToEntity</c> through the source-generated pair mapper (into a NEW
     /// instance). Pass <paramref name="configureChild"/> to customize the child or compose deeper (see
-    /// <see cref="ForEntityChildren{TChildEntity, TChildDto}(Expression{Func{TEntity, List{TChildEntity}}}, Func{TViewDTO, IEnumerable{TChildDto}}, Action{ShiftMapperBuilder{TChildEntity, TChildDto, TChildDto}})"/>).
+    /// <see cref="ForEntityChildren{TChildEntity, TChildDto}(Expression{Func{TEntity, List{TChildEntity}}}, Func{TViewDTO, IEnumerable{TChildDto}}, Action{ShiftEntityChildMapper{TChildEntity, TChildDto}})"/>).
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntityChild<TChildEntity, TChildDto>(
         Expression<Func<TEntity, TChildEntity>> member, Func<TViewDTO, TChildDto?> from,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftEntityChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildEntity : class, new()
         where TChildDto : class
     {
         var pair = ResolvePair<TChildEntity, TChildDto>();
-        ApplyChildConfig(pair, configureChild);
+        ApplyChildConfig(pair, AsRaw(configureChild));
 
         this.entityValues[MemberOf(member).Name] = new Func<TViewDTO, MappingContext, TChildEntity?>((dto, sp) =>
         {
@@ -217,16 +217,16 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// <summary>
     /// Composes a child COLLECTION in <c>MapToView</c> through the source-generated pair mapper — EXPLICITLY.
     /// In the view direction nothing goes deep automatically: a child object is composed only when you call
-    /// this. Pass <paramref name="configureChild"/> to customize a child property (<c>child.ForView(...)</c>)
-    /// or compose deeper children (<c>child.ForViewChild(...)</c>) — same builder, any depth.
+    /// this. Pass <paramref name="configureChild"/> to customize a child property (<c>child.For(...)</c>)
+    /// or compose deeper children (<c>child.ForChild(...)</c>) — direction-scoped, any depth.
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForViewChildren<TChildEntity, TChildDto>(
         Expression<Func<TViewDTO, IEnumerable<TChildDto>?>> member, Func<TEntity, IEnumerable<TChildEntity>?> from,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftViewChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildDto : class
     {
         var pair = ResolvePair<TChildEntity, TChildDto>();
-        ApplyChildConfig(pair, configureChild);
+        ApplyChildConfig(pair, AsRaw(configureChild));
 
         this.viewValues[MemberOf(member).Name] = new Func<TEntity, MappingContext, List<TChildDto>?>((entity, sp) =>
         {
@@ -240,12 +240,12 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// <summary>Composes a single child object in <c>MapToView</c> through the source-generated pair mapper (null-safe), EXPLICITLY. Pass <paramref name="configureChild"/> to customize or compose deeper (see <see cref="ForViewChildren"/>).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForViewChild<TChildEntity, TChildDto>(
         Expression<Func<TViewDTO, TChildDto?>> member, Func<TEntity, TChildEntity?> from,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftViewChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildEntity : class
         where TChildDto : class
     {
         var pair = ResolvePair<TChildEntity, TChildDto>();
-        ApplyChildConfig(pair, configureChild);
+        ApplyChildConfig(pair, AsRaw(configureChild));
 
         this.viewValues[MemberOf(member).Name] = new Func<TEntity, MappingContext, TChildDto?>((entity, sp) =>
         {
@@ -255,6 +255,21 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
 
         return this;
     }
+
+    // Adapt a direction-scoped child action (what the programmer writes) to the raw builder action the
+    // pair's AddConfiguration / ComposeList machinery consumes. The wrapper forwards each call to the
+    // matching per-direction method on the inner ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>.
+    private static Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? AsRaw<TChildEntity, TChildDto>(
+        Action<ShiftViewChildMapper<TChildEntity, TChildDto>>? configureChild)
+        => configureChild is null ? null : inner => configureChild(new ShiftViewChildMapper<TChildEntity, TChildDto>(inner));
+
+    private static Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? AsRaw<TChildEntity, TChildDto>(
+        Action<ShiftEntityChildMapper<TChildEntity, TChildDto>>? configureChild)
+        => configureChild is null ? null : inner => configureChild(new ShiftEntityChildMapper<TChildEntity, TChildDto>(inner));
+
+    private static Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? AsRaw<TChildEntity, TChildDto>(
+        Action<ShiftListChildMapper<TChildEntity, TChildDto>>? configureChild)
+        => configureChild is null ? null : inner => configureChild(new ShiftListChildMapper<TChildEntity, TChildDto>(inner));
 
     /// <summary>Applies a nested child configuration to the child pair mapper (its MapToView/MapToEntity honour it via the same builder). Requires a configurable — i.e. source-generated or [ShiftEntityMapper] — pair.</summary>
     private static void ApplyChildConfig<TChildEntity, TChildDto>(
@@ -277,14 +292,14 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// deliberate, visible query-shape change). For a custom child list shape use <see cref="ForList"/>.
     /// <para>
     /// Pass <paramref name="configureChild"/> to shape the child EXPLICITLY: the callback receives a
-    /// builder for the child pair, so you customize a child property (<c>child.ForList(...)</c>) or
-    /// compose ONE LEVEL DEEPER (<c>child.ForListChild(...)</c>) — same builder, any depth. A child
-    /// object is only composed when you say so; nothing goes deep automatically in the list direction.
+    /// direction-scoped builder for the child pair, so you customize a child property (<c>child.For(...)</c>) or
+    /// compose ONE LEVEL DEEPER (<c>child.ForChild(...)</c>) — any depth. A child object is only composed
+    /// when you say so; nothing goes deep automatically in the list direction.
     /// </para>
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChildren<TChildEntity, TChildDto>(
         Expression<Func<TListDTO, IEnumerable<TChildDto>>> member, Expression<Func<TEntity, IEnumerable<TChildEntity>>> source,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftListChildMapper<TChildEntity, TChildDto>>? configureChild = null)
     {
         var memberInfo = MemberOf(member);
         this.listChildren[memberInfo.Name] = (memberInfo, source, typeof(TChildEntity), typeof(TChildDto), true,
@@ -299,7 +314,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForListChild<TChildEntity, TChildDto>(
         Expression<Func<TListDTO, TChildDto>> member, Expression<Func<TEntity, TChildEntity>> source,
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild = null)
+        Action<ShiftListChildMapper<TChildEntity, TChildDto>>? configureChild = null)
         where TChildEntity : class
         where TChildDto : class
     {
@@ -328,7 +343,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// recursively, to whatever depth was configured.
     /// </summary>
     private static LambdaExpression ComposedChildProjection<TChildEntity, TChildDto>(
-        Action<ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>>? configureChild)
+        Action<ShiftListChildMapper<TChildEntity, TChildDto>>? configureChild)
     {
         var projection = ShiftEntityMapperRegistry.FindPairListProjection(typeof(TChildEntity), typeof(TChildDto))
             ?? throw new InvalidOperationException(
@@ -339,7 +354,7 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
             return projection;
 
         var childBuilder = new ShiftMapperBuilder<TChildEntity, TChildDto, TChildDto>();
-        configureChild(childBuilder);
+        configureChild(new ShiftListChildMapper<TChildEntity, TChildDto>(childBuilder));
         return childBuilder.ComposeList((Expression<Func<TChildEntity, TChildDto>>)projection);
     }
 
