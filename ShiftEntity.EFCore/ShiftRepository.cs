@@ -117,8 +117,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         // passing none means "give me the default", so the entity's declaration stands — custom subclass or not.
         // The two are alternatives rather than layers because ShiftRepositoryOptions doesn't compose cleanly
         // (includes replace, filters accumulate, DataLevelAccess throws on a second declaration), so merging them
-        // would be guesswork. The analyzer flags the ambiguous case (entity declares config AND the repository
-        // passes a builder) at build time, since this silently drops the entity's half.
+        // would be guesswork. The analyzer fails the build on the ambiguous case (entity declares config AND the
+        // repository passes a builder) — SHENGEN006 — since this silently drops the entity's half.
         else if (typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
         {
             // Filters / data-level-access in the config need these providers; the null-builder path skipped

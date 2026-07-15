@@ -31,7 +31,10 @@ namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 /// copy. MapToList is an inline SQL-translatable projection (SelectWithTags for taggables).
 ///
 /// Diagnostics: SHENGEN001 (not partial), SHENGEN002 (no mapper interface), SHENGEN003 (deep-mapping
-/// cycle — member skipped), SHENGEN004 (unmapped view members — warning).
+/// cycle — member skipped), SHENGEN004 (unmapped view members — warning), SHENGEN005 (conditional mapper
+/// configuration), SHENGEN006 (entity repository configuration suppressed by a repository's builder).
+/// The errors (001/002/005/006) all mark something that cannot be expressed at build time or would run
+/// silently wrong; the warnings (003/004) mark something merely skipped.
 ///
 /// NOTE: emission is centralized in one combined step (pair closure needs global knowledge), so
 /// incremental caching granularity is coarse — any relevant change regenerates all mappers. Correctness
@@ -74,7 +77,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor EntityConfigSuppressed = new(
         "SHENGEN006", "Entity repository configuration will not run",
         "'{0}' declares IConfiguresShiftRepository<{0}, {1}, {2}>, but repository '{3}' configures the same triple by passing an options builder to its base constructor. Passing a builder means the repository configures itself and takes over completely, so '{0}'.ConfigureRepository will NOT run — move that configuration into '{3}'s builder, or drop the builder to let the entity's configuration apply.",
-        "ShiftEntity.Repository", DiagnosticSeverity.Warning, true);
+        "ShiftEntity.Repository", DiagnosticSeverity.Error, true);
 
     // ─────────────────────────────────── pipeline ───────────────────────────────────
 
@@ -392,12 +395,18 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     /// Whether a repository configures ITSELF — i.e. hands an options builder to
     /// <c>ShiftRepository(DB db, Action&lt;ShiftRepositoryOptions&lt;…&gt;&gt;? shiftRepositoryBuilder = null)</c>.
     /// That takes over configuration completely, so the entity's <c>IConfiguresShiftRepository</c> won't run
-    /// (SHENGEN006 warns about the pairing).
+    /// (SHENGEN006 fails the build on the pairing).
     /// <para>
     /// Answered only for a class whose DIRECT base is <c>ShiftRepository&lt;,,,&gt;</c>, so we read the very
     /// <c>base(...)</c> call that reaches it. Through an intermediate class (e.g. a project's own
     /// <c>RepositoryBase</c> forwarding a builder parameter) whether a builder actually arrives is a runtime
-    /// value, so we return false and stay silent rather than warn on a guess.
+    /// value, so we return false and stay silent rather than break a build on a guess.
+    /// </para>
+    /// <para>
+    /// EVERY constructor reaching base must pass a builder. One that doesn't means the repository can also be
+    /// built the entity-configured way, so the suppression is a maybe — and SHENGEN006 breaks the build, so it
+    /// may only fire on a certainty. Constructors chaining through <c>: this(...)</c> aren't base calls; the one
+    /// they land on is visited on its own turn.
     /// </para>
     /// </summary>
     private static bool PassesOptionsBuilder(INamedTypeSymbol cls)
@@ -406,23 +415,30 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             || baseType.Name != "ShiftRepository" || baseType.TypeArguments.Length != 4 || !IsShiftNamespace(baseType))
             return false;
 
+        var reachesBase = false;
+
         foreach (var ctor in cls.InstanceConstructors)
         {
             foreach (var syntaxRef in ctor.DeclaringSyntaxReferences)
             {
-                if (syntaxRef.GetSyntax() is not ConstructorDeclarationSyntax { Initializer: { } init }
-                    || !init.ThisOrBaseKeyword.IsKind(SyntaxKind.BaseKeyword))
+                if (syntaxRef.GetSyntax() is not ConstructorDeclarationSyntax decl)
                     continue;
+
+                if (decl.Initializer is { } chain && chain.ThisOrBaseKeyword.IsKind(SyntaxKind.ThisKeyword))
+                    continue;
+
+                reachesBase = true;
 
                 // base(db) => no builder. base(db, x => …) / base(db, SomeOptions) => configures itself.
                 // An explicit base(db, null) is "no builder", so don't count it.
-                if (init.ArgumentList.Arguments.Count >= 2
-                    && !init.ArgumentList.Arguments[1].Expression.IsKind(SyntaxKind.NullLiteralExpression))
-                    return true;
+                if (decl.Initializer is not { } init
+                    || init.ArgumentList.Arguments.Count < 2
+                    || init.ArgumentList.Arguments[1].Expression.IsKind(SyntaxKind.NullLiteralExpression))
+                    return false;
             }
         }
 
-        return false;
+        return reachesBase;
     }
 
     /// <summary>Whether the entity declares <c>IConfiguresShiftRepository</c> for this exact triple.</summary>
@@ -587,8 +603,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         // A repository that passes an options builder configures itself and takes over, so an entity declaring
         // IConfiguresShiftRepository for the SAME triple has its ConfigureRepository silently skipped. Both halves
-        // look correct in isolation and nothing fails at runtime — the config just never runs — so say so at build
-        // time, where the programmer can see both files.
+        // look correct in isolation and nothing fails at runtime — the config just never runs — so break the build,
+        // where the programmer can see both files. An error rather than a warning for the same reason as SHENGEN005:
+        // the failure is invisible at runtime, and the fix (move the config into the builder, or drop the builder)
+        // is always available. PassesOptionsBuilder only reports a certainty, so this can't fire on a guess.
         foreach (var triple in fromRepos)
             if (triple.RepoConfiguresItself && EntityConfiguresTriple(triple.Entity, triple.ListDto, triple.ViewDto))
                 spc.ReportDiagnostic(Diagnostic.Create(EntityConfigSuppressed, triple.RepoLocation,
