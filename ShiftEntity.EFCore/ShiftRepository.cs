@@ -46,7 +46,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private bool _hasAttentionInterface;
     private bool _needsAttentionTransaction;
     private bool _hasTaggableInterface;
-    private bool _isBuiltInRepository;
 
     private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
     private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
@@ -91,15 +90,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         _needsAttentionTransaction = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(EntityType));
         _hasTaggableInterface = typeof(IShiftEntityTaggable).IsAssignableFrom(typeof(EntityType));
 
-        // True only for the EXACT built-in (auto-CRUD) repository type — a custom subclass is not it.
-        //
-        // Used by the ConfigureRepository hook ONLY, because configuration has a conflict the write hooks don't: a
-        // custom repository configures itself by passing an options builder to this constructor, and the builder and
-        // the entity's config are alternatives (see the if/else below) rather than layers. The write hooks
-        // (IUpsertsShiftRepository / IDeletesShiftRepository) deliberately do NOT consult this — they live inside
-        // UpsertAsync/DeleteAsync, so normal override semantics decide whether a subclass gets them.
-        _isBuiltInRepository = GetType().IsGenericType && GetType().GetGenericTypeDefinition() == typeof(ShiftRepository<,,,>);
-
         if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
             this.beforeSaveHook = beforeSaveHook;
 
@@ -118,12 +108,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
-        // No manual builder: let the ENTITY configure the built-in (auto-CRUD) repository if it opts in via
-        // IConfiguresShiftRepository<Entity, List, View> — includes, a small mapping tweak, etc. Fires only
-        // for the exact built-in repository type (a custom subclass configures itself), and is keyed by the
-        // endpoint's DTO triple so an entity with several endpoints resolves the matching implementation.
-        else if (_isBuiltInRepository
-            && typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
+        // No builder: let the ENTITY configure this repository if it opts in via
+        // IConfiguresShiftRepository<Entity, List, View> — includes, a small mapping tweak, etc. Keyed by the
+        // endpoint's DTO triple, so an entity with several endpoints resolves the matching implementation.
+        //
+        // What matters is whether a builder was passed, NOT what class the repository is: passing one means "I
+        // configure this myself" and takes over completely (the config twin of overriding without calling base);
+        // passing none means "give me the default", so the entity's declaration stands — custom subclass or not.
+        // The two are alternatives rather than layers because ShiftRepositoryOptions doesn't compose cleanly
+        // (includes replace, filters accumulate, DataLevelAccess throws on a second declaration), so merging them
+        // would be guesswork. The analyzer flags the ambiguous case (entity declares config AND the repository
+        // passes a builder) at build time, since this silently drops the entity's half.
+        else if (typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
         {
             // Filters / data-level-access in the config need these providers; the null-builder path skipped
             // them, so set them before invoking the entity's configuration.

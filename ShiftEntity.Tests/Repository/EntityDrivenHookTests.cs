@@ -585,21 +585,39 @@ public class EntityDrivenHookTests
         Assert.False(entity.IsDeleted);              // the default never ran either
     }
 
-    // ---- Configure stays built-in-only ------------------------------------------------------------------------
+    // ---- Configure: what decides is the BUILDER, not the repository's class ------------------------------------
 
-    // The write hooks now fire for custom repositories, but ConfigureRepository deliberately does not: a custom
-    // repository configures itself through the options builder it passes to the base constructor, and the two are
-    // alternatives rather than layers. Pins that asymmetry so it can't drift by accident.
+    // A custom repository that passes NO options builder is saying "give me the default", so the entity's
+    // declaration stands — the repository's class is irrelevant. (The old built-in-only guard got this wrong:
+    // subclassing alone silently switched the entity's config off.)
     [Fact]
-    public void Configure_IsNotCalled_ForACustomRepositorySubclass()
+    public void Configure_IsCalled_ForACustomRepository_ThatPassesNoBuilder()
     {
         using var provider = BuildHost();
         using var scope = provider.CreateScope();
         ConfiguredEntity.LastRepository = null;
 
-        _ = new CustomConfiguredRepository(scope.ServiceProvider.GetRequiredService<HookedDbContext>());
+        var repo = new CustomConfiguredRepository(scope.ServiceProvider.GetRequiredService<HookedDbContext>());
 
-        Assert.Null(ConfiguredEntity.LastRepository);
+        Assert.Same(repo, ConfiguredEntity.LastRepository);
+    }
+
+    // Passing a builder means "I configure this myself" — the config twin of overriding without calling base — so it
+    // takes over completely and the entity's config does not run. The analyzer flags this pairing at build time,
+    // because the skip is otherwise invisible.
+    [Fact]
+    public void Configure_IsSkipped_WhenTheRepositoryPassesABuilder()
+    {
+        using var provider = BuildHost();
+        using var scope = provider.CreateScope();
+        ConfiguredEntity.LastRepository = null;
+
+        var repo = new ShiftRepository<HookedDbContext, ConfiguredEntity, HookedListDTO, HookedListDTO>(
+            scope.ServiceProvider.GetRequiredService<HookedDbContext>(),
+            o => o.UseMapper(new ConfiguredMapper()));
+
+        Assert.Null(ConfiguredEntity.LastRepository);   // the builder took over
+        Assert.NotNull(repo);
     }
 
     // ---- Configure hook now carries the repository too --------------------------------------------------------

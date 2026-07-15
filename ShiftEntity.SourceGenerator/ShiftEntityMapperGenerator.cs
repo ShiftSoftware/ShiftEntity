@@ -71,12 +71,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         "Mapper configuration '{0}' is registered conditionally (inside an if/else/switch/loop/?: or &&/||/??). The generator bakes customization decisions at build time, so a skipped branch would silently drop the member to its default. Register it UNCONDITIONALLY and put the condition INSIDE the value delegate instead — e.g. map.ForView(d => d.X, (e, _) => cond ? a : b).",
         "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
 
+    private static readonly DiagnosticDescriptor EntityConfigSuppressed = new(
+        "SHENGEN006", "Entity repository configuration will not run",
+        "'{0}' declares IConfiguresShiftRepository<{0}, {1}, {2}>, but repository '{3}' configures the same triple by passing an options builder to its base constructor. Passing a builder means the repository configures itself and takes over completely, so '{0}'.ConfigureRepository will NOT run — move that configuration into '{3}'s builder, or drop the builder to let the entity's configuration apply.",
+        "ShiftEntity.Repository", DiagnosticSeverity.Warning, true);
+
     // ─────────────────────────────────── pipeline ───────────────────────────────────
 
     private sealed record DeclaredModel(INamedTypeSymbol Cls, string? Error, bool IsPair,
         ITypeSymbol? Entity, ITypeSymbol? ListDto, ITypeSymbol? ViewDto);
 
-    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null);
+    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null,
+        // For SHENGEN006 only: whether the repository configures itself (passes an options builder to
+        // ShiftRepository's constructor), and where to point the diagnostic.
+        bool RepoConfiguresItself = false, string? RepoName = null, Location? RepoLocation = null);
 
     private sealed record PairSeed(ITypeSymbol Entity, ITypeSymbol Dto);
 
@@ -373,11 +381,57 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return null;
 
             // Per-repository knob (the intended home for MaxDepth): read off the repo class.
-            return new TripleModel(entity, listDto, viewDto, ReadMaxDepthAttr(cls));
+            return new TripleModel(entity, listDto, viewDto, ReadMaxDepthAttr(cls),
+                PassesOptionsBuilder(cls), cls.Name, cls.Locations.FirstOrDefault());
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Whether a repository configures ITSELF — i.e. hands an options builder to
+    /// <c>ShiftRepository(DB db, Action&lt;ShiftRepositoryOptions&lt;…&gt;&gt;? shiftRepositoryBuilder = null)</c>.
+    /// That takes over configuration completely, so the entity's <c>IConfiguresShiftRepository</c> won't run
+    /// (SHENGEN006 warns about the pairing).
+    /// <para>
+    /// Answered only for a class whose DIRECT base is <c>ShiftRepository&lt;,,,&gt;</c>, so we read the very
+    /// <c>base(...)</c> call that reaches it. Through an intermediate class (e.g. a project's own
+    /// <c>RepositoryBase</c> forwarding a builder parameter) whether a builder actually arrives is a runtime
+    /// value, so we return false and stay silent rather than warn on a guess.
+    /// </para>
+    /// </summary>
+    private static bool PassesOptionsBuilder(INamedTypeSymbol cls)
+    {
+        if (cls.BaseType is not INamedTypeSymbol baseType
+            || baseType.Name != "ShiftRepository" || baseType.TypeArguments.Length != 4 || !IsShiftNamespace(baseType))
+            return false;
+
+        foreach (var ctor in cls.InstanceConstructors)
+        {
+            foreach (var syntaxRef in ctor.DeclaringSyntaxReferences)
+            {
+                if (syntaxRef.GetSyntax() is not ConstructorDeclarationSyntax { Initializer: { } init }
+                    || !init.ThisOrBaseKeyword.IsKind(SyntaxKind.BaseKeyword))
+                    continue;
+
+                // base(db) => no builder. base(db, x => …) / base(db, SomeOptions) => configures itself.
+                // An explicit base(db, null) is "no builder", so don't count it.
+                if (init.ArgumentList.Arguments.Count >= 2
+                    && !init.ArgumentList.Arguments[1].Expression.IsKind(SyntaxKind.NullLiteralExpression))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the entity declares <c>IConfiguresShiftRepository</c> for this exact triple.</summary>
+    private static bool EntityConfiguresTriple(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto) =>
+        entity.AllInterfaces.Any(i =>
+            i.Name == "IConfiguresShiftRepository" && i.TypeArguments.Length == 3 && IsShiftNamespace(i)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], entity)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[1], listDto)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[2], viewDto));
 
     private static int? ReadMaxDepthAttr(ISymbol symbol) =>
         symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name == "ShiftEntityMapperMaxDepthAttribute" &&
@@ -530,6 +584,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (call.Conditional)
                 spc.ReportDiagnostic(Diagnostic.Create(ConditionalConfig, call.Location,
                     call.Member is null ? call.MethodName : $"{call.MethodName}({call.Member})"));
+
+        // A repository that passes an options builder configures itself and takes over, so an entity declaring
+        // IConfiguresShiftRepository for the SAME triple has its ConfigureRepository silently skipped. Both halves
+        // look correct in isolation and nothing fails at runtime — the config just never runs — so say so at build
+        // time, where the programmer can see both files.
+        foreach (var triple in fromRepos)
+            if (triple.RepoConfiguresItself && EntityConfiguresTriple(triple.Entity, triple.ListDto, triple.ViewDto))
+                spc.ReportDiagnostic(Diagnostic.Create(EntityConfigSuppressed, triple.RepoLocation,
+                    triple.Entity.Name, triple.ListDto.Name, triple.ViewDto.Name, triple.RepoName));
 
         // 1. Declared classes: report errors; index valid ones.
         var declaredTriples = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
