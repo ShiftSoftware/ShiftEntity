@@ -175,11 +175,9 @@ public static class IServiceCollectionExtensions
             services.AddSingleton(map);
 
         // Attribute-driven endpoints: an entity decorated with [ShiftEntityEndpoint<…>] /
-        // [ShiftEntitySecureEndpoint<…>] needs the built-in repository, its default AutoMapper map, and a
-        // DTO-map entry. Wire that here off the same assemblies — so the programmer makes no extra service
-        // call — and map the routes in the pipeline with app.MapShiftEntityEndpoints<DB>(). The built-in
-        // repository is registered as an open generic, so no DB type is needed here; the concrete DB is
-        // supplied by the closed repository type at map time.
+        // [ShiftEntitySecureEndpoint<…>] needs the built-in repository (registered just below), its default
+        // AutoMapper map, and a DTO-map entry. Wire that here off the same assemblies — so the programmer makes
+        // no extra service call — and map the routes in the pipeline with app.MapShiftEntityEndpoints<DB>().
         var endpointSpecs = ShiftEntityEndpointDiscovery.Discover(assemblies ?? [Assembly.GetEntryAssembly()!]);
 
         // The entity → TypeAuth action registry. Registered here even when it stays empty, so
@@ -187,10 +185,16 @@ public static class IServiceCollectionExtensions
         // a missing entry as "no action known for this type".
         var actionMap = GetOrAddShiftEntityActionMap(services);
 
+        // The built-in repository, registered as an open generic — UNCONDITIONALLY, so it is available to
+        // resolve ShiftRepository<DB, Entity, ListDTO, ViewDTO> for ANY entity: the attribute-driven endpoints
+        // handled below, but also any programmer who simply wants to inject the built-in repository without
+        // writing a repository subclass. It carries no per-entity state, so registering it once serves them all;
+        // it is harmless when nothing resolves it and idempotent (TryAdd). No DB type is needed here — the
+        // concrete DB is supplied by the closed repository type at resolution / map time.
+        services.TryAddScoped(typeof(ShiftRepository<,,,>));
+
         if (endpointSpecs.Count > 0)
         {
-            services.TryAddScoped(typeof(ShiftRepository<,,,>));
-
             foreach (var spec in endpointSpecs)
             {
                 map.Register(spec.Entity.Name, spec.ViewDto);
