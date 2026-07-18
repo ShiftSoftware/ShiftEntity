@@ -101,6 +101,23 @@ public static class IServiceCollectionExtensions
                         o.RegisterAzureStorageServiceConverters(azureStorageService);
                 });
 
+        // Minimal API / TypedResults JsonOptions — MUST mirror the MVC naming policy + converters above, otherwise
+        // minimal-API endpoints (attribute-driven CRUD, and hand-written endpoint groups) serialize with the
+        // default Web camelCase while controllers use the configured policy (null ⇒ PascalCase). A client built
+        // against the controller casing then reads empty fields off minimal-API responses. (The HashId modifier is
+        // already wired into both pipelines in AddShiftEntityHashIdJsonSupport; this closes the same gap for the
+        // naming policy + Azure converters.)
+        services
+            .AddOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>()
+            .Configure<ShiftEntityOptions, AzureStorageService>(
+                (o, shiftEntityOptions, azureStorageService) =>
+                {
+                    o.SerializerOptions.PropertyNamingPolicy = shiftEntityOptions.JsonNamingPolicy;
+
+                    if (shiftEntityOptions.azureStorageOptions.Count > 0)
+                        o.SerializerOptions.Converters.Add(new ShiftSoftware.ShiftEntity.Core.Services.JsonShiftFileDTOConverter(azureStorageService));
+                });
+
         services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
         services.AddScoped<IdentityClaimProvider>();
         services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
