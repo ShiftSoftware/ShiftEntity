@@ -411,7 +411,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         if (includes is not null)
         {
-            foreach (var include in includes)
+            // A temporal (asOf) query applies FOR SYSTEM_TIME to every table it touches, so an include reaching a
+            // non-temporal table throws. Keep only the temporal leading run of each include path on that path.
+            var effectiveIncludes = asOf is null ? includes : FilterIncludesToTemporal(includes);
+
+            foreach (var include in effectiveIncludes)
                 query = query.Include(include);
         }
 
@@ -435,6 +439,42 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         => GetIQueryable(asOf, includes,
             disableDefaultDataLevelAccess: bypass.HasFlag(RepositoryBypass.DataLevelAccess),
             disableGlobalFilters: bypass.HasFlag(RepositoryBypass.GlobalFilters));
+
+    /// <summary>
+    /// Trims each dot-separated include path to its temporal leading run, dropping the first non-temporal
+    /// navigation and everything past it. Used on the temporal (asOf) read path, where a non-temporal target
+    /// would otherwise throw — see the call site in <see cref="GetIQueryable(DateTimeOffset?, List{string}?, bool, bool)"/>.
+    /// </summary>
+    private List<string> FilterIncludesToTemporal(List<string> includes)
+    {
+        var rootEntityType = db.Model.FindEntityType(typeof(EntityType));
+
+        var result = new List<string>();
+
+        foreach (var include in includes)
+        {
+            var current = rootEntityType;
+            var kept = new List<string>();
+
+            foreach (var segment in include.Split('.'))
+            {
+                var target = current?.FindNavigation(segment)?.TargetEntityType
+                    ?? current?.FindSkipNavigation(segment)?.TargetEntityType;
+
+                // Can't resolve, or lands on a non-temporal table: stop — the temporal operator can't go past it.
+                if (target is null || !target.IsTemporal())
+                    break;
+
+                kept.Add(segment);
+                current = target;
+            }
+
+            if (kept.Count > 0)
+                result.Add(string.Join('.', kept));
+        }
+
+        return result.Distinct().ToList();
+    }
 
     /// <summary>
     /// The query-path data-level filter: when a v2 policy was declared via
