@@ -13,6 +13,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<!-- Drives the source generator in-process (GeneratorDiagnosticTests). Pinned to the version the generator
+		     itself compiles against. -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.9" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
@@ -29,6 +32,10 @@
 		<ProjectReference Include="..\ShiftEntity.CosmosDbReplication\ShiftEntity.CosmosDbReplication.csproj" />
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
+		<!-- A PLAIN reference, deliberately not OutputItemType="Analyzer": the generator must not run over this
+		     project (its mappers are hand-written test doubles). GeneratorDiagnosticTests instantiates it directly
+		     and drives it over a hand-built compilation instead. -->
+		<ProjectReference Include="..\ShiftEntity.SourceGenerator\ShiftEntity.SourceGenerator.csproj" />
 		<!-- Phase 4 (standard-profile parity): the profile + the real legacy DefaultDataLevelAccess live in Web;
 		     ShiftIdentity.Core (the actions + DTO type-keys) flows transitively. Leaf ref only — nothing ships it. -->
 		<ProjectReference Include="..\ShiftEntity.Web\ShiftEntity.Web.csproj" />

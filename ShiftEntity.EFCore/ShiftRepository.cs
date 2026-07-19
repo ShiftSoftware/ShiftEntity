@@ -108,12 +108,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             shiftRepositoryBuilder.Invoke(this.ShiftRepositoryOptions);
         }
-        // No manual builder: let the ENTITY configure the built-in (auto-CRUD) repository if it opts in via
-        // IConfiguresShiftRepository<Entity, List, View> — includes, a small mapping tweak, etc. Fires only
-        // for the exact built-in repository type (a custom subclass configures itself), and is keyed by the
-        // endpoint's DTO triple so an entity with several endpoints resolves the matching implementation.
-        else if (GetType().IsGenericType && GetType().GetGenericTypeDefinition() == typeof(ShiftRepository<,,,>)
-            && typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
+        // No builder: let the ENTITY configure this repository if it opts in via
+        // IConfiguresShiftRepository<Entity, List, View> — includes, a small mapping tweak, etc. Keyed by the
+        // endpoint's DTO triple, so an entity with several endpoints resolves the matching implementation.
+        //
+        // What matters is whether a builder was passed, NOT what class the repository is: passing one means "I
+        // configure this myself" and takes over completely (the config twin of overriding without calling base);
+        // passing none means "give me the default", so the entity's declaration stands — custom subclass or not.
+        // The two are alternatives rather than layers because ShiftRepositoryOptions doesn't compose cleanly
+        // (includes replace, filters accumulate, DataLevelAccess throws on a second declaration), so merging them
+        // would be guesswork. The analyzer fails the build on the ambiguous case (entity declares config AND the
+        // repository passes a builder) — SHENGEN006 — since this silently drops the entity's half.
+        else if (typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
         {
             // Filters / data-level-access in the config need these providers; the null-builder path skipped
             // them, so set them before invoking the entity's configuration.
@@ -123,7 +129,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
             ((IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>)new EntityType())
                 .ConfigureRepository(new ShiftRepositoryConfigurationContext<EntityType, ListDTO, ViewAndUpsertDTO>(
-                    this.ShiftRepositoryOptions, MapperServiceProvider));
+                    this.ShiftRepositoryOptions, MapperServiceProvider, this));
         }
 
         // Apply the default mapper only when the builder didn't call UseMapper(...) — so UseMapper(custom)
@@ -222,7 +228,52 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return new ValueTask<ViewAndUpsertDTO>(dto);
     }
 
+    /// <summary>
+    /// The upsert entry point. Dispatches to the entity's <see cref="IUpsertsShiftRepository{EntityType, ListDTO, ViewAndUpsertDTO}"/>
+    /// hook when the entity declares one for this triple, otherwise runs <see cref="DefaultUpsertAsync"/>.
+    /// </summary>
     public virtual async ValueTask<EntityType> UpsertAsync(
+        EntityType entity, ViewAndUpsertDTO dto,
+        ActionTypes actionType,
+        long? userId,
+        Guid? idempotencyKey,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters
+    )
+    {
+        // Entity-driven upsert: the entity can take this operation over by implementing
+        // IUpsertsShiftRepository<Entity, List, View> — the analogue of overriding this method, with context.Base()
+        // standing in for base.UpsertAsync(...). Keyed by the DTO triple, so an entity with several endpoints only
+        // hooks the ones it declares.
+        //
+        // Deliberately NOT gated on _isBuiltInRepository: the hook is simply part of what this method does, so
+        // ordinary override semantics decide whether a custom repository gets it — don't override => it runs;
+        // override and call base.UpsertAsync(...) => it runs (nested, repository outermost); override without
+        // calling base => it doesn't, because you replaced this method wholesale. Gating it would mean silently
+        // discarding an entity's declared behavior the moment someone adds a repository class for an unrelated
+        // reason (an extra Include, say) — a silent correctness loss with no error to notice.
+        if (entity is IUpsertsShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO> upsertHook)
+        {
+            // The hook receives this method's own parameters verbatim, plus a context carrying what an override
+            // would have reached through `this` and `base` (the request scope, the repository, and the default).
+            var context = new ShiftRepositoryUpsertContext<EntityType, ListDTO, ViewAndUpsertDTO>(
+                MapperServiceProvider, this, entity, dto, actionType, userId, idempotencyKey,
+                disableDefaultDataLevelAccess, disableGlobalFilters, DefaultUpsertAsync);
+
+            return await upsertHook.UpsertAsync(entity, dto, actionType, userId, idempotencyKey,
+                disableDefaultDataLevelAccess, disableGlobalFilters, context);
+        }
+
+        return await DefaultUpsertAsync(entity, dto, actionType, userId, idempotencyKey,
+            disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
+
+    /// <summary>
+    /// The framework's default upsert — the body reached by <c>base.UpsertAsync(...)</c> from a custom repository
+    /// and by <c>context.Base()</c> from an entity's upsert hook. Deliberately does NOT dispatch to the hook, so
+    /// <c>Base()</c> cannot re-enter it and recurse forever.
+    /// </summary>
+    private async ValueTask<EntityType> DefaultUpsertAsync(
         EntityType entity, ViewAndUpsertDTO dto,
         ActionTypes actionType,
         long? userId,
@@ -889,9 +940,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
                 if (freshEntity is not null)
-                    // Refresh the tracked entity from the fresh DB load via the mapper. CopyEntity is a FAITHFUL
-                    // deep copy — owned child collections are copied with their real keys, single navigations are
-                    // reference-copied — so the reloaded graph (incl. child IDs) is correct.
+                    // Refresh the tracked entity from the fresh DB load via the mapper's CopyEntity (a top-level
+                    // copy: scalars + navigation references, real keys preserved).
                     CopyEntity(freshEntity, trackedEntity, new MappingContext(MapperServiceProvider));
             }
         }
@@ -899,7 +949,32 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         return (result, raisedAttention);
     }
 
-    public virtual ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
+    /// <summary>
+    /// The delete entry point. Dispatches to the entity's <see cref="IDeletesShiftRepository{EntityType, ListDTO, ViewAndUpsertDTO}"/>
+    /// hook when the entity declares one for this triple, otherwise runs <see cref="DefaultDeleteAsync"/>.
+    /// </summary>
+    public virtual async ValueTask<EntityType> DeleteAsync(EntityType entity, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
+    {
+        // Entity-driven delete — the twin of the upsert dispatch above; see its comment for the rules.
+        if (entity is IDeletesShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO> deleteHook)
+        {
+            var context = new ShiftRepositoryDeleteContext<EntityType, ListDTO, ViewAndUpsertDTO>(
+                MapperServiceProvider, this, entity, userId,
+                disableDefaultDataLevelAccess, disableGlobalFilters, DefaultDeleteAsync);
+
+            return await deleteHook.DeleteAsync(entity, userId,
+                disableDefaultDataLevelAccess, disableGlobalFilters, context);
+        }
+
+        return await DefaultDeleteAsync(entity, userId, disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
+
+    /// <summary>
+    /// The framework's default delete — the body reached by <c>base.DeleteAsync(...)</c> from a custom repository
+    /// and by <c>context.Base()</c> from an entity's delete hook. Deliberately does NOT dispatch to the hook, so
+    /// <c>Base()</c> cannot re-enter it and recurse forever.
+    /// </summary>
+    private ValueTask<EntityType> DefaultDeleteAsync(EntityType entity, long? userId, bool disableDefaultDataLevelAccess, bool disableGlobalFilters)
     {
         // Protected-row guard (see UpsertAsync): a protected row can't be deleted. Checked before the data-level check
         // so a protected row is reported as protected rather than as an access denial — matching the per-repository

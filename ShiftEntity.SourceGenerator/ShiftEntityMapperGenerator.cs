@@ -31,7 +31,10 @@ namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 /// copy. MapToList is an inline SQL-translatable projection (SelectWithTags for taggables).
 ///
 /// Diagnostics: SHENGEN001 (not partial), SHENGEN002 (no mapper interface), SHENGEN003 (deep-mapping
-/// cycle — member skipped), SHENGEN004 (unmapped view members — warning).
+/// cycle — member skipped), SHENGEN004 (unmapped view members — warning), SHENGEN005 (conditional mapper
+/// configuration), SHENGEN006 (entity repository configuration suppressed by a repository's builder).
+/// The errors (001/002/005/006) all mark something that cannot be expressed at build time or would run
+/// silently wrong; the warnings (003/004) mark something merely skipped.
 ///
 /// NOTE: emission is centralized in one combined step (pair closure needs global knowledge), so
 /// incremental caching granularity is coarse — any relevant change regenerates all mappers. Correctness
@@ -71,12 +74,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         "Mapper configuration '{0}' is registered conditionally (inside an if/else/switch/loop/?: or &&/||/??). The generator bakes customization decisions at build time, so a skipped branch would silently drop the member to its default. Register it UNCONDITIONALLY and put the condition INSIDE the value delegate instead — e.g. map.ForView(d => d.X, (e, _) => cond ? a : b).",
         "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
 
+    private static readonly DiagnosticDescriptor EntityConfigSuppressed = new(
+        "SHENGEN006", "Entity repository configuration will not run",
+        "'{0}' declares IConfiguresShiftRepository<{0}, {1}, {2}>, but repository '{3}' configures the same triple by passing an options builder to its base constructor. Passing a builder means the repository configures itself and takes over completely, so '{0}'.ConfigureRepository will NOT run — move that configuration into '{3}'s builder, or drop the builder to let the entity's configuration apply.",
+        "ShiftEntity.Repository", DiagnosticSeverity.Error, true);
+
     // ─────────────────────────────────── pipeline ───────────────────────────────────
 
     private sealed record DeclaredModel(INamedTypeSymbol Cls, string? Error, bool IsPair,
         ITypeSymbol? Entity, ITypeSymbol? ListDto, ITypeSymbol? ViewDto);
 
-    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null);
+    private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null,
+        // For SHENGEN006 only: whether the repository configures itself (passes an options builder to
+        // ShiftRepository's constructor), and where to point the diagnostic.
+        bool RepoConfiguresItself = false, string? RepoName = null, Location? RepoLocation = null);
 
     private sealed record PairSeed(ITypeSymbol Entity, ITypeSymbol Dto);
 
@@ -138,7 +149,24 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private static bool IsDeepMappingMethod(string name) =>
         name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild"
-             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild";
+             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild"
+             // Direction-scoped child builders expose the deep methods without a direction in the name;
+             // the direction comes from the receiver type (ShiftXxxChildMapper) instead.
+             or "ForChild" or "ForChildren";
+
+    // A deep-mapping / config call receiver is either the root ShiftMapperBuilder<E,L,V> or one of the
+    // direction-scoped child builders ShiftXxxChildMapper<TChildEntity, TChildDto>.
+    private static bool IsBuilderOrChildMapper(INamedTypeSymbol type) =>
+        type.Name is "ShiftMapperBuilder" or "ShiftViewChildMapper" or "ShiftListChildMapper" or "ShiftEntityChildMapper";
+
+    // Direction implied by a direction-scoped child-mapper receiver type. null → not a child-mapper type.
+    private static MapDir? ChildMapperDirection(string typeName) => typeName switch
+    {
+        "ShiftViewChildMapper" => MapDir.View,
+        "ShiftListChildMapper" => MapDir.List,
+        "ShiftEntityChildMapper" => MapDir.Entity,
+        _ => (MapDir?)null,
+    };
 
     // Every deep-mapping builder method is <TChildEntity, TChildDto>(...) in that order — read the pair
     // straight off the (inference-resolved) call symbol. Guards keep it to genuine ShiftMapperBuilder calls.
@@ -147,7 +175,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         if (ctx.SemanticModel.GetSymbolInfo((InvocationExpressionSyntax)ctx.Node).Symbol is not IMethodSymbol method ||
             !IsDeepMappingMethod(method.Name) ||
             method.TypeArguments.Length != 2 ||
-            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
+            method.ContainingType is not { } container ||
+            !IsBuilderOrChildMapper(container) ||
             !IsShiftNamespace(container))
             return null;
 
@@ -173,16 +202,48 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
              or "ForViewChild" or "ForViewChildren" or "ForEntityChild" or "ForEntityChildren"
              or "ForListChild" or "ForListChildren" or "ForCopyChild" or "ForCopyChildren"
              or "Ignore" or "IgnoreView" or "IgnoreEntity" or "IgnoreList" or "IgnoreCopy"
-             or "MaxDepth";
+             or "MaxDepth"
+             // Direction-scoped child-builder surface (direction comes from the receiver type).
+             or "For" or "ForChild" or "ForChildren";
 
     private static ConfigCall? BuildConfigCall(GeneratorSyntaxContext ctx)
     {
         var invocation = (InvocationExpressionSyntax)ctx.Node;
 
         if (ctx.SemanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method ||
-            method.ContainingType is not { Name: "ShiftMapperBuilder" } container ||
-            container.TypeArguments.Length != 3 ||
+            method.ContainingType is not { } container ||
             !IsShiftNamespace(container))
+            return null;
+
+        var name = method.Name;
+        var conditional = IsInConditionalContext(invocation);
+        var location = invocation.GetLocation();
+
+        // Nested child config: receiver is a direction-scoped ShiftXxxChildMapper<TChildEntity, TChildDto>.
+        // The pair mapper's baked directives are keyed by its (entity, dto, dto) triple; the direction comes
+        // from the receiver TYPE (For/Ignore/ForChild/ForChildren carry no direction in the name). Its member
+        // selector is over the child DTO (view/list) or the child entity (entity direction) — MemberNameFromSelector
+        // reads the name either way.
+        if (ChildMapperDirection(container.Name) is { } childDir)
+        {
+            if (container.TypeArguments.Length != 2)
+                return null;
+
+            var childEntity = container.TypeArguments[0];
+            var childDto = container.TypeArguments[1];
+
+            if (IsOpenOrError(childEntity) || IsOpenOrError(childDto))
+                return null;
+
+            var childMember = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
+            if (childMember is null)
+                return null;
+
+            var childKind = name == "Ignore" ? MapKind.Ignore : MapKind.Custom;
+            return new ConfigCall(TripleKey(childEntity, childDto, childDto), childKind, childDir, childMember, 0, conditional, location, name);
+        }
+
+        if (container.Name != "ShiftMapperBuilder" || container.TypeArguments.Length != 3)
             return null;
 
         var e = container.TypeArguments[0];
@@ -193,9 +254,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             return null;
 
         var key = TripleKey(e, l, v);
-        var name = method.Name;
-        var conditional = IsInConditionalContext(invocation);
-        var location = invocation.GetLocation();
 
         // map.MaxDepth(constant) — read the CONSTANT depth at build time (a computed value can't be baked).
         if (name == "MaxDepth")
@@ -326,11 +384,70 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return null;
 
             // Per-repository knob (the intended home for MaxDepth): read off the repo class.
-            return new TripleModel(entity, listDto, viewDto, ReadMaxDepthAttr(cls));
+            return new TripleModel(entity, listDto, viewDto, ReadMaxDepthAttr(cls),
+                PassesOptionsBuilder(cls), cls.Name, cls.Locations.FirstOrDefault());
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Whether a repository configures ITSELF — i.e. hands an options builder to
+    /// <c>ShiftRepository(DB db, Action&lt;ShiftRepositoryOptions&lt;…&gt;&gt;? shiftRepositoryBuilder = null)</c>.
+    /// That takes over configuration completely, so the entity's <c>IConfiguresShiftRepository</c> won't run
+    /// (SHENGEN006 fails the build on the pairing).
+    /// <para>
+    /// Answered only for a class whose DIRECT base is <c>ShiftRepository&lt;,,,&gt;</c>, so we read the very
+    /// <c>base(...)</c> call that reaches it. Through an intermediate class (e.g. a project's own
+    /// <c>RepositoryBase</c> forwarding a builder parameter) whether a builder actually arrives is a runtime
+    /// value, so we return false and stay silent rather than break a build on a guess.
+    /// </para>
+    /// <para>
+    /// EVERY constructor reaching base must pass a builder. One that doesn't means the repository can also be
+    /// built the entity-configured way, so the suppression is a maybe — and SHENGEN006 breaks the build, so it
+    /// may only fire on a certainty. Constructors chaining through <c>: this(...)</c> aren't base calls; the one
+    /// they land on is visited on its own turn.
+    /// </para>
+    /// </summary>
+    private static bool PassesOptionsBuilder(INamedTypeSymbol cls)
+    {
+        if (cls.BaseType is not INamedTypeSymbol baseType
+            || baseType.Name != "ShiftRepository" || baseType.TypeArguments.Length != 4 || !IsShiftNamespace(baseType))
+            return false;
+
+        var reachesBase = false;
+
+        foreach (var ctor in cls.InstanceConstructors)
+        {
+            foreach (var syntaxRef in ctor.DeclaringSyntaxReferences)
+            {
+                if (syntaxRef.GetSyntax() is not ConstructorDeclarationSyntax decl)
+                    continue;
+
+                if (decl.Initializer is { } chain && chain.ThisOrBaseKeyword.IsKind(SyntaxKind.ThisKeyword))
+                    continue;
+
+                reachesBase = true;
+
+                // base(db) => no builder. base(db, x => …) / base(db, SomeOptions) => configures itself.
+                // An explicit base(db, null) is "no builder", so don't count it.
+                if (decl.Initializer is not { } init
+                    || init.ArgumentList.Arguments.Count < 2
+                    || init.ArgumentList.Arguments[1].Expression.IsKind(SyntaxKind.NullLiteralExpression))
+                    return false;
+            }
+        }
+
+        return reachesBase;
+    }
+
+    /// <summary>Whether the entity declares <c>IConfiguresShiftRepository</c> for this exact triple.</summary>
+    private static bool EntityConfiguresTriple(ITypeSymbol entity, ITypeSymbol listDto, ITypeSymbol viewDto) =>
+        entity.AllInterfaces.Any(i =>
+            i.Name == "IConfiguresShiftRepository" && i.TypeArguments.Length == 3 && IsShiftNamespace(i)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[0], entity)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[1], listDto)
+            && SymbolEqualityComparer.Default.Equals(i.TypeArguments[2], viewDto));
 
     private static int? ReadMaxDepthAttr(ISymbol symbol) =>
         symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name == "ShiftEntityMapperMaxDepthAttribute" &&
@@ -483,6 +600,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             if (call.Conditional)
                 spc.ReportDiagnostic(Diagnostic.Create(ConditionalConfig, call.Location,
                     call.Member is null ? call.MethodName : $"{call.MethodName}({call.Member})"));
+
+        // A repository that passes an options builder configures itself and takes over, so an entity declaring
+        // IConfiguresShiftRepository for the SAME triple has its ConfigureRepository silently skipped. Both halves
+        // look correct in isolation and nothing fails at runtime — the config just never runs — so break the build,
+        // where the programmer can see both files. An error rather than a warning for the same reason as SHENGEN005:
+        // the failure is invisible at runtime, and the fix (move the config into the builder, or drop the builder)
+        // is always available. PassesOptionsBuilder only reports a certainty, so this can't fire on a guess.
+        foreach (var triple in fromRepos)
+            if (triple.RepoConfiguresItself && EntityConfiguresTriple(triple.Entity, triple.ListDto, triple.ViewDto))
+                spc.ReportDiagnostic(Diagnostic.Create(EntityConfigSuppressed, triple.RepoLocation,
+                    triple.Entity.Name, triple.ListDto.Name, triple.ViewDto.Name, triple.RepoName));
 
         // 1. Declared classes: report errors; index valid ones.
         var declaredTriples = new Dictionary<string, DeclaredModel>(StringComparer.Ordinal);
@@ -718,11 +846,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
     { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
-
-    // Deep-copied CHILD entities keep their real keys (a faithful copy — this is what ReloadAfterSave needs);
-    // only the internal framework flags are skipped. (The ROOT target keeps its own ID via CopyExcludedMembers.)
-    private static readonly HashSet<string> CloneExcludedMembers = new(StringComparer.Ordinal)
-    { "ReloadAfterSave", "AuditFieldsAreSet" };
 
     private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName)
     {
@@ -1236,8 +1359,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return assignments;
     }
 
-    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives,
-        HashSet<string> attrIgnored, int maxDepth)
+    // CopyEntity is a TOP-LEVEL (shallow) copy — entity → entity, same type, so every property is copied as-is
+    // (scalars + navigation REFERENCES), excluding keys/flags. No auto deep-clone: it's used by ReloadAfterSave
+    // (a faithful refresh — nav references keep real keys) and copying child collections by reference is correct
+    // there. Deep or custom copy is done EXPLICITLY by the programmer (ForCopy / ForCopyChild).
+    private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives, HashSet<string> attrIgnored)
     {
         var lines = new List<string>();
 
@@ -1256,23 +1382,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return;
             }
 
-            // AUTOMATIC deep clone of an OWNED child COLLECTION (1:N) into NEW instances (keys/audit excluded ⇒
-            // insert-as-new), recursively up to maxDepth. Only collections are cloned — single navigations are
-            // references (their FK scalar is copied) and are NOT duplicated. Use it for "duplicate this aggregate";
-            // ReloadAfterSave refreshes via ShallowCopyTo, so it never hits this clone.
-            if (withConvention && 0 + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity))
-            {
-                var param = "__k0";
-                var childPath = new HashSet<string>(StringComparer.Ordinal) { Fq(entity), Fq(childEntity) };
-                var childInit = $"new {Fq(childEntity)}\n        {{\n{string.Join("\n", BuildCloneInit(childEntity, param, 1, maxDepth, childPath))}\n        }}";
-                lines.Add($"        target.{name} = source.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select(source.{name}, {param} => {childInit}));");
-                lines.Add("");
-                return;
-            }
-
             if (withConvention)
             {
-                lines.Add($"        target.{name} = source.{name};");   // baked copy (scalar / single-nav reference)
+                lines.Add($"        target.{name} = source.{name};");   // baked copy (scalar / navigation reference)
                 lines.Add("");
             }
             // Excluded member (key/flags) with no customization → keep target's value (e.g. ReloadAfterSave).
@@ -1285,52 +1397,6 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         foreach (var prop in copyable.Where(p => CopyExcludedMembers.Contains(p.Name)))
             Emit(prop, withConvention: false);
-
-        return lines;
-    }
-
-    // An OWNED child collection eligible for deep clone: a collection of ShiftEntity children (parameterless
-    // ctor). "Tags" (the framework M:N) is never cloned — it points at shared rows.
-    private static bool TryGetCopyCloneCollection(IPropertySymbol prop, out ITypeSymbol childEntity)
-    {
-        childEntity = null!;
-
-        if (prop.Name == "Tags" || !TryGetElement(prop.Type, out var element) || !DerivesFromShiftEntityBase(element) ||
-            element is not INamedTypeSymbol named ||
-            !named.Constructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public))
-            return false;
-
-        childEntity = element;
-        return true;
-    }
-
-    // Faithful member-init copy of a child entity: everything is copied AS-IS (scalars, FK columns, and the
-    // real keys) EXCEPT the internal framework flags; owned child collections are deep-copied recursively (to
-    // maxDepth); a single navigation is REFERENCE-copied (the copy points at the SAME referenced row — never a
-    // duplicate). Keeping the keys is what makes ReloadAfterSave correct.
-    private static List<string> BuildCloneInit(ITypeSymbol entity, string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys)
-    {
-        var lines = new List<string>();
-
-        foreach (var prop in AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)))
-        {
-            var name = prop.Name;
-
-            if (CloneExcludedMembers.Contains(name))
-                continue;
-
-            if (ownerDepth + 1 <= maxDepth && TryGetCopyCloneCollection(prop, out var childEntity) && !pathKeys.Contains(Fq(childEntity)))
-            {
-                var param = $"__k{ownerDepth}";
-                var childPath = new HashSet<string>(pathKeys, StringComparer.Ordinal) { Fq(childEntity) };
-                var childInit = $"new {Fq(childEntity)}\n            {{\n{string.Join("\n", BuildCloneInit(childEntity, param, ownerDepth + 1, maxDepth, childPath))}\n            }}";
-                lines.Add($"            {name} = {accessor}.{name} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({accessor}.{name}, {param} => {childInit})),");
-                continue;
-            }
-
-            // scalar / FK / real key, OR a single-nav or non-owned collection → reference-copy (same instance).
-            lines.Add($"            {name} = {accessor}.{name},");
-        }
 
         return lines;
     }
@@ -1564,7 +1630,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"    private void CopyEntityGenerated({entityName} source, {entityName} target, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored, maxDepth)));
+            sb.Append(string.Join("\n", BuildCopyBody(triple.Entity, entityName, directives, attrIgnored)));
             sb.AppendLine("    }");
             sb.AppendLine();
 
