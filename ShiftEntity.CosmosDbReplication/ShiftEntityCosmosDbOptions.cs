@@ -132,6 +132,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private List<string> cosmosContainerIds = new();
 
     private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp)>> replicateAction;
+    //Hard-delete companion to replicateAction: removes the entity's own document from Cosmos. Trigger-only (the
+    //timer/catch-up sync never sees a hard delete). Set alongside replicateAction in Replicate().
+    private Func<Entity, IServiceProvider, Database, Task<bool>>? replicateDeleteAction;
     private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
 
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
@@ -235,6 +238,26 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             return (success, success ? stamp : null);
         };
 
+        this.replicateDeleteAction = async (entity, services, db) =>
+        {
+            //Locate the entity's Cosmos document by its persisted stamp (the id + partition key it was last written
+            //under) and remove it. No stamp ⇒ it was never replicated ⇒ nothing to delete.
+            var stamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+            var partitionKey = stamp?.BuildPartitionKey();
+            if (stamp is null || !partitionKey.HasValue)
+                return true;
+
+            var container = db.GetContainer(cosmosContainerId);
+            try
+            {
+                await container.DeleteItemAsync<CosmosDbItem>(stamp.Id, partitionKey.Value);
+            }
+            catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                //Already gone; treat as success.
+            }
+            return true;
+        };
     }
 
     private void CheckPartitionKeyType<CosmosDbItem>(Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
@@ -402,6 +425,15 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         client.ClientOptions.AllowBulkExecution = true;
 
         var db = client.GetDatabase(this.cosmosDataBaseId);
+
+        //Hard delete → remove the entity's own document from Cosmos and stop. No bookkeeping save afterwards: the SQL
+        //row is already deleted, and re-attaching it for the stamp write would resurrect it.
+        if (changeType == ChangeType.Deleted)
+        {
+            if (replicateDeleteAction is not null)
+                await replicateDeleteAction(entity, serviceProvider, db);
+            return;
+        }
 
         //If the change type is added or modified, then do the upsert action
         //(it removes the stale document first when the persisted stamp shows the id/partition key changed)
