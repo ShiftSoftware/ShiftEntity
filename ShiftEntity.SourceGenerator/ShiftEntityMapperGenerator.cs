@@ -19,11 +19,12 @@ namespace ShiftSoftware.ShiftEntity.SourceGenerator;
 ///    methods win and can call the emitted *Generated bodies; per-property Configure hook).
 ///  - PAIR mappers (IShiftObjectMapper&lt;TChildEntity, TChildDto&gt;): auto-discovered from complex
 ///    members of view DTOs (different-class child pairs, single or collection), generated recursively
-///    (grandchildren) with cycle detection, and COMPOSED automatically into the parents' MapToView.
-///    Declared [ShiftEntityMapper] partial pair classes replace the auto ones. Entity/list directions
-///    are never composed automatically (persistence and query-shape decisions) — the pair exposes
-///    MapBack and a conventions-only static list Projection for the explicit builder sugar
-///    (ForEntityChildren / ForListChildren).
+///    (grandchildren) with cycle detection, and COMPOSED automatically into the parents' MapToView
+///    (child DTO), MapToEntity (replace-with-new via MapBack) and MapToList (inline SQL member-init),
+///    each up to MaxDepth. The three directions compose the SAME set of members — a child the view
+///    reads must be a child the entity writes, or an upsert silently empties it. Declared
+///    [ShiftEntityMapper] partial pair classes replace the auto ones; ForEntityChildren /
+///    ForListChildren remain the explicit sugar, and still compose past the cap.
 ///
 /// Conventions: scalars by name + implicit conversion; entity T? → DTO T narrowing (?? default);
 /// long/long? → string and enum → int(?); FK ↔ ShiftEntitySelectDTO via MappingHelpers; string ↔
@@ -1183,14 +1184,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 {
                     lines.Add($"        existing.{name} = {conv};");   // baked convention
                     lines.Add("");
+                    return;
                 }
-                return;
+
+                // No convention → fall through to the automatic deep write below, exactly like the view side
+                // composes after ViewConvention misses. A plain child object/collection (a JSON-owned type, an
+                // owned entity, any POCO) is NOT a ShiftEntity navigation, so it arrives here — returning now
+                // would silently drop it on the write side while the view side still composed it.
             }
 
-            // Navigation with no customization → AUTOMATIC deep write (replace-with-new) up to maxDepth. Every
-            // child DTO becomes a NEW child entity via the pair's MapBack (pair this with a repository that owns
-            // the previous children, e.g. delete-and-recreate). Beyond the cap / a cycle edge it is left untouched.
-            if (IsEntityNavigation(entityProp.Type) && ownerDepth + 1 <= maxDepth &&
+            // Child object/collection with no customization → AUTOMATIC deep write (replace-with-new) up to
+            // maxDepth. Every child DTO becomes a NEW child entity via the pair's MapBack (pair this with a
+            // repository that owns the previous children, e.g. delete-and-recreate). Beyond the cap / a cycle
+            // edge it is left untouched. Audit/base members never compose — the pipeline owns them.
+            if (!EntityExcludedMembers.Contains(name) && ownerDepth + 1 <= maxDepth &&
                 !skippedEdges.Contains(ownerKey + "|" + name) &&
                 TryGetEntityComposableChild(entityProp, dtoProps, out var childEntity, out var childDto, out var isCollection))
             {
