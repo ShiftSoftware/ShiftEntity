@@ -3,7 +3,8 @@
 > **Mirror.** Canonical status lives at `.shift/repos/shift-entity/automapper-removal/STATUS.md`.
 > **Update that one first** — this file drifts fastest. If they disagree, `.shift` wins.
 
-**Last updated:** 2026-08-20 — rescoped to framework only. No implementation started.
+**Last updated:** 2026-08-20 — rescoped to framework only, plus two generator gaps added (A-2 broadened, A-12
+new). No implementation started.
 
 **Scope:** `ShiftEntity` + `ShiftIdentity` + `ShiftTemplates` + CI. Consumer services (`ADP.*`,
 `ADP.SyncAgent`, `Menu`) are out of scope — see [`README.md`](README.md#scope--framework-only).
@@ -28,9 +29,10 @@ Plan: [`01-steps.md`](01-steps.md) · Evidence: [`00-gap-register.md`](00-gap-re
 | A1 Behavioral generator test harness | ⬜ | Gates A3–A9 verification. |
 | A2 Diagnostic source locations | ⬜ | |
 | A3 Reserved names gated by declaring type | ⬜ | Live data loss today. |
-| A4 Inverse scalar conventions | ⬜ | Live silent write loss today. **Before A5/A6.** |
-| A5 List unmapped diagnostic (SHENGEN007) | ⬜ | Expect a large one-time warning count. |
-| A6 Entity asymmetry diagnostic (SHENGEN008) | ⬜ | |
+| A4 Scalar conversions, all three directions | ⬜ | Live silent write loss today. Not just the entity side — view/list do `long`+`enum` and nothing else. **Before A5/A6.** |
+| A4b Collection-kind conversions | ⬜ | Live silent write loss — **has shipped twice** (`PublishTargets`, `Team.Tags`). **Before A5/A6.** |
+| A5 List unmapped diagnostic (**SHENGEN008**) | ⬜ | Expect a large one-time warning count. Id swapped 2026-08-20 — see the note in the step. |
+| A6 Entity asymmetry diagnostic (**SHENGEN007**) | ⬜ | **Highest-value diagnostic in the plan** — its predicate catches both shipped data-loss bugs. |
 | A7 Fail-closed fluent config | ⬜ | `Ignore` is currently a no-op. |
 | A8 Deep-write diagnostic + `ForEntity(existing)` + `AfterEntity` | ⬜ | Escape hatch for consumers — **nothing in scope needs it. Do not cut it.** Depends on Q4. |
 | A9 Soft-deleted children excluded from auto-deep | ⬜ | |
@@ -109,6 +111,25 @@ Plan: [`01-steps.md`](01-steps.md) · Evidence: [`00-gap-register.md`](00-gap-re
 ---
 
 ## Log
+
+**2026-08-20** — **Two source-generator gaps added from field reports**, both silent write loss, both found by
+users rather than by tests:
+
+1. **Scalar conversions (A-2, broadened).** The register said only `EntityConvention` was missing conversions.
+   Re-read: view and list do exactly `long(?)→string` and `enum→int(?)` and nothing else — no `int`, `decimal`,
+   `Guid`, `DateTime`, `bool`, in either direction. Proof in one file: `CompanyBranchRepository` hand-writes all
+   four halves of `decimal? ↔ string` for `Latitude`/`Longitude`. Step A4 rewritten around a conversion matrix
+   covering all three directions; a third asymmetry surfaced while checking (file-list↔JSON exists in view and
+   entity, missing from the list tail).
+2. **Collection-kind mismatch (A-12, new).** `List<T> → IReadOnlyCollection<T>` is implicit so the read side
+   generates; the reverse is not, so the write side emits **nothing**. Auto-deep can't rescue it — `IsPairable`
+   demands `TypeKind.Class`, so `string`/enum elements are never composable children. Live twice:
+   `CompanyBranch.PublishTargets` (fixed 2026-08-20) and `Team.Tags`. The DTO type is dictated by
+   `MudSelectExtended`, so the programmer cannot avoid it. New Step **A4b**.
+
+Also reconciled a diagnostic-id collision: `mapping-abstraction-plan.md` has called the entity-asymmetry
+diagnostic **SHENGEN007** since §23 (three sections), while this plan had reassigned 007 to the list direction.
+Older allocation wins — **007 = entity asymmetry (A6), 008 = list unmapped (A5)**. Neither id is in code yet.
 
 **2026-08-20** — **Rescoped to the framework only.** ADP (`Surveys`, `WarrantyClaims`, `ClaimableItems`,
 `Menus`, `SyncAgent`) and `Menu` removed as work; they remain in the gap register as *(downstream)* evidence.

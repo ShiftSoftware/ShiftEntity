@@ -152,50 +152,146 @@ directions, pinned by a behavioral test.
 
 ---
 
-## Step A4 — Add inverse scalar conventions to `EntityConvention`
+## Step A4 — Add the missing scalar conversions (all three directions)
 
 **Solves:** A-2. **This is live silent data loss today.**
 
-**Problem.** `ViewConvention` (`:913`) handles `long(?) → string` and `enum → int(?)`.
-`EntityConvention` (`:1115-1143`) handles FK↔select DTO, file-list→JSON, implicit conversions and
-nullable-unwrap — then `return null`. There is no `string → long`, no `int → enum`, no `string → Guid`. A
-null return means **no assignment line is emitted at all**. So the read side of such a member succeeds and
-the write side does nothing.
+**Problem.** A convention that returns null emits **no assignment line at all** — the member vanishes from that
+direction, silently. And the three conventions do not agree with each other on what they can convert:
 
-Confirmed live *(downstream)*: `LabourDetailsDTO.ServiceIntervalGroupID` (`string`) ↔
+| conversion | view (`:913`) | entity (`:1115`) | list (`:1270`) |
+|---|:---:|:---:|:---:|
+| implicit (`int→long`, `List<T>→IReadOnlyCollection<T>`) | ✓ | ✓ | ✓ |
+| nullable unwrap (`T? → T`, via `?? default`) | ✓ | ✓ | ✓ |
+| FK ↔ `ShiftEntitySelectDTO` | ✓ | ✓ | ✓ (inlined) |
+| `List<ShiftFileDTO>` ↔ JSON string | ✓ | ✓ | **✗** |
+| `long(?) → string` | ✓ | — | ✓ |
+| `enum → int(?)` | ✓ | — | ✓ |
+| `string → long` / `int → enum` / `string → Guid` | — | **✗** | — |
+| `int` / `decimal` / `DateTime` / `bool` / `Guid` → `string` | **✗** | — | **✗** |
+| `string → int` / `decimal` / `DateTime` / `bool` | — | **✗** | — |
+
+`EntityConvention` is the extreme case — FK↔select, file-list→JSON, implicit, nullable-unwrap, then
+`return null`: **zero** scalar conversions, so the read side of such a member succeeds and the write side does
+nothing. But "number ↔ string works" is not true of the read side either: it holds for `long` and nothing else.
+
+**Confirmed live, in a single file.** `ShiftIdentity.Data/Repositories/CompanyBranchRepository.cs` hand-writes
+all four halves of one `decimal? ↔ string` pair, twice over:
+
+```csharp
+.ForView(d => d.Latitude,  e => string.IsNullOrWhiteSpace(e.Latitude) ? (decimal?)null : decimal.Parse(e.Latitude))
+.ForEntity(e => e.Latitude, dto => dto.Latitude.ToString())        // and the same two for Longitude
+```
+
+Nothing about that is domain logic. It is four lines of boilerplate that exist because `decimal ↔ string` is not
+a convention. *(downstream)* `LabourDetailsDTO.ServiceIntervalGroupID` (`string`) ↔
 `MenuLabourDetails.ServiceIntervalGroupID` (`long`), mapped today by a bare `ReverseMap()`
-(`ADP.Menus.Data/AutoMapperProfiles/GeneralMappingProfile.cs:98`) — and it sits on an auto-deep child, so
-every row is affected. The hole is the framework's; the rows that fall through it happen to be a consumer's.
+(`ADP.Menus.Data/AutoMapperProfiles/GeneralMappingProfile.cs:98`), sits on an auto-deep child — so every row is
+affected. The hole is the framework's; the rows that fall through it happen to be a consumer's.
 
-**What this step does.** Add the inverse conversions, emitting a `MappingHelpers` call that **throws** a
-diagnosable exception on bad input, naming the member via `[CallerArgumentExpression]`.
+**What this step does.** Make the three conventions share **one** conversion table, so a member that reads back
+is a member that writes back — the framework's own documented symmetry invariant, currently enforced nowhere.
+Cover the primitive set in both directions (`string` ↔ `long`/`int`/`short`/`decimal`/`double`/`bool`/`Guid`/
+`DateTime`/`DateTimeOffset`, and `enum` ↔ `int`/`string`), plus the file-list↔JSON conversion the list tail is
+missing.
 
-**Do not** emit `TryParse ? value : default`. AutoMapper throws here too (`Convert.ToInt64`), and
-ShiftEntity's own `ToLong()` is a bare `long.Parse`. A silent `0` written into a required FK is strictly
-worse than today's behavior.
+Emit a `MappingHelpers` call that **throws** a diagnosable exception on bad input, naming the member via
+`[CallerArgumentExpression]`. **Do not** emit `TryParse ? value : default`: AutoMapper throws here too
+(`Convert.ToInt64`), and ShiftEntity's own `ToLong()` is a bare `long.Parse`. A silent `0` written into a
+required FK is strictly worse than today's behavior.
 
-**What it solves.** The most dangerous single class of silent write loss, and it removes the largest source
-of noise from the diagnostics added in A5/A6 — which is exactly why it ships **before** them.
+**Keep the list direction expression-safe.** The list tail is an EF projection — whatever is emitted there must
+be SQL-translatable, which rules out helper method calls. Where a conversion cannot be inlined
+(`decimal → string` has no clean SQL form), emit **nothing** and let A5's diagnostic name it with a paste-ready
+`ForList(…)` line, rather than emitting something that throws at query time.
 
-**Files.** `ShiftEntityMapperGenerator.cs:1115-1143`; `ShiftEntity.Core/MappingHelpers.cs`.
+**What it solves.** The most dangerous single class of silent write loss, and it removes the largest source of
+noise from the diagnostics added in A5/A6 — which is exactly why it ships **before** them.
+
+**Files.** `ShiftEntityMapperGenerator.cs` — `ViewConvention:913-959`, `EntityConvention:1115-1143`,
+`BuildListAssignments:1336-1364`; `ShiftEntity.Core/MappingHelpers.cs`.
 
 **Depends on.** A1, A2.
 
-**Breaks.** Nothing that was working; it starts writing members that previously vanished. A malformed
-`string` FK that used to silently no-op will now throw — that is the point, and it is what AutoMapper did.
+**Breaks.** Nothing that was working; it starts writing members that previously vanished. A malformed `string`
+FK that used to silently no-op will now throw — that is the point, and it is what AutoMapper did.
 
-**Done when.** A DTO with `string` ID, `int` enum and `string` Guid members writes back correctly, and a
-malformed value throws an exception that names the member.
+**Done when.** A DTO with `string` ID, `int` enum, `string` Guid and `decimal?`↔`string` members round-trips
+through all three directions with no fluent configuration; a malformed value throws an exception that names the
+member; and the four hand-written `Latitude`/`Longitude` lines in `CompanyBranchRepository` are provably
+redundant.
 
 ---
 
-## Step A5 — List-direction unmapped diagnostic (`SHENGEN007`)
+## Step A4b — Convert between collection kinds instead of dropping the member
+
+**Solves:** A-12, and the array + aliasing halves of A-9. **This is live silent data loss — it has now shipped twice.**
+
+**Problem.** All three conventions gate collections on `IsImplicit`. `List<T> → IReadOnlyCollection<T>` **is** an
+implicit reference conversion, so the read side generates. `IReadOnlyCollection<T> → List<T>` is **not**, so
+`EntityConvention` returns null and the member is simply **absent** from `MapToEntityGenerated`. Auto-deep does
+not rescue it: `TryGetComposableChild` (`:962`) requires `IsPairable` (`:1017`), which demands `TypeKind.Class`
+on both sides — so `string` and enum elements are never composable children and never reach that path.
+
+Two live instances, both reported by a user as *"it doesn't save"*, both fixed by hand with identical boilerplate:
+
+| member | entity | view DTO | why the DTO type is what it is |
+|---|---|---|---|
+| `CompanyBranch.PublishTargets` | `List<PublishTarget>?` | `IReadOnlyCollection<PublishTarget>?` | `MudSelectExtended`'s `@bind-SelectedValues` binds `IReadOnlyCollection<T>` |
+| `Team.Tags` | `List<string>` | `IReadOnlyCollection<string>` | same |
+
+Note the DTO side is **not** free to change — the component dictates it. So "just declare it as `List<T>`" is not
+available to the programmer, which is what makes this a framework fix rather than a convention to document.
+Full write-up: `.shift/repos/shift-entity/mapping-abstraction-plan.md` §24.
+
+**What this step does.** When the element types are already assignable and only the collection *kind* differs,
+emit the conversion instead of returning null:
+
+- **view / entity:** `src == null ? null : Enumerable.ToList(src)` — or `ToArray()` / `ToHashSet()` to match the declared target.
+- **list:** the same, and only where EF can translate it. The precedent is already in the file: the deep-composition path emits `global::System.Linq.Enumerable.ToList(…)` **inside** the projection (`:1325`). Where the target is already assignable, emit nothing extra.
+
+Cover the kinds that actually occur: `IReadOnlyCollection<T>`, `IReadOnlyList<T>`, `IEnumerable<T>`,
+`ICollection<T>`, `IList<T>`, `List<T>`, `HashSet<T>`, `T[]`. Fold in A-9's array hole while you are in this
+code — `IArrayTypeSymbol` is never treated as a collection at all, and it is the same three call sites.
+
+**This also fixes an aliasing bug** (A-9's second half): today the read side assigns the entity's own `List<T>`
+**by reference** into the DTO, so mutating the DTO mutates the tracked entity. Materializing a copy is the
+correct answer in both directions, not just the convenient one.
+
+**What it solves.** Deletes the `Team` / `CompanyBranch` boilerplate — and, far more importantly, closes a class
+of silent write loss that has shipped twice and was caught both times by a user, not by a test, a warning or a
+review.
+
+**Files.** `ShiftEntityMapperGenerator.cs` — `ViewConvention:913`, `EntityConvention:1115`,
+`BuildListAssignments:1270`, and the shared shape helpers `TryGetElement:994` / `IsPairable:1017`.
+
+**Depends on.** A1, A2. **Ship before A5/A6**, same rule as A4 — otherwise every one of these becomes a warning
+on a case the framework should simply handle.
+
+**Breaks.** Nothing that was working: it starts writing members that previously vanished. Regenerate and diff
+`CompanyBranch`, `Team` and `CompanyBranchList` as the review evidence. The two `ForEntity` workarounds become
+redundant — leave them in place (they are explicit and harmless), but the generated body must be correct
+without them, and that is the assertion worth writing.
+
+**Done when.** An entity `List<T>` ↔ DTO `IReadOnlyCollection<T>` pair round-trips through view, entity **and**
+list with no fluent configuration, pinned by a behavioral test (A1), and the list projection's
+`ToQueryString()` is asserted rather than assumed.
+
+---
+
+## Step A5 — List-direction unmapped diagnostic (`SHENGEN008`)
 
 **Solves:** A-1, and gives A-7 (no flattening) a usable migration path.
 
 **Problem.** `BuildListAssignments` returns a bare `List<string>` and its skip path (`:1329`) is a bare
 `continue`. A list DTO member the generator cannot map is simply absent from the projection — the column is
 null on the wire, with no build output of any kind.
+
+> **Diagnostic id reconciliation (2026-08-20).** `.shift/repos/shift-entity/mapping-abstraction-plan.md` has
+> called the *entity-asymmetry* diagnostic **`SHENGEN007`** since §23, in three separate sections, and lists it
+> as the standing backlog item. This plan originally reallocated 007 to the list direction. **The older
+> allocation wins**: `SHENGEN007` = entity asymmetry (Step A6), `SHENGEN008` = list unmapped (this step).
+> Neither id exists in code yet, so this is free to fix now and expensive to discover later.
 
 **What this step does.** Thread an `Unmapped` list out of `BuildListAssignments` and report it under a **new
 diagnostic id**, so it can be triaged and suppressed independently of `SHENGEN004`. Suppress members that are
@@ -211,7 +307,7 @@ precisely, instead of by grepping profiles.
 
 **Files.** `ShiftEntityMapperGenerator.cs:1270-1340`, plus the descriptor block at `:54-84`.
 
-**Depends on.** A1, A2, A4 (ship A4 first or the wall includes cases the framework should handle).
+**Depends on.** A1, A2, A4, A4b (ship the conventions first or the wall includes cases the framework should handle).
 
 **Breaks.** Nothing. Expect a large one-time warning count — that is the deliverable, and it is the only
 honest way to size Stage E.
@@ -221,12 +317,17 @@ honest way to size Stage E.
 
 ---
 
-## Step A6 — Entity-direction asymmetry diagnostic (`SHENGEN008`)
+## Step A6 — Entity-direction asymmetry diagnostic (`SHENGEN007`)
 
 **Solves:** A-1 (write half).
 
 **Problem.** `BuildEntityBody` returns `(Lines, UsedPairs)` — no unmapped channel. A DTO member the entity
 never writes back is invisible.
+
+**This is the highest-value diagnostic in the plan.** Its exact predicate — *a settable entity member with a
+same-named readable DTO member that gets no assignment emitted* — would have caught **both** production bugs
+found by hand so far: §23's plain-POCO children and A-12's collection-kind mismatch. Two shipped, silent,
+user-reported data-loss bugs, one predicate. It is `SHENGEN007` (see the note in A5).
 
 **What this step does.** **Do not mirror `SHENGEN004`.** `BuildEntityBody` iterates **entity** properties
 (`:1222`), so a naive mirror would warn on every internal or computed column and be useless. Report the
@@ -241,7 +342,7 @@ correctly and silently fails to save — at build time instead of in production.
 
 **Files.** `ShiftEntityMapperGenerator.cs:1145-1240`, plus the descriptor block.
 
-**Depends on.** A1, A2, A4, A5.
+**Depends on.** A1, A2, A4, A4b, A5.
 
 **Breaks.** Nothing. Expect legitimate asymmetries (read-only computed DTO members) — those are what
 `IgnoreEntity` is for, and each one becomes an explicit, reviewed decision.

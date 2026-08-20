@@ -94,7 +94,7 @@ Work through them in order. Steps *within* a stage are mostly independent and sa
    closes.
 
 2. **Fix conventions before turning diagnostics loud.** Shipping the list/entity diagnostics before the
-   inverse scalar conventions (Step A4) produces a warning wall on cases the framework should simply handle,
+   convention fixes (Steps A4 and A4b) produces a warning wall on cases the framework should simply handle,
    and the real findings get lost in it.
 
 3. **Never let the framework silently pick a mapper.** Every resolution chain in this plan ends in `throw`,
