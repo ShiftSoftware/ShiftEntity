@@ -4,9 +4,15 @@
 > `.shift/repos/shift-entity/automapper-removal/`. This copy exists so the plan is readable without
 > cloning `.shift`. Keep both in sync; if they ever disagree, `.shift` wins.
 
-**Created:** 2026-08-19
+**Created:** 2026-08-19 · **Rescoped:** 2026-08-20 — framework only
 The evidence behind [`01-steps.md`](01-steps.md). Every entry below was read in source, not inferred.
 Line numbers are as of `ShiftFrameworkVersion` 2026.08.06.1.
+
+> **Scope.** This plan changes `ShiftEntity`, `ShiftIdentity`, `ShiftTemplates` and CI — nothing else.
+> Consumer services (`ADP.*`, `ADP.SyncAgent`, `Menu`) are **not** migrated here. Where they appear below
+> they are marked *(downstream)* and are cited as evidence that a framework gap is **real and reachable** —
+> a gap the framework must still close, precisely because a consumer cannot close it from outside.
+> See [`README.md`](README.md#scope--framework-only).
 
 **Severity:** `BLOCKER` = removal cannot proceed · `HIGH` = silent wrong data, must land before any flip ·
 `MED` = behavior change to decide deliberately · `LOW` = cleanup.
@@ -20,10 +26,10 @@ Line numbers are as of `ShiftFrameworkVersion` 2026.08.06.1.
 | A-1 | BLOCKER | **Only the view direction reports unmapped members.** `ViewEmission` carries an `Unmapped` list; `BuildEntityBody` returns `(Lines, UsedPairs)` and `BuildListAssignments` returns `List<string>` — neither has an unmapped channel. | `ShiftEntityMapperGenerator.cs:1027` (`ViewEmission` record), `:1145` (`BuildEntityBody` signature), `:1270` (`BuildListAssignments` signature), `:1515` + `:1664` (the only two `SHENGEN004` report sites, both `if (view.Unmapped.Count > 0)`) | A5, A6 |
 | A-2 | BLOCKER | **`EntityConvention` has no inverse scalar conversions.** It handles FK↔`ShiftEntitySelectDTO`, `List<ShiftFileDTO>`→JSON string, implicit conversions, and nullable-unwrap — then `return null`. No `string→long`, `int→enum`, `string→Guid`. A null return means **no line is emitted at all**. | `ShiftEntityMapperGenerator.cs:1115-1143` (whole method). Compare `ViewConvention` at `:913`, which *does* handle `long(?)→string` and `enum→int(?)`. | A4 |
 | A-3 | BLOCKER | **Reserved member names are matched by string, not by declaring type.** A domain column named `Tags` or `Revisions` is silently dropped from view, entity and list. | `:842-843` `ViewHandledMembers` = `{ ID, IsDeleted, CreateDate, LastSaveDate, CreatedByUserID, LastSavedByUserID, Tags, Revisions }`; `:845-846` `EntityExcludedMembers` (same plus `ReloadAfterSave`, `AuditFieldsAreSet`, `IdempotencyKey`); `:1277` list filter is literally `p.Name != "Tags"`. Consumed at `:658`, `:807`, `:1100`, `:1200`, `:1224`, `:1402`. | A3 |
-| A-4 | HIGH | **Auto-deep entity write is replace-with-new, default-on, undiagnosed.** Emits `existing.X = …Select(d => pair.MapBack(d, new Child(), ctx))`. Every non-ownership FK is forced to `Restrict`. | `:1200-1218`; `ModelBuilderExtensions.cs:66-71`. Real case: generated `MenuVariant` mapper composes four collections that `ADP.Menus … GeneralMappingProfile.cs:315-330` deliberately `Ignore()`s and merges by business key. | A8 |
+| A-4 | HIGH | **Auto-deep entity write is replace-with-new, default-on, undiagnosed.** Emits `existing.X = …Select(d => pair.MapBack(d, new Child(), ctx))`. Every non-ownership FK is forced to `Restrict`. | `:1200-1218`; `ModelBuilderExtensions.cs:66-71`. *(downstream)* Real case: generated `MenuVariant` mapper composes four collections that `ADP.Menus … GeneralMappingProfile.cs:315-330` deliberately `Ignore()`s and merges by business key — the shape the framework must ship an escape hatch for, even though the port itself is not ours. | A8 |
 | A-5 | HIGH | **Fluent config discovery fails open.** `BuildConfigCall` returns null for open-generic receivers, non-literal selectors, cross-assembly config, non-constant `MaxDepth` — and the runtime objects are inert, so a missed bake has **zero** effect. | `:254`, `:260-265`, `:268`. `ShiftMapperBuilder.cs:146` is literally `public … MaxDepth(int depth) => this;`. The `ignoredView/Entity/List/Copy` sets have zero readers. `SHENGEN005` already treats the same failure class (conditional registration) as a build **error**. | A7 |
 | A-6 | HIGH | **Auto-deep composition returns soft-deleted children.** Soft delete is enforced in exactly one place — appended to the *root* list DTO queryable. There is no `HasQueryFilter` anywhere in the tree. No `For*Child(ren)` overload accepts a predicate. | `ShiftRepository.cs:206-212` (`OdataList` — no filter), `ShiftEntity.Web/Extensions/IQueryableExtensions.cs:71` + `:120-128` (filter applied to the already-projected DTO queryable). Latent today only because the AutoMapper profile declares no child pair maps, so `ProjectTo` composes nothing deep. | A9 |
-| A-7 | MED | **No flattening; member matching is case-sensitive ordinal.** | `:1034` and `:1274` both build `ToDictionary(p => p.Name, …)`. Live dependence is ~14 members across three ADP list DTOs. `CompanyBranchRepository.cs:56-68` already hand-fixes a `CompanyID`/`CompanyId` case mismatch, with a comment. | A5 (message only) |
+| A-7 | MED | **No flattening; member matching is case-sensitive ordinal.** | `:1034` and `:1274` both build `ToDictionary(p => p.Name, …)`. In scope: `CompanyBranchRepository.cs:56-68` (ShiftIdentity) already hand-fixes a `CompanyID`/`CompanyId` case mismatch, with a comment. *(downstream: ~14 more members across three ADP list DTOs.)* | A5 (message only) |
 | A-8 | MED | **`[ShiftEntityKeyAndName].Text` is ignored** — the generator hardcodes `.Name`; AutoMapper reflects the attribute. | `:919` and `:1290` both call `HasStringName` (`:1734`), which tests for a member literally named `Name`. Compare `DefaultAutoMapperProfile.cs:142-151`. Zero live divergence — all five entity-side usages name `Name`. | A10 |
 | A-9 | LOW | Shape holes: arrays never treated as collections; dictionaries and same-typed lists aliased by reference in the view direction; **init-only members invisible to both mapping and the unmapped scan**. | `IsSettable` at `:1696`. Init-only is the only live silent regression — AutoMapper sets init setters by reflection. | A10 |
 | A-10 | LOW | Generator robustness: duplicate `AddSource` hint names for same-named pair mappers in different namespaces; `HasUserMethod` matches by name only, so any overload suppresses the real method. | `:1520` vs `:1670`. | A10 |
@@ -35,7 +41,7 @@ Line numbers are as of `ShiftFrameworkVersion` 2026.08.06.1.
 
 | # | Sev | Gap | Evidence | Step |
 |---|-----|-----|----------|------|
-| B-1 | BLOCKER | **The repository never consults `ShiftEntityMapperRegistry`.** Resolution is `options.Mapper` → DI → AutoMapper → nothing. The registry is read only by `UseGeneratedMapper()` and endpoint discovery. | `ShiftRepository.cs:144-157`. `ShiftRepositoryOptions.cs:84` and `ShiftEntityEndpointDiscovery.cs:119` are the only registry readers. **ADP: 26 `ShiftRepository<>` subclasses, 0 `UseMapper`/`UseGeneratedMapper`. Menu: 11 / 0.** Delete the fallback with no other change and all 37 throw per request. | D1 |
+| B-1 | BLOCKER | **The repository never consults `ShiftEntityMapperRegistry`.** Resolution is `options.Mapper` → DI → AutoMapper → nothing. The registry is read only by `UseGeneratedMapper()` and endpoint discovery. | `ShiftRepository.cs:144-157`. `ShiftRepositoryOptions.cs:84` and `ShiftEntityEndpointDiscovery.cs:119` are the only registry readers. In-scope triples are already mapper-aware (StockPlusPlus 7 repositories, ShiftIdentity ~4). The gap bites hardest on what this plan does **not** migrate: *(downstream)* **ADP 26 `ShiftRepository<>` subclasses / 0 `UseMapper`, Menu 11 / 0** — delete the fallback with no other change and those 37 throw per request. That is why the mode switch exists, and why its default stays `AutoMapperFirst`. | D1 |
 | B-2 | BLOCKER | **`ShiftTagRepository` has no mapper and cannot generate one.** Its mapping comes from `ShiftTaggingAutoMapperProfile`. The generator is attached only to `ShiftEntity.Core` with `PrivateAssets="all"`, so `ShiftEntity.EFCore` gets no analyzer. | `ShiftEntity.EFCore/Tagging/ShiftTagRepository.cs:10-12` (`base(db)`, no builder); `ShiftEntity.Core.csproj:58-59` (the only analyzer attachment). **Good news:** `:14-17` already has a second ctor taking `IShiftEntityMapper<Tag, TagListDTO, TagDTO>` — so a DI registration is enough, no repository change needed. | B3 |
 | B-3 | BLOCKER | **Attribute endpoints default to AutoMapper.** `UseGeneratedMapper` is a `bool` defaulting to `false`; when false the framework synthesizes an AutoMapper default map. | `ShiftEntityEndpointAttributes.cs:64`; `ShiftEntity.EFCore/Extensions/IServiceCollectionExtensions.cs:208-211`. `EndpointDefaultMaps`, `AddEndpointDefaultMap`, the explicit-generic-args `DefaultAutoMapperProfile` ctor and `GetConfiguredPairs` all have nothing to become. | D2 |
 | B-4 | BLOCKER | **AutoMapper is public API surface.** `ShiftEntityOptions.AddAutoMapper` (6 callers, including the framework's own `AddShiftTagging`), public `DefaultAutoMapperProfile`, extensions living in `namespace AutoMapper` (22 call sites), and `IMapper` as a ctor param of the shipped `UserRepository`. | `ShiftEntity.Core/ShiftEntityOptions.cs`, `DefaultAutoMapperProfile.cs`, `Extensions/AutoMapperExtensions.cs`, `ShiftIdentity.Data/Repositories/UserRepository.cs`. Also constructed directly at `StockPlusPlus.Functions/Functions/ProductCategories.cs:45`. | F1 |
@@ -72,37 +78,56 @@ All five need a release note; see [`02-open-decisions.md`](02-open-decisions.md)
 
 | # | Sev | Gap | Evidence | Step |
 |---|-----|-----|----------|------|
-| D-1 | BLOCKER | **Eager `services.GetRequiredService<IMapper>()` in both `CosmosDbReferenceOperation` constructors.** Fires on the first `.Replicate<>()` regardless of supplied delegates, so consumers that are already 100% delegate-driven still break. | `CosmosDBReplication.cs:133` and `:147`. `ADP.Menus.Sample.Functions/Program.cs:30-34` already ships `services.AddAutoMapper(_ => { });` purely to satisfy it, with a comment saying so. The trigger path already does this correctly — lazily, inside `if (mapping is null)` (`ShiftEntityCosmosDbOptions.cs:184`, `:310`, `:359`). | B4 |
-| D-2 | BLOCKER | **18 delegate-free call sites still on the fallback:** `ADP.ClaimableItems` ×5, `ADP.WarrantyClaims` ×1, and **`StockPlusPlus.API/Controllers/UtilityController.cs:184-229` ×12** — in the file every new microservice is scaffolded from. Failures are swallowed by the per-row `catch` (`:207-211`), so they surface as permanently-dirty rows, not exceptions. | Verified: `UtilityController.ReplicateAll` has 12 `.Replicate<…>` calls with no mapping delegate. `IdentityCatchUpReplicationExtensions.ReplicateAllAsync` already covers all 13 entities, so the template needs **no new code** — just call it. | E2, E3 |
-| D-3 | MED | Replication's mapping shapes (N targets per entity, N sources per target, merge-onto-existing) genuinely cannot live in the `(entity, list, view)` triple — **but nothing is inexpressible today.** The merge overload `Func<EntityWrapper<E>, Doc, Doc>` already exists and is what ShiftIdentity and ADP.Menus use. | `ShiftEntityCosmosDbOptions.cs:287-289`; `CosmosDBReplication.cs:316-318`. | F5 (optional) |
-| D-4 | MED | Hand-porting the remaining profiles must reproduce AutoMapper's **null-navigation propagation** and its `default(long)→"0"` substitution. `ClaimableItemProfile.cs` dereferences `src.Campaign!` ten times and `SetUpReplication` passes no include — so those fields **already replicate as defaults today**. A naive port NREs inside a swallowed task. | Follow the comments at `IdentityReplicationMappingExtensions.cs:89-91`, `:125-126`. Adding the missing `Include` is a **separate commit** — it changes live document content. | E3 |
-| D-5 | MED | **ADP.SyncAgent** carries its own `AutoMapper 14.0.0` and takes `IMapper` as a **required** ctor param; `UseAutoMapper` is public package API with **zero** call sites across all 14 repos. Two of its four services are already `<Compile Remove>`d. | `ADP.SyncAgent/SyncAgent/ADP.SyncAgent.csproj:24`. | F4 |
+| D-1 | BLOCKER | **Eager `services.GetRequiredService<IMapper>()` in both `CosmosDbReferenceOperation` constructors.** Fires on the first `.Replicate<>()` regardless of supplied delegates, so consumers that are already 100% delegate-driven still break. | `CosmosDBReplication.cs:133` and `:147`. In scope: ShiftIdentity is already fully delegate-driven and still breaks. *(downstream: `ADP.Menus.Sample.Functions/Program.cs:30-34` already ships `services.AddAutoMapper(_ => { });` purely to satisfy it, with a comment saying so.)* The trigger path already does this correctly — lazily, inside `if (mapping is null)` (`ShiftEntityCosmosDbOptions.cs:184`, `:310`, `:359`). | B4 |
+| D-2 | BLOCKER | **In scope: 12 delegate-free call sites** — `StockPlusPlus.API/Controllers/UtilityController.cs:184-229`, in the file every new microservice is scaffolded from, so every new service inherits the dependency. Failures are swallowed by the per-row `catch` (`:207-211`), so they surface as permanently-dirty rows, not exceptions. *(downstream: 6 more — `ADP.ClaimableItems` ×5, `ADP.WarrantyClaims` ×1.)* | Verified: `UtilityController.ReplicateAll` has 12 `.Replicate<…>` calls with no mapping delegate. `IdentityCatchUpReplicationExtensions.ReplicateAllAsync` already covers all 13 entities, so the template needs **no new code** — just call it. | E2 |
+| D-3 | MED | Replication's mapping shapes (N targets per entity, N sources per target, merge-onto-existing) genuinely cannot live in the `(entity, list, view)` triple — **but nothing is inexpressible today.** The merge overload `Func<EntityWrapper<E>, Doc, Doc>` already exists and is what ShiftIdentity uses in scope *(and ADP.Menus downstream)*. | `ShiftEntityCosmosDbOptions.cs:287-289`; `CosmosDBReplication.cs:316-318`. | F5 (optional) |
+| D-4 | MED | *(downstream — becomes migration-guide content, not work in this plan.)* Hand-porting a profile must reproduce AutoMapper's **null-navigation propagation** and its `default(long)→"0"` substitution. `ClaimableItemProfile.cs` dereferences `src.Campaign!` ten times and `SetUpReplication` passes no include — so those fields **already replicate as defaults today**. A naive port NREs inside a swallowed task. | Follow the comments at `IdentityReplicationMappingExtensions.cs:89-91`, `:125-126`. Adding the missing `Include` is a **separate commit** — it changes live document content. | E1 (guide) |
+| D-5 | ➖ | *(out of scope)* **ADP.SyncAgent** carries its own `AutoMapper 14.0.0` and takes `IMapper` as a **required** ctor param; `UseAutoMapper` is public package API with **zero** call sites across all 14 repos. Two of its four services are already `<Compile Remove>`d. It has **no ShiftEntity coupling**, so nothing here is blocked by it — but it is why the claim is *"gone from the framework"* rather than *"gone"*. | `ADP.SyncAgent/SyncAgent/ADP.SyncAgent.csproj:24`. | F4 (recorded, not scheduled) |
 | D-6 | LOW | A settable partition-key member left unset writes the document into the JSON-null partition; upsert succeeds and the watermark stamps clean. The "orphaned old document" half is **refuted** — the delete uses the persisted `LastReplicationStamp` coordinates, never a re-map. | `CosmosDBReplication.cs:194-201`; design comment at `ShiftEntityCosmosDbOptions.cs:190-196`. | E3 |
-| D-7 | LOW | AutoMapper 14.0.0 carries **NU1903 (high severity)**, already emitted in ADP builds. An argument for doing the replication and SyncAgent package references **first**. | ADP build output. | F4 |
+| D-7 | LOW | AutoMapper 14.0.0 carries **NU1903 (high severity)**, and the framework propagates it *transitively into every consumer build* through `ShiftEntity.Core` and `ShiftEntity.CosmosDbReplication` — including the consumers this plan does not migrate, who cannot drop it themselves. An argument for removing the replication package reference **first**. | Already emitted in consumer builds. | F5 |
 
 ---
 
-## E. Consumer volume
+## E. Volume
 
-Corrected upward after direct counting:
+### In scope — framework-owned, and it is small
+
+| Metric | ShiftIdentity.Data | StockPlusPlus.Data (sample/template) |
+|--------|--------------------|--------------------------------------|
+| Profile files / lines | 11 / 352 | 3 / 83 |
+| `CreateMap` | 23 | 6 |
+| `ForMember` | 58 | 13 |
+| `ReverseMap` | 1 | 3 |
+| **`AfterMap` blocks** | **0** | **0** |
+
+Plus, all in scope: 11 ad-hoc `IMapper.Map<T>` sites in ShiftIdentity's User flows (Step F2); the framework's
+own `DefaultAutoMapperProfile`, `AutoMapperExtensions`, `AutoMapperShiftEntityMapper` and
+`ShiftTaggingAutoMapperProfile` (Steps B3, F1); the template's 12 replication call sites (Step E2); and
+9 docs pages (Step F5).
+
+**The zero is the most important number in this document.** The 16 `AfterMap` blocks — collection
+reconciliation against tracked children with soft-delete/revive semantics — were the genuinely hard part of
+the original plan, and every one of them is downstream. What the framework actually has to port is
+`CreateMap` + `ForMember`, which is exactly the shape the generator already covers.
+
+### Downstream — informational, not this plan's work
 
 | Metric | Count |
 |--------|-------|
 | `ForMember` calls | 245 |
 | `CreateMap` calls | 109 |
-| **`AfterMap` blocks** | **16** ← the genuinely hard part |
+| `AfterMap` blocks | 16 |
 | `ConvertUsing` | 3 |
 | Profile classes / lines | 23 profiles, ~1,958 lines |
-| ADP triples / Menu triples / ShiftIdentity remaining | 26 / 11 / ~3 |
-| Ad-hoc `IMapper.Map<T>` sites in ShiftIdentity user flows | 11 |
-| Docs pages referencing AutoMapper | 9 |
+| ADP triples / Menu triples | 26 / 11 |
 
-The 16 `AfterMap` blocks are collection reconciliation against tracked children with soft-delete/revive
-semantics. `ForEntity`'s delegate cannot see `existing`, which is why Step A8 adds that overload — with it,
-the blocks port near-verbatim.
+Kept for exactly two reasons: it sizes what the compat package (F1) has to carry, and it is the answer to
+*"why build A5–A8 if nothing in scope needs them?"*
 
-**A `CreateMap`-driven codemod is not safe on its own:** `LabourRateMappingListDTO` and `MenuVersionDTO` have
-no `CreateMap` at all yet still need mappers. Enumerate triples from **repositories**, not profiles.
+**If a consumer migration is picked up later:** a `CreateMap`-driven codemod is not safe on its own —
+`LabourRateMappingListDTO` and `MenuVersionDTO` have no `CreateMap` at all yet still need mappers. Enumerate
+triples from **repositories**, not profiles. And `ForEntity`'s delegate cannot see `existing`, which is why
+Step A8 adds that overload — with it, the 16 blocks port near-verbatim.
 
 ---
 
