@@ -31,8 +31,12 @@ Plan: [`01-steps.md`](01-steps.md) · Evidence: [`00-gap-register.md`](00-gap-re
 | A3 Reserved names gated by declaring type | ⬜ | Live data loss today. |
 | A4 Scalar conversions, all three directions | ⬜ | Live silent write loss today. Not just the entity side — view/list do `long`+`enum` and nothing else. **Before A5/A6.** |
 | A4b Collection-kind conversions | ⬜ | Live silent write loss — **has shipped twice** (`PublishTargets`, `Team.Tags`). **Before A5/A6.** |
+| A4c Case-insensitive matching + opt-out | ⬜ | **Parity regression** — AutoMapper matched across case, the generator doesn't. Already broke 3 live members. Optioned like `MaxDepth`, default insensitive, exact-first, conflict → skip + **SHENGEN009**. **Before A5/A6.** |
 | A5 List unmapped diagnostic (**SHENGEN008**) | ⬜ | Expect a large one-time warning count. Id swapped 2026-08-20 — see the note in the step. |
 | A6 Entity asymmetry diagnostic (**SHENGEN007**) | ⬜ | **Highest-value diagnostic in the plan** — its predicate catches both shipped data-loss bugs. |
+
+**Diagnostic ids allocated by this plan:** `SHENGEN007` = entity asymmetry (A6) · `SHENGEN008` = list unmapped
+(A5) · `SHENGEN009` = ambiguous case-insensitive match (A4c). None exist in code yet.
 | A7 Fail-closed fluent config | ⬜ | `Ignore` is currently a no-op. |
 | A8 Deep-write diagnostic + `ForEntity(existing)` + `AfterEntity` | ⬜ | Escape hatch for consumers — **nothing in scope needs it. Do not cut it.** Depends on Q4. |
 | A9 Soft-deleted children excluded from auto-deep | ⬜ | |
@@ -111,6 +115,19 @@ Plan: [`01-steps.md`](01-steps.md) · Evidence: [`00-gap-register.md`](00-gap-re
 ---
 
 ## Log
+
+**2026-08-20** — **Case-sensitivity split out of A-7 into its own gap (A-13) and step (A4c).** It had been
+bundled with "no flattening" under one row and one disposition — *"A5, message only"* — which hid a cheap fix
+behind a deliberate decline. They are different problems: flattening stays declined; case matching is a
+**parity regression** and gets fixed. Proof it is a regression, not a limitation: the pre-migration
+`CompanyBranch` profile mapped `CompanyBranchListDTO.CompanyId`/`CityId`/`RegionId` from entity
+`CompanyID`/`CityID`/`RegionID` with **no `ForMember`** — AutoMapper matched across case *and* converted
+`long?→string`. All three silently stopped projecting on flip, and the repository now carries three
+hand-written `ForList` lines. Two corrections to the register while confirming it: there are **five**
+name-keyed dictionaries, not two, and the FK convention's hardcoded `"ID"` suffix is the same defect. One
+implementation trap recorded in the step: ~20 emission sites interpolate the *lookup* name, so
+case-insensitive matching without switching them to the matched symbol's name emits code that does not
+compile.
 
 **2026-08-20** — **Two source-generator gaps added from field reports**, both silent write loss, both found by
 users rather than by tests:

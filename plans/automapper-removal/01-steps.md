@@ -279,9 +279,122 @@ list with no fluent configuration, pinned by a behavioral test (A1), and the lis
 
 ---
 
+## Step A4c — Case-insensitive member matching by default, with a per-triple opt-out
+
+**Solves:** A-13. **This is a parity regression — it has already silently broken three live members.**
+
+**Problem.** Every member lookup in the generator is a `ToDictionary(p => p.Name, p => p)` with the **default**
+(ordinal, case-sensitive) comparer. So `CompanyID` ↔ `CompanyId` does not match, the convention returns null,
+and — as everywhere else in this stage — **no line is emitted at all**.
+
+**This is not a limitation the framework gets to declare; it is a behavior AutoMapper had and the generator
+lost.** The proof is in the profile that was deleted when `CompanyBranch` migrated:
+`CompanyBranchListDTO.CompanyId` / `CityId` / `RegionId` (`string?`) mapped from entity
+`CompanyID` / `CityID` / `RegionID` (`long?`) with **no `ForMember` at all** — AutoMapper matched across the
+case difference *and* converted `long? → string`. After the flip, all three silently stopped projecting, and
+`CompanyBranchRepository` now carries three hand-written `ForList` lines and a comment explaining them.
+
+**And the failure escalates in the list direction.** An unprojected scalar leaves an OData `$filter` with
+nothing to bind to, so EF inlines the whole collection-bearing projection into the `WHERE` clause and cannot
+translate it — the grid works in testing and 500s the first time a user filters it. That is the difference
+between "a column is null" and "the page is down".
+
+**What this step does.** Make matching an **option**, defaulting to case-insensitive, and give it a precise
+resolution order.
+
+**The option.** Mirror `MaxDepth` exactly — it is the established precedent for a per-triple, build-time-baked
+generator setting, and copying its shape means no new concepts:
+
+| | `MaxDepth` (existing) | member matching (new) |
+|---|---|---|
+| attribute | `[ShiftEntityMapperMaxDepth(n)]` | `[ShiftEntityMapperCaseSensitive]` |
+| fluent | `map.MaxDepth(n)` | `map.CaseSensitive()` |
+| default | `ShiftEntityMapperDefaults.MaxDepth = 10` | `ShiftEntityMapperDefaults.CaseSensitiveMatching = false` |
+
+**Default is case-insensitive** — that is AutoMapper's behavior, so it is the setting under which a migration
+does not silently lose members. Case-sensitive is the deliberate opt-in for a team that wants names to line up
+exactly.
+
+**Resolution order.**
+
+- **Case-sensitive (opt-in):** exact ordinal match only. No fallback. A near-miss is simply unmapped, and A5/A6 report it like any other unmapped member.
+- **Case-insensitive (default):** try the **exact ordinal** match first — always, and never let a case-insensitive candidate beat it. Only if there is no exact match, retry with `OrdinalIgnoreCase`.
+- **Conflict** — no exact match and **two or more** case-insensitive candidates: **skip the member and warn (`SHENGEN009`)**. Do not guess, and do not fail the build.
+
+Exact-first is what keeps the fallback safe: an entity carrying both `Id` and `ID` still binds each to its
+own exactly-named DTO member, and only a member with no exact counterpart ever reaches the ambiguous branch.
+
+**Why skip-and-warn rather than a build error.** It follows the framework's own documented `SHENGEN` split —
+*errors* mark something that cannot be expressed at build time or would run silently wrong; *warnings* mark
+something merely **skipped**. An ambiguous match is skipped, and the fix (rename one member, or write
+`ForView`/`ForEntity`/`ForList`) is the programmer's decision, not the generator's. Failing the build would
+also make a rare, pre-existing naming collision in one DTO block the whole assembly — a cure worse than the
+disease, and inconsistent with `SHENGEN003`, which already handles "member skipped" as a warning.
+
+**Then the mechanical work:**
+
+1. Route all **five** name-keyed lookups through the new comparer — `:654`, `:803`, `:1034` (view), `:1149` (entity `dtoProps`), `:1274` (list). The register previously recorded only two of them.
+2. **Build the dictionaries defensively.** The current `ToDictionary` throws `ArgumentException` on a duplicate key; under `OrdinalIgnoreCase` that becomes reachable, and an exception inside a source generator surfaces as a build failure with **no usable message**. Group by name instead, keep the exact-cased member, and carry the collision list forward so `SHENGEN009` can name every candidate.
+3. Apply the same fix to the FK convention, which is this defect in another costume: `:917` and `:1287` look up `dtoProp.Name + "ID"` and `:1117` tests `EndsWith("ID", StringComparison.Ordinal)` — so an entity spelling it `CompanyId` gets no FK convention either.
+
+**The option must be bakeable.** Like `MaxDepth`, the generator reads it from the **call syntax** at compile
+time, so `map.CaseSensitive(someRuntimeBool)` has to be one of Step A7's fail-closed cases — a non-literal
+argument is an error, not a silently ignored no-op. Ship A4c's option and A7's check together, or the option
+joins `Ignore` and `MaxDepth` in the list of settings that compile, run, and do nothing.
+
+**The implementation trap — this is the part that will not compile.** Roughly twenty emission sites interpolate
+the **lookup** name rather than the matched symbol's name: `$"{accessor}.{dtoProp.Name}"` at `:937`, `:940`,
+`:944`, `:947`, `:953`, `:955`, and `$"{accessor}.{entityProp.Name}"` at `:1134`, `:1137`, `:1140`, and the list
+tail at `:1334`–`:1352`. They are correct **only while the two names are identical**. Every one of them must
+switch to the matched `IPropertySymbol.Name` for the *source* side, keeping the *target* name for the
+assignment — otherwise the generator happily emits `entity.CompanyId`, which does not exist. Grep for
+`accessor}.{` and fix them as one sweep; a behavioral test (A1) over a deliberately case-mismatched pair is the
+only thing that proves it.
+
+**A successful case-insensitive match is silent — deliberately.** Parity is the goal: AutoMapper resolved
+these without comment, so warning on every one would add ~17 members (three in scope, ~14 downstream) to A5's
+wall for a case with no decision in it. `SHENGEN009` fires only on real ambiguity, where there *is* a decision
+and the generator has correctly refused to make it.
+
+**Diagnostic id.** `SHENGEN009` — next free after this plan's `007` (entity asymmetry, A6) and `008` (list
+unmapped, A5). See the allocation note in A5.
+
+**What it solves.** Removes a class of member that reads and writes correctly under AutoMapper and vanishes
+under the generated mapper — the exact swap Stage D's mode switch exists to make reviewable, made unnecessary
+for this class. It also deletes the three `ForList` workarounds and shrinks A5's warning wall before A5 ships.
+
+**Files.** `ShiftEntityMapperGenerator.cs` — the five dictionaries above, the three FK-suffix sites, every
+`{accessor}.{…Name}` emission site, and the descriptor block at `:54-84` for `SHENGEN009`;
+`ShiftEntity.Core/ShiftEntityMapperConfigAttributes.cs` (attribute + `ShiftEntityMapperDefaults`);
+`ShiftEntity.Core/ShiftMapperBuilder.cs` (the fluent marker).
+
+**Depends on.** A1, A2. **Ship before A5/A6**, same rule as A4 and A4b. Pairs with **A7** — the option is a
+build-time-baked setting, so A7's fail-closed check is what stops `CaseSensitive(nonLiteral)` becoming another
+inert no-op.
+
+**Breaks.** Nothing that was working. It starts mapping members that previously vanished — which is the fix.
+Regenerate and diff `CompanyBranchList` as the review evidence: the three `ForList` scope-id lines should become
+redundant.
+
+**Note the boundary with A-7.** Case-insensitive matching is **not** flattening. Flattening stays declined
+(see the Stage A scope note) — it re-imports the invisible two-level reach this effort exists to remove.
+These two were one gap row until 2026-08-20, and bundling them hid a cheap fix behind a deliberate decline.
+
+**Done when.** All four behaviors are pinned by behavioral tests (A1):
+
+1. **Default:** entity `CompanyID` (`long?`) ↔ DTO `CompanyId` (`string?`) maps in all three directions with no fluent configuration.
+2. **Exact-first:** an entity carrying both `Id` and `ID` binds each to its exactly-named DTO member — no warning, no swap.
+3. **Conflict:** entity `Code` + `code` against DTO `CODE` skips the member and reports `SHENGEN009` naming both candidates — and the build **succeeds**, and the generator does not crash.
+4. **Opt-out:** `[ShiftEntityMapperCaseSensitive]` on that same triple leaves `CompanyId` unmapped and reported by A5/A6 as an ordinary unmapped member.
+
+Plus: the three `ForList` scope-id lines in `CompanyBranchRepository` are provably redundant under the
+default.
+
+---
+
 ## Step A5 — List-direction unmapped diagnostic (`SHENGEN008`)
 
-**Solves:** A-1, and gives A-7 (no flattening) a usable migration path.
+**Solves:** A-1, and gives A-7 (no flattening — deliberately declined) a usable migration path.
 
 **Problem.** `BuildListAssignments` returns a bare `List<string>` and its skip path (`:1329`) is a bare
 `continue`. A list DTO member the generator cannot map is simply absent from the projection — the column is
@@ -307,7 +420,7 @@ precisely, instead of by grepping profiles.
 
 **Files.** `ShiftEntityMapperGenerator.cs:1270-1340`, plus the descriptor block at `:54-84`.
 
-**Depends on.** A1, A2, A4, A4b (ship the conventions first or the wall includes cases the framework should handle).
+**Depends on.** A1, A2, A4, A4b, A4c (ship the conventions first or the wall includes cases the framework should handle — A4c alone removes ~17 members from the wall).
 
 **Breaks.** Nothing. Expect a large one-time warning count — that is the deliverable, and it is the only
 honest way to size Stage E.
@@ -342,7 +455,7 @@ correctly and silently fails to save — at build time instead of in production.
 
 **Files.** `ShiftEntityMapperGenerator.cs:1145-1240`, plus the descriptor block.
 
-**Depends on.** A1, A2, A4, A4b, A5.
+**Depends on.** A1, A2, A4, A4b, A4c, A5.
 
 **Breaks.** Nothing. Expect legitimate asymmetries (read-only computed DTO members) — those are what
 `IgnoreEntity` is for, and each one becomes an explicit, reviewed decision.
