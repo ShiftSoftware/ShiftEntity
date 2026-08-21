@@ -75,6 +75,26 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         "Mapper configuration '{0}' is registered conditionally (inside an if/else/switch/loop/?: or &&/||/??). The generator bakes customization decisions at build time, so a skipped branch would silently drop the member to its default. Register it UNCONDITIONALLY and put the condition INSIDE the value delegate instead — e.g. map.ForView(d => d.X, (e, _) => cond ? a : b).",
         "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
 
+    private static readonly DiagnosticDescriptor UnmappedListMembers = new(
+        "SHENGEN007", "Unmapped list members",
+        "Generated mapper '{0}' does not project into the list: {1} — the column comes back empty. Add the mapping to the repository's UseGeneratedMapper(map => …) or the mapper's Configure, or IgnoreList it if the column is not wanted",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
+
+    private static readonly DiagnosticDescriptor DeepWriteReplacesTrackedChildren = new(
+        "SHENGEN010", "Deep write replaces tracked child rows",
+        "Generated mapper '{0}' composes '{1}' automatically on the write side, but {2} is a tracked entity with a required foreign key back to {3}. Automatic deep write is REPLACE-WITH-NEW, so saving will either fail on the foreign key or orphan and duplicate rows. Reconcile them instead with map.AfterEntity(...) or an existing-aware map.ForEntity(...), or IgnoreEntity the member and handle it in the repository",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
+
+    private static readonly DiagnosticDescriptor UnbakeableConfig = new(
+        "SHENGEN009", "Mapper configuration cannot be baked",
+        "Mapper configuration '{0}' cannot be read at build time ({1}), so the generator would bake the plain convention and the call would do nothing at all. Use a plain property selector (d => d.Name), a constant depth, and a closed generic receiver",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Error, true);
+
+    private static readonly DiagnosticDescriptor EntityWriteAsymmetry = new(
+        "SHENGEN008", "View members that are never written back",
+        "Generated mapper '{0}' reads these DTO members in MapToView but never writes them back in MapToEntity: {1} — they will display correctly and silently fail to save. Map them with ForEntity, or mark them read-only with IgnoreEntity",
+        "ShiftEntity.Mapping", DiagnosticSeverity.Warning, true);
+
     private static readonly DiagnosticDescriptor EntityConfigSuppressed = new(
         "SHENGEN006", "Entity repository configuration will not run",
         "'{0}' declares IConfiguresShiftRepository<{0}, {1}, {2}>, but repository '{3}' configures the same triple by passing an options builder to its base constructor. Passing a builder means the repository configures itself and takes over completely, so '{0}'.ConfigureRepository will NOT run — move that configuration into '{3}'s builder, or drop the builder to let the entity's configuration apply.",
@@ -86,8 +106,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         ITypeSymbol? Entity, ITypeSymbol? ListDto, ITypeSymbol? ViewDto);
 
     private sealed record TripleModel(ITypeSymbol Entity, ITypeSymbol ListDto, ITypeSymbol ViewDto, int? MaxDepth = null,
-        // For SHENGEN006 only: whether the repository configures itself (passes an options builder to
-        // ShiftRepository's constructor), and where to point the diagnostic.
+        // RepoConfiguresItself / RepoName are for SHENGEN006 only: whether the repository passes an options
+        // builder to ShiftRepository's constructor, and what it is called.
+        //
+        // RepoLocation is where every diagnostic about this triple points. For the dominant shape — an
+        // UseGeneratedMapper() triple with no [ShiftEntityMapper] partial — there is no user class to point at,
+        // so without this the warning has no file and no line: it cannot be double-clicked and cannot be
+        // suppressed locally. It is the repository declaration, or the endpoint attribute that declared the triple.
         bool RepoConfiguresItself = false, string? RepoName = null, Location? RepoLocation = null);
 
     private sealed record PairSeed(ITypeSymbol Entity, ITypeSymbol Dto);
@@ -148,9 +173,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         });
     }
 
+    // NOTE: there is deliberately no ForCopyChild(ren). CopyEntity is a shallow, same-type copy, so a deep
+    // child variant would have no meaning. Per-member copy customization is ForCopy / IgnoreCopy /
+    // [ShiftEntityMapperIgnore]. Both names used to be listed here and documented, and neither ever existed.
     private static bool IsDeepMappingMethod(string name) =>
         name is "ForListChildren" or "ForListChild" or "ForEntityChildren" or "ForEntityChild"
-             or "ForViewChildren" or "ForViewChild" or "ForCopyChildren" or "ForCopyChild"
+             or "ForViewChildren" or "ForViewChild"
              // Direction-scoped child builders expose the deep methods without a direction in the name;
              // the direction comes from the receiver type (ShiftXxxChildMapper) instead.
              or "ForChild" or "ForChildren";
@@ -195,13 +223,26 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     // One statically-read fluent config call: which triple it targets, what it does, to which member.
     // Conditional = the call sits inside a branch (if/switch/loop/?:/&&/||/??) within its config body — the
     // generator bakes decisions, so conditional registration is an error (SHENGEN005).
+    /// <summary>
+    /// One fluent configuration call the generator found.
+    /// <para>
+    /// <paramref name="UnbakeableReason"/> is set when the call was recognised as configuration but could not be
+    /// READ — an open-generic receiver, a selector that is not a plain property access, a computed depth. Such a
+    /// call used to be dropped silently, and dropping it means the generated code bakes the plain convention: the
+    /// registration compiles, runs, and has no effect whatsoever. It is reported instead.
+    /// </para>
+    /// </summary>
     private sealed record ConfigCall(string TripleKey, MapKind Kind, MapDir Dir, string? Member, int Depth,
-        bool Conditional, Location Location, string MethodName);
+        bool Conditional, Location Location, string MethodName, string? UnbakeableReason = null);
+
+    /// <summary>A call that is configuration but cannot be baked — carried so it can be reported, not dropped.</summary>
+    private static ConfigCall Unbakeable(Location location, string methodName, string reason) =>
+        new("", MapKind.Custom, MapDir.All, null, 0, false, location, methodName, reason);
 
     private static bool IsConfigMethod(string name) =>
         name is "ForView" or "ForEntity" or "ForList" or "ForCopy"
              or "ForViewChild" or "ForViewChildren" or "ForEntityChild" or "ForEntityChildren"
-             or "ForListChild" or "ForListChildren" or "ForCopyChild" or "ForCopyChildren"
+             or "ForListChild" or "ForListChildren"
              or "Ignore" or "IgnoreView" or "IgnoreEntity" or "IgnoreList" or "IgnoreCopy"
              or "MaxDepth"
              // Direction-scoped child-builder surface (direction comes from the receiver type).
@@ -220,6 +261,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var conditional = IsInConditionalContext(invocation);
         var location = invocation.GetLocation();
 
+        // The framework's own builders forward between overloads and out of ShiftChildMapperBuilder, so their
+        // receivers are open generic by construction. Those are API DEFINITIONS, not registrations — the real
+        // registration is the user's call into them, with concrete types, which is handled below. Reporting them
+        // would break the framework's own build, and SHENGEN diagnostics only fire on a certainty.
+        var enclosing = ctx.SemanticModel.GetEnclosingSymbol(invocation.SpanStart)?.ContainingType;
+        var inFrameworkPlumbing = enclosing is not null && IsShiftNamespace(enclosing);
+
         // Nested child config: receiver is a direction-scoped ShiftXxxChildMapper<TChildEntity, TChildDto>.
         // The pair mapper's baked directives are keyed by its (entity, dto, dto) triple; the direction comes
         // from the receiver TYPE (For/Ignore/ForChild/ForChildren carry no direction in the name). Its member
@@ -234,11 +282,15 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             var childDto = container.TypeArguments[1];
 
             if (IsOpenOrError(childEntity) || IsOpenOrError(childDto))
-                return null;
+                return inFrameworkPlumbing
+                    ? null
+                    : Unbakeable(location, name, "the child mapper's type arguments are not closed generic types");
 
             var childMember = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
             if (childMember is null)
-                return null;
+                return inFrameworkPlumbing
+                    ? null
+                    : Unbakeable(location, name, "the member selector is not a plain property access");
 
             var childKind = name == "Ignore" ? MapKind.Ignore : MapKind.Custom;
             return new ConfigCall(TripleKey(childEntity, childDto, childDto), childKind, childDir, childMember, 0, conditional, location, name);
@@ -252,7 +304,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var v = container.TypeArguments[2];
 
         if (IsOpenOrError(e) || IsOpenOrError(l) || IsOpenOrError(v))
-            return null;
+            return inFrameworkPlumbing
+                ? null
+                : Unbakeable(location, name, "the mapper builder's type arguments are not closed generic types");
 
         var key = TripleKey(e, l, v);
 
@@ -262,12 +316,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             var arg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
             if (arg is not null && ctx.SemanticModel.GetConstantValue(arg) is { HasValue: true, Value: int depth })
                 return new ConfigCall(key, MapKind.MaxDepth, MapDir.All, null, depth, conditional, location, name);
-            return null;
+
+            return inFrameworkPlumbing
+                ? null
+                : Unbakeable(location, name, "the depth is not a compile-time constant");
         }
 
         var member = MemberNameFromSelector(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression);
         if (member is null)
-            return null;
+            return inFrameworkPlumbing
+                ? null
+                : Unbakeable(location, name, "the member selector is not a plain property access");
 
         var dir =
             name.Contains("View") ? MapDir.View :
@@ -496,7 +555,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             var viewDto = attrClass.TypeArguments[1];
 
             if (!IsOpenOrError(listDto) && !IsOpenOrError(viewDto))
-                models.Add(new TripleModel(entity, listDto, viewDto));
+                // Point at the attribute application, not the entity: an entity can declare several endpoints,
+                // and the one that declared THIS triple is the useful place to land.
+                models.Add(new TripleModel(entity, listDto, viewDto,
+                    RepoLocation: attribute.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                                  ?? entity.Locations.FirstOrDefault()));
         }
 
         return models.ToImmutable();
@@ -561,6 +624,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         foreach (var call in calls)
         {
+            // A call the generator could not read carries no member and no triple. It is reported as SHENGEN009
+            // rather than baked — recording it here would mean a null member name in the directive sets.
+            if (call.UnbakeableReason is not null)
+                continue;
+
             if (!map.TryGetValue(call.TripleKey, out var d))
                 map[call.TripleKey] = d = new MapperDirectives();
 
@@ -582,6 +650,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         public INamedTypeSymbol? UserClass;
         public string ClassName = "";   // simple name (auto) — for declared pairs the user class name
         public string TypeRef = "";     // fully qualified reference used by consumers
+
+        /// <summary>
+        /// Where the triple that pulled this pair in was declared. An auto pair has no user class, so this is
+        /// the only navigable place a diagnostic about it can point.
+        /// </summary>
+        public Location? OriginLocation;
     }
 
     private static void GenerateAll(SourceProductionContext spc,
@@ -598,9 +672,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         // Conditional registration can't be baked (a skipped branch would silently drop the member) — error out.
         foreach (var call in configuration)
-            if (call.Conditional)
+            if (call.Conditional && call.UnbakeableReason is null)
                 spc.ReportDiagnostic(Diagnostic.Create(ConditionalConfig, call.Location,
                     call.Member is null ? call.MethodName : $"{call.MethodName}({call.Member})"));
+
+        // Same stance, wider: a registration the generator recognised but could not READ. Silently ignoring it
+        // bakes the plain convention, so the call compiles, runs, and does nothing — which is how `Ignore` came
+        // to be decoration rather than instruction.
+        foreach (var call in configuration)
+            if (call.UnbakeableReason is not null)
+                spc.ReportDiagnostic(Diagnostic.Create(UnbakeableConfig, call.Location,
+                    call.MethodName, call.UnbakeableReason));
 
         // A repository that passes an options builder configures itself and takes over, so an entity declaring
         // IConfiguresShiftRepository for the SAME triple has its ConfigureRepository silently skipped. Both halves
@@ -649,13 +731,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var skippedEdges = new HashSet<string>(StringComparer.Ordinal);   // "<ownerKey>|<member>"
         var stack = new List<string>();
 
-        void Discover(string ownerKey, string ownerDisplay, ITypeSymbol entity, ITypeSymbol viewDto)
+        void Discover(string ownerKey, string ownerDisplay, ITypeSymbol entity, ITypeSymbol viewDto, Location? origin)
         {
             var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
 
             foreach (var dtoProp in AllProps(viewDto).Where(IsSettable))
             {
-                if (ViewHandledMembers.Contains(dtoProp.Name) ||
+                if (IsViewHandled(dtoProp) ||
                     ViewConvention(entityProps, dtoProp, compilation) is not null ||
                     !TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out _))
                     continue;
@@ -664,7 +746,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
                 if (stack.Contains(key))
                 {
-                    spc.ReportDiagnostic(Diagnostic.Create(MappingCycle, Location.None,
+                    spc.ReportDiagnostic(Diagnostic.Create(MappingCycle, origin ?? Location.None,
                         string.Join(" → ", stack.Concat(new[] { key }).Select(ShortPair)),
                         $"{ownerDisplay}.{dtoProp.Name}"));
                     skippedEdges.Add(ownerKey + "|" + dtoProp.Name);
@@ -676,7 +758,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
                 declaredPairs.TryGetValue(key, out var declaredPair);
 
-                var info = new PairInfo { Entity = childEntity, Dto = childDto, UserClass = declaredPair?.Cls };
+                var info = new PairInfo { Entity = childEntity, Dto = childDto, UserClass = declaredPair?.Cls, OriginLocation = origin };
 
                 if (declaredPair is not null)
                 {
@@ -692,7 +774,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 pairs[key] = info;
 
                 stack.Add(key);
-                Discover(key, ShortPair(key), childEntity, childDto);
+                Discover(key, ShortPair(key), childEntity, childDto, origin);
                 stack.RemoveAt(stack.Count - 1);
             }
         }
@@ -700,7 +782,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         foreach (var (key, (triple, _)) in triples.Select(kv => (kv.Key, kv.Value)))
         {
             stack.Clear();
-            Discover(key, triple.Entity.Name, triple.Entity, triple.ViewDto);
+            Discover(key, triple.Entity.Name, triple.Entity, triple.ViewDto, triple.RepoLocation);
         }
 
         // Declared pairs that no triple references still get generated (they may be used explicitly).
@@ -717,11 +799,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 UserClass = model.Cls,
                 ClassName = model.Cls.Name,
                 TypeRef = Fq(model.Cls),
+                OriginLocation = model.Cls.Locations.FirstOrDefault(),
             };
 
             stack.Clear();
             stack.Add(kv.Key);
-            Discover(kv.Key, ShortPair(kv.Key), model.Entity!, model.ViewDto!);
+            Discover(kv.Key, ShortPair(kv.Key), model.Entity!, model.ViewDto!, model.Cls.Locations.FirstOrDefault());
         }
 
         // Pairs opted-in by a ForListChild(ren)/ForEntityChild(ren) call site — the call is the opt-in, so
@@ -736,7 +819,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             declaredPairs.TryGetValue(key, out var declaredForSeed);
 
-            var info = new PairInfo { Entity = seed.Entity, Dto = seed.Dto, UserClass = declaredForSeed?.Cls };
+            var info = new PairInfo
+            {
+                Entity = seed.Entity,
+                Dto = seed.Dto,
+                UserClass = declaredForSeed?.Cls,
+                OriginLocation = declaredForSeed?.Cls.Locations.FirstOrDefault(),
+            };
 
             if (declaredForSeed is not null)
             {
@@ -753,7 +842,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             stack.Clear();
             stack.Add(key);
-            Discover(key, ShortPair(key), seed.Entity, seed.Dto);
+            Discover(key, ShortPair(key), seed.Entity, seed.Dto, info.OriginLocation);
         }
 
         // Resolves the effective config + max depth for a mapper keyed by its (entity,list,view) triple.
@@ -804,7 +893,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             foreach (var dtoProp in AllProps(dto).Where(IsSettable))
             {
-                if (ViewHandledMembers.Contains(dtoProp.Name) ||
+                if (IsViewHandled(dtoProp) ||
                     ViewConvention(entityProps, dtoProp, compilation) is not null ||
                     !TryGetComposableChild(entityProps, dtoProp, out var childEntity, out var childDto, out _))
                     continue;
@@ -839,6 +928,9 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     // ─────────────────────────────────── emission: shared infra ───────────────────────────────────
 
+    // The reserved-name sets below are matched ONLY against members the framework actually declares — see
+    // IsFrameworkMember. A domain column that happens to be called Tags, Revisions or ID is not a framework
+    // member and must map like any other property.
     private static readonly HashSet<string> ViewHandledMembers = new(StringComparer.Ordinal)
     { "ID", "IsDeleted", "CreateDate", "LastSaveDate", "CreatedByUserID", "LastSavedByUserID", "Tags", "Revisions" };
 
@@ -848,7 +940,66 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
     { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
 
-    private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName)
+    /// <summary>
+    /// True when the property belongs to the FRAMEWORK rather than to the domain.
+    /// <para>
+    /// This is the gate that makes the reserved-name sets safe. Matching those names as bare strings meant a
+    /// domain column called <c>Tags</c> or <c>Revisions</c> was silently dropped from the view, entity AND list
+    /// directions — real data loss, not a theoretical one. It also made a pair mapper disagree with its own
+    /// projection: a plain POCO's <c>ID</c> was skipped by <c>Map</c> and emitted by <c>Projection</c>.
+    /// </para>
+    /// <para>
+    /// Two ways a member can be the framework's. Most are DECLARED on a framework base
+    /// (<c>ShiftEntity&lt;&gt;</c>, <c>ShiftEntityViewAndUpsertDTO</c>, <c>ShiftEntityListDTO</c>) — walk any
+    /// <c>override</c> back to its original definition first, since DTOs routinely override <c>ID</c>.
+    /// <c>Tags</c> is the exception: it is declared on the entity/DTO itself, because that is how
+    /// <c>IShiftEntityTaggable(DTO)</c> is satisfied, so it is resolved through the interface instead.
+    /// </para>
+    /// </summary>
+    private static bool IsFrameworkMember(IPropertySymbol property)
+    {
+        var original = property;
+        while (original.OverriddenProperty is not null)
+            original = original.OverriddenProperty;
+
+        if (original.ContainingType is { } declaring && IsShiftNamespace(declaring))
+            return true;
+
+        var owner = property.ContainingType;
+
+        foreach (var contract in owner.AllInterfaces)
+        {
+            if (!IsShiftNamespace(contract))
+                continue;
+
+            foreach (var member in contract.GetMembers().OfType<IPropertySymbol>())
+                if (SymbolEqualityComparer.Default.Equals(owner.FindImplementationForInterfaceMember(member), property))
+                    return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>A view-DTO member the framework fills in itself (MapBaseFields, the tagging pipeline).</summary>
+    private static bool IsViewHandled(IPropertySymbol property) =>
+        ViewHandledMembers.Contains(property.Name) && IsFrameworkMember(property);
+
+    /// <summary>An entity member the SAVE pipeline owns — a mapper must never write it from client input.</summary>
+    private static bool IsEntityExcluded(IPropertySymbol property) =>
+        EntityExcludedMembers.Contains(property.Name) && IsFrameworkMember(property);
+
+    private static bool IsCopyExcluded(IPropertySymbol property) =>
+        CopyExcludedMembers.Contains(property.Name) && IsFrameworkMember(property);
+
+    /// <summary>
+    /// A list-DTO member the projection must leave alone: <c>Tags</c> is spliced in separately by the
+    /// repository, and <c>Revisions</c> is loaded on demand. Deliberately NOT every framework member — <c>ID</c>
+    /// and the audit fields are part of the list payload and have to keep projecting.
+    /// </summary>
+    private static bool IsFrameworkListMember(IPropertySymbol property) =>
+        property.Name is "Tags" or "Revisions" && IsFrameworkMember(property);
+
+    private static StringBuilder StartClass(string? ns, string className, string declaration, string builderType, string configurableInterface, string entityName, string listName, MapperDirectives directives)
     {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated/>");
@@ -899,15 +1050,33 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("    /// <summary>Per-property customization hook — implement in your partial class half. Registering a member suppresses the generated convention for it.</summary>");
         sb.AppendLine($"    partial void Configure({builderType} map);");
         sb.AppendLine();
+        // What the generator actually baked. AddConfiguration checks anything registered at runtime against
+        // these, so a registration the generator never saw fails loudly instead of silently doing nothing.
+        var bakedCustom = directives.ViewCustom.Concat(directives.EntityCustom)
+            .Concat(directives.ListCustom).Concat(directives.CopyCustom);
+
+        var bakedIgnored = directives.ViewIgnore.Concat(directives.EntityIgnore)
+            .Concat(directives.ListIgnore).Concat(directives.CopyIgnore);
+
+        sb.AppendLine($"    private static readonly string[] __shiftBakedCustom = {{ {Literals(bakedCustom)} }};");
+        sb.AppendLine($"    private static readonly string[] __shiftBakedIgnored = {{ {Literals(bakedIgnored)} }};");
+        sb.AppendLine();
+
         sb.AppendLine($"    void {configurableInterface}.AddConfiguration(global::System.Action<{builderType}> configure)");
         sb.AppendLine("    {");
         sb.AppendLine("        configure(this.__ShiftMap);");
+        sb.AppendLine($"        this.__ShiftMap.VerifyBaked(__shiftBakedCustom, __shiftBakedIgnored, \"{className}\");");
         sb.AppendLine("        this.__shiftComposedListProjection = null;");
         sb.AppendLine("    }");
         sb.AppendLine();
 
         return sb;
     }
+
+    /// <summary>Renders member names as a comma-separated list of C# string literals.</summary>
+    private static string Literals(IEnumerable<string> names) =>
+        string.Join(", ", names.Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal)
+            .Select(n => SymbolDisplay.FormatLiteral(n, quote: true)));
 
     /// <summary>Convention RHS for a view-direction member, or null (accessor = the source parameter name).</summary>
     private static string? ViewConvention(Dictionary<string, IPropertySymbol> entityProps, IPropertySymbol dtoProp, Compilation compilation, string accessor = "entity")
@@ -916,8 +1085,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         {
             if (entityProps.TryGetValue(dtoProp.Name + "ID", out var fk) && (IsLong(fk.Type) || IsNullableLong(fk.Type)))
             {
-                var text = entityProps.TryGetValue(dtoProp.Name, out var nav) && HasStringName(nav.Type)
-                    ? $", {accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.Name : null"
+                var text = entityProps.TryGetValue(dtoProp.Name, out var nav) && TextPropertyOf(nav.Type) is { } textProp
+                    ? $", {accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.{textProp} : null"
                     : "";
                 return $"{Helpers}.ToSelectDTO({accessor}.{dtoProp.Name}ID{text})";
             }
@@ -946,6 +1115,14 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableLong(match.Type))
             return $"{accessor}.{dtoProp.Name}.HasValue ? {accessor}.{dtoProp.Name}.Value.ToString() : null";
 
+        // Guid / Guid? → string. Paired with ToGuid/ToNullableGuid on the write side: a conversion that exists
+        // in only one direction is exactly the asymmetry this work is here to remove.
+        if (dtoProp.Type.SpecialType == SpecialType.System_String && IsGuid(match.Type))
+            return $"{accessor}.{dtoProp.Name}.ToString()";
+
+        if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableGuid(match.Type))
+            return $"{accessor}.{dtoProp.Name}.HasValue ? {accessor}.{dtoProp.Name}.Value.ToString() : null";
+
         var srcEnum = match.Type.TypeKind == TypeKind.Enum ? match.Type : UnwrapNullable(match.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
         if (srcEnum is not null)
         {
@@ -955,7 +1132,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 return $"(int?){accessor}.{dtoProp.Name}";
         }
 
-        return null;
+        // Everything else the general engine can do: the wider scalar set, and collections of simple values
+        // whose element or container type differs.
+        var source = $"{accessor}.{dtoProp.Name}";
+
+        return ScalarConversion(compilation, match.Type, dtoProp.Type, source, sqlTranslatable: false)
+            ?? CollectionConversion(compilation, match.Type, dtoProp.Type, source, sqlTranslatable: false);
     }
 
     /// <summary>A different-class child pair (single object or collection element) eligible for deep composition.</summary>
@@ -969,7 +1151,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         if (!entityProps.TryGetValue(dtoProp.Name, out var src))
             return false;
 
-        if (TryGetElement(dtoProp.Type, out var dtoElement) && TryGetElement(src.Type, out var entityElement))
+        if (TryGetAnyElement(dtoProp.Type, out var dtoElement) && TryGetAnyElement(src.Type, out var entityElement))
         {
             if (!IsPairable(entityElement, dtoElement))
                 return false;
@@ -989,6 +1171,200 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         }
 
         return false;
+    }
+
+    // --------------------------------- general conversions ---------------------------------
+    //
+    // One place that answers "can a value of type A become type B, and how?", used by all three directions so
+    // they cannot drift apart. Before this each direction hand-listed a few pairs, which is how long/string was
+    // supported while int/string was not, and how some conversions ended up existing in one direction only.
+    //
+    // sqlTranslatable marks the LIST direction. That expression becomes SQL, so it may only use casts and
+    // ToString(), never a helper method call: an untranslatable projection fails at query time, which is far
+    // worse than the member being reported unmapped and mapped by hand.
+
+    private static readonly HashSet<SpecialType> NumericTypes = new()
+    {
+        SpecialType.System_SByte, SpecialType.System_Byte,
+        SpecialType.System_Int16, SpecialType.System_UInt16,
+        SpecialType.System_Int32, SpecialType.System_UInt32,
+        SpecialType.System_Int64, SpecialType.System_UInt64,
+        SpecialType.System_Decimal, SpecialType.System_Single, SpecialType.System_Double,
+    };
+
+    private static bool IsNumeric(ITypeSymbol type) => NumericTypes.Contains(type.SpecialType);
+
+    private static bool IsEnum(ITypeSymbol type) => type.TypeKind == TypeKind.Enum;
+
+    /// <summary>Value types the runtime helpers can parse from, and format to, invariant text.</summary>
+    private static bool IsTextConvertible(ITypeSymbol type) =>
+        IsNumeric(type) ||
+        type.SpecialType == SpecialType.System_Boolean ||
+        type.SpecialType == SpecialType.System_DateTime ||
+        (type is { ContainingNamespace.Name: "System" } &&
+         type.Name is "Guid" or "DateTimeOffset" or "TimeSpan" or "DateOnly" or "TimeOnly");
+
+    /// <summary>
+    /// A C# expression converting <paramref name="expr"/> from <paramref name="source"/> to
+    /// <paramref name="target"/>, or null when no convention applies (the member is then reported unmapped).
+    /// </summary>
+    private static string? ScalarConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target,
+        string expr, bool sqlTranslatable)
+    {
+        if (IsImplicit(compilation, source, target))
+            return expr;
+
+        var sourceInner = UnwrapNullable(source);
+        var targetInner = UnwrapNullable(target);
+
+        // T? to T: the framework's long-standing "unset means default" rule.
+        if (sourceInner is not null && SymbolEqualityComparer.Default.Equals(sourceInner, target))
+            return expr + " ?? default";
+
+        var from = sourceInner ?? source;
+        var to = targetInner ?? target;
+        var sourceIsNullable = sourceInner is not null;
+
+        // -- to text --
+        if (target.SpecialType == SpecialType.System_String)
+        {
+            if (!IsTextConvertible(from) && !IsEnum(from))
+                return null;
+
+            // In SQL only a plain ToString() (a CAST) is available, and only for numbers: casting a date or a
+            // bool to text is provider-specific and would silently differ from the in-memory result.
+            if (sqlTranslatable)
+                return IsNumeric(from)
+                    ? sourceIsNullable
+                        ? $"{expr}.HasValue ? {expr}.Value.ToString() : null"
+                        : $"{expr}.ToString()"
+                    : null;
+
+            if (IsEnum(from))
+                return sourceIsNullable
+                    ? $"{expr}.HasValue ? {expr}.Value.ToString() : null"
+                    : $"{expr}.ToString()";
+
+            return $"{Helpers}.ToInvariantText({expr})";
+        }
+
+        // -- from text --
+        if (source.SpecialType == SpecialType.System_String)
+        {
+            // Parsing has no SQL equivalent worth trusting.
+            if (sqlTranslatable)
+                return null;
+
+            var targetFq = Fq(to);
+
+            if (IsEnum(to))
+                return targetInner is not null
+                    ? $"{Helpers}.ToNullableEnum<{targetFq}>({expr})"
+                    : $"{Helpers}.ToEnum<{targetFq}>({expr})";
+
+            if (IsTextConvertible(to))
+                return targetInner is not null
+                    ? $"{Helpers}.ToNullableValue<{targetFq}>({expr})"
+                    : $"{Helpers}.ToValue<{targetFq}>({expr})";
+
+            return null;
+        }
+
+        // -- number to number, and enum to number: an explicit cast, which SQL translates too --
+        var castable =
+            (IsNumeric(from) || IsEnum(from)) &&
+            (IsNumeric(to) || IsEnum(to)) &&
+            !(IsEnum(from) && IsEnum(to));   // two unrelated enums are not a conversion, they are a mistake
+
+        if (!castable)
+            return null;
+
+        var cast = Fq(target);
+
+        // A nullable source filling a non-nullable target has to decide what "unset" means; default matches
+        // what the opposite direction produces for an unset member.
+        return sourceIsNullable && targetInner is null
+            ? $"({cast})({expr} ?? default)"
+            : $"({cast}){expr}";
+    }
+
+    /// <summary>
+    /// Materialises <paramref name="items"/> into the concrete collection type <paramref name="target"/>.
+    /// <para>
+    /// Everything used to be materialised with <c>ToList()</c> regardless of the target. Assigning a
+    /// <c>List&lt;T&gt;</c> into a <c>HashSet&lt;T&gt;</c> property does not compile, so an entity with a
+    /// HashSet navigation could not use generated deep mapping at all; arrays were not recognised as
+    /// collections in the first place.
+    /// </para>
+    /// </summary>
+    private static string? MaterializeCollection(ITypeSymbol target, ITypeSymbol element, string items)
+    {
+        if (target is IArrayTypeSymbol)
+            return $"global::System.Linq.Enumerable.ToArray({items})";
+
+        if (target is INamedTypeSymbol { IsGenericType: true } named)
+        {
+            var definition = named.ConstructedFrom.ToDisplayString();
+
+            if (definition == "System.Collections.Generic.HashSet<T>")
+                return $"new global::System.Collections.Generic.HashSet<{Fq(element)}>({items})";
+
+            if (definition is "System.Collections.Generic.List<T>"
+                or "System.Collections.Generic.IList<T>"
+                or "System.Collections.Generic.ICollection<T>"
+                or "System.Collections.Generic.IEnumerable<T>"
+                or "System.Collections.Generic.IReadOnlyList<T>"
+                or "System.Collections.Generic.IReadOnlyCollection<T>")
+                return $"global::System.Linq.Enumerable.ToList({items})";
+        }
+
+        return null;   // an unknown container: report it rather than emit code that will not compile
+    }
+
+    /// <summary>
+    /// Converts a collection of simple values whose element type and/or container type differ, e.g.
+    /// <c>ICollection&lt;int&gt;</c> to <c>List&lt;int&gt;</c>, or <c>List&lt;int&gt;</c> to
+    /// <c>List&lt;string&gt;</c>. Complex children are left alone: deep composition owns those.
+    /// </summary>
+    private static string? CollectionConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target,
+        string expr, bool sqlTranslatable)
+    {
+        if (!TryGetAnyElement(source, out var sourceElement) || !TryGetAnyElement(target, out var targetElement))
+            return null;
+
+        if (IsPairable(sourceElement, targetElement))
+            return null;
+
+        string items;
+
+        if (SymbolEqualityComparer.Default.Equals(sourceElement, targetElement))
+        {
+            items = expr;
+        }
+        else
+        {
+            if (ScalarConversion(compilation, sourceElement, targetElement, "__v", sqlTranslatable) is not { } perItem)
+                return null;
+
+            items = $"global::System.Linq.Enumerable.Select({expr}, __v => {perItem})";
+        }
+
+        if (MaterializeCollection(target, targetElement, items) is not { } materialized)
+            return null;
+
+        return $"{expr} == null ? null : {materialized}";
+    }
+
+    /// <summary>Element type of a collection, arrays included.</summary>
+    private static bool TryGetAnyElement(ITypeSymbol type, out ITypeSymbol element)
+    {
+        if (type is IArrayTypeSymbol array)
+        {
+            element = array.ElementType;
+            return true;
+        }
+
+        return TryGetElement(type, out element);
     }
 
     private static bool TryGetElement(ITypeSymbol type, out ITypeSymbol element)
@@ -1024,7 +1400,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
     // ─────────────────────────────────── emission: bodies ───────────────────────────────────
 
-    private sealed record ViewEmission(List<string> Lines, List<string> UsedPairKeys, List<string> Unmapped);
+    /// <summary>
+    /// <paramref name="Mapped"/> is the set of DTO members the view body actually assigns. It is what the
+    /// entity direction is compared against for SHENGEN008: a member the view reads and the entity never
+    /// writes back is the exact failure this whole effort exists to catch — displays fine, never saves.
+    /// </summary>
+    private sealed record ViewEmission(List<string> Lines, List<string> UsedPairKeys, List<string> Unmapped, List<string> Mapped);
 
     private static ViewEmission BuildViewBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
         string entityName, string viewName, string accessor,
@@ -1035,6 +1416,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         var lines = new List<string>();
         var usedPairs = new List<string>();
         var unmapped = new List<string>();
+        var mapped = new List<string>();
 
         void Emit(IPropertySymbol dtoProp, bool withConvention)
         {
@@ -1050,6 +1432,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             // member's current value when unregistered, so a mapper used without its config never throws.
             if (directives.IsCustom(MapDir.View, name))
             {
+                mapped.Add(name);
                 lines.Add($"        dto.{name} = this.__ShiftMap.InvokeView<{propType}>({accessor}, context, \"{name}\", dto.{name});");
                 lines.Add("");
                 return;
@@ -1060,6 +1443,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 var conv = ViewConvention(entityProps, dtoProp, compilation, accessor);
                 if (conv is not null)
                 {
+                    mapped.Add(name);
                     lines.Add($"        dto.{name} = {conv};");   // baked convention — no dictionary, no branch
                     lines.Add("");
                     return;
@@ -1076,11 +1460,19 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                         pairs.TryGetValue(key, out _))
                     {
                         usedPairs.Add(key);
+                        mapped.Add(name);
                         var field = $"__shiftPair_{Fnv8(key)}";
                         var src = $"{accessor}.{name}";
 
+                        // Materialise into the member's OWN container type. Everything used to become a List,
+                        // which silently ruled out arrays and did not compile for a HashSet member.
+                        var mapped_ = $"global::System.Linq.Enumerable.Select({src}, __c => {field}.Map(__c, context))";
+                        var into = isCollection
+                            ? MaterializeCollection(dtoProp.Type, childDto, mapped_) ?? $"global::System.Linq.Enumerable.ToList({mapped_})"
+                            : null;
+
                         lines.Add(isCollection
-                            ? $"        dto.{name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, __c => {field}.Map(__c, context)));"
+                            ? $"        dto.{name} = {src} == null ? null : {into};"
                             : $"        dto.{name} = {src} == null ? null : {field}.Map({src}, context);");
                         lines.Add("");
                     }
@@ -1097,7 +1489,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var settable = AllProps(viewDto).Where(IsSettable).ToList();
 
-        foreach (var dtoProp in settable.Where(p => !ViewHandledMembers.Contains(p.Name)))
+        foreach (var dtoProp in settable.Where(p => !IsViewHandled(p)))
             Emit(dtoProp, withConvention: true);
 
         if (DerivesFrom(viewDto, "ShiftEntityViewAndUpsertDTO") && DerivesFrom(entity, "ShiftEntity"))
@@ -1106,10 +1498,19 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             lines.Add("");
         }
 
-        foreach (var dtoProp in settable.Where(p => ViewHandledMembers.Contains(p.Name)))
+        foreach (var dtoProp in settable.Where(IsViewHandled))
             Emit(dtoProp, withConvention: false);
 
-        return new ViewEmission(lines, usedPairs, unmapped);
+        // Init-only members can be SCANNED but never ASSIGNED. The generated mapper builds the DTO and then sets
+        // its properties, so an init-only setter is unreachable to it — AutoMapper reached them by reflection,
+        // which is why moving a DTO across can silently lose them. They were invisible here too, so the mapper
+        // dropped them AND said nothing. Reporting is all that can be done, and it is worth doing.
+        foreach (var initOnly in AllProps(viewDto).Where(p => p.SetMethod is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: true }))
+            if (!directives.IsIgnored(MapDir.View, initOnly.Name) && !attrIgnored.Contains(initOnly.Name) &&
+                !IsViewHandled(initOnly))
+                unmapped.Add($"{initOnly.Name} (init-only — the generated mapper cannot assign it; give it a settable setter)");
+
+        return new ViewEmission(lines, usedPairs, unmapped, mapped);
     }
 
     private static string? EntityConvention(Dictionary<string, IPropertySymbol> dtoProps, IPropertySymbol entityProp, Compilation compilation, string accessor = "dto")
@@ -1139,16 +1540,112 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         if (UnwrapNullable(dtoProp.Type) is { } inner && SymbolEqualityComparer.Default.Equals(inner, entityProp.Type))
             return $"{accessor}.{entityProp.Name} ?? default";
 
-        return null;
+        // ── the inverse of ViewConvention's narrowing conversions ──
+        //
+        // ViewConvention turns long → string and enum → int on the way out. Without the conversions back, this
+        // method returned null for such a member, and a null return means NO ASSIGNMENT IS EMITTED AT ALL: the
+        // member read back perfectly and silently never saved. That is the single most dangerous class of write
+        // loss in the generator, which is why these land before the list/entity diagnostics are turned up.
+
+        var source = $"{accessor}.{entityProp.Name}";
+        var dtoIsString = dtoProp.Type.SpecialType == SpecialType.System_String;
+
+        // string → long / long?  (the mirror of .ToString())
+        if (dtoIsString && IsLong(entityProp.Type))
+            return $"{Helpers}.ToLong({source})";
+
+        if (dtoIsString && IsNullableLong(entityProp.Type))
+            return $"{Helpers}.ToNullableLong({source})";
+
+        // string → Guid / Guid?
+        if (dtoIsString && IsGuid(entityProp.Type))
+            return $"{Helpers}.ToGuid({source})";
+
+        if (dtoIsString && IsNullableGuid(entityProp.Type))
+            return $"{Helpers}.ToNullableGuid({source})";
+
+        // int / int? → enum / enum?  (the mirror of the (int) cast)
+        var targetIsEnum = entityProp.Type.TypeKind == TypeKind.Enum;
+        var targetEnum = targetIsEnum ? entityProp.Type
+            : UnwrapNullable(entityProp.Type) is { TypeKind: TypeKind.Enum } lifted ? lifted : null;
+
+        if (targetEnum is not null)
+        {
+            var dtoIsInt = dtoProp.Type.SpecialType == SpecialType.System_Int32;
+            var dtoIsNullableInt = UnwrapNullable(dtoProp.Type)?.SpecialType == SpecialType.System_Int32;
+
+            if (dtoIsInt || dtoIsNullableInt)
+            {
+                var target = Fq(entityProp.Type);
+
+                // A nullable int cannot fill a non-nullable enum without a decision; default is the enum's own
+                // zero value, which is what the reverse direction produced for an unset member anyway.
+                return dtoIsNullableInt && targetIsEnum
+                    ? $"({target})({source} ?? default(int))"
+                    : $"({target}){source}";
+            }
+        }
+
+        // The write half of the general engine, so every conversion the read side performs has a way back.
+        return ScalarConversion(compilation, dtoProp.Type, entityProp.Type, source, sqlTranslatable: false)
+            ?? CollectionConversion(compilation, dtoProp.Type, entityProp.Type, source, sqlTranslatable: false);
     }
 
-    private static (List<string> Lines, List<string> UsedPairs) BuildEntityBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
+    /// <summary>
+    /// <paramref name="ConsumedDto"/> is the set of DTO members the entity body actually reads. Compared with
+    /// the view side's <c>Mapped</c> set, it is what SHENGEN008 reports on.
+    /// </summary>
+    private sealed record EntityEmission(List<string> Lines, List<string> UsedPairs, HashSet<string> ConsumedDto,
+        List<(string Member, string ChildType, string BackReference)> ReplacedTrackedChildren);
+
+    /// <summary>
+    /// The name of a required (non-nullable) foreign key on <paramref name="child"/> pointing back at
+    /// <paramref name="parent"/>, or null when there is no certainty of one.
+    /// <para>
+    /// Only a tracked entity with a required back-reference is reported: those are the rows that cannot be
+    /// replaced, because the framework forces Restrict on every non-ownership foreign key. A plain POCO or an
+    /// optional relationship replaces perfectly well, and warning about it would be noise.
+    /// </para>
+    /// </summary>
+    private static string? RequiredBackReference(ITypeSymbol child, ITypeSymbol parent)
+    {
+        if (!DerivesFrom(child, "ShiftEntity"))
+            return null;
+
+        var expected = parent.Name + "ID";
+
+        return AllProps(child).Any(p => p.Name == expected && IsLong(p.Type) && IsSettable(p))
+            ? expected
+            : null;
+    }
+
+    private static EntityEmission BuildEntityBody(string ownerKey, ITypeSymbol entity, ITypeSymbol viewDto,
         string entityName, string viewName, Compilation compilation, MapperDirectives directives, HashSet<string> attrIgnored,
         Dictionary<string, PairInfo> pairs, HashSet<string> skippedEdges, int ownerDepth, int maxDepth)
     {
         var dtoProps = AllProps(viewDto).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var lines = new List<string>();
         var usedPairs = new List<string>();
+        var consumedDto = new HashSet<string>(StringComparer.Ordinal);
+
+        // Children the automatic deep write REPLACES rather than reconciles, where doing so will break at save
+        // time. Reported as SHENGEN010 — see the descriptor.
+        var replacedTrackedChildren = new List<(string Member, string ChildType, string BackReference)>();
+
+        // Which DTO member does writing this entity member read from? Same name, except a foreign key, which is
+        // written from the select DTO named after it without the "ID" suffix.
+        string DtoSourceOf(IPropertySymbol entityProp)
+        {
+            if (entityProp.Name.EndsWith("ID", StringComparison.Ordinal) && entityProp.Name.Length > 2)
+            {
+                var baseName = entityProp.Name.Substring(0, entityProp.Name.Length - 2);
+
+                if (dtoProps.TryGetValue(baseName, out var select) && IsShiftType(select.Type, "ShiftEntitySelectDTO"))
+                    return baseName;
+            }
+
+            return entityProp.Name;
+        }
 
         void Emit(IPropertySymbol entityProp, bool withConvention)
         {
@@ -1160,6 +1657,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             if (directives.IsCustom(MapDir.Entity, name))
             {
+                // A ForEntity delegate takes the whole DTO and may read anything on it, so the same-named member
+                // is the most that can be claimed — and claiming it is right: the programmer has taken this
+                // member over, and warning them about it would be noise.
+                consumedDto.Add(DtoSourceOf(entityProp));
+
                 if (IsEntityNavigation(entityProp.Type))
                 {
                     // Navigation (e.g. ForEntityChildren): apply the customization but NEVER read existing.<nav>
@@ -1170,7 +1672,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    lines.Add($"        existing.{name} = this.__ShiftMap.InvokeEntity<{propType}>(dto, context, \"{name}\", existing.{name});");
+                    lines.Add($"        existing.{name} = this.__ShiftMap.InvokeEntity<{propType}>(dto, existing, context, \"{name}\", existing.{name});");
                 }
 
                 lines.Add("");
@@ -1182,6 +1684,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 var conv = EntityConvention(dtoProps, entityProp, compilation, "dto");
                 if (conv is not null)
                 {
+                    consumedDto.Add(DtoSourceOf(entityProp));
                     lines.Add($"        existing.{name} = {conv};");   // baked convention
                     lines.Add("");
                     return;
@@ -1197,7 +1700,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             // maxDepth. Every child DTO becomes a NEW child entity via the pair's MapBack (pair this with a
             // repository that owns the previous children, e.g. delete-and-recreate). Beyond the cap / a cycle
             // edge it is left untouched. Audit/base members never compose — the pipeline owns them.
-            if (!EntityExcludedMembers.Contains(name) && ownerDepth + 1 <= maxDepth &&
+            if (!IsEntityExcluded(entityProp) && ownerDepth + 1 <= maxDepth &&
                 !skippedEdges.Contains(ownerKey + "|" + name) &&
                 TryGetEntityComposableChild(entityProp, dtoProps, out var childEntity, out var childDto, out var isCollection))
             {
@@ -1206,12 +1709,21 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 if (pairs.TryGetValue(key, out _))
                 {
                     usedPairs.Add(key);
+                    consumedDto.Add(name);
+
+                    if (RequiredBackReference(childEntity, entity) is { } backReference)
+                        replacedTrackedChildren.Add((name, childEntity.Name, backReference));
                     var field = $"__shiftPair_{Fnv8(key)}";
                     var src = $"dto.{name}";
                     var childEntityFq = Fq(childEntity);
 
+                    var rebuilt = $"global::System.Linq.Enumerable.Select({src}, __d => {field}.MapBack(__d, new {childEntityFq}(), context))";
+                    var back = isCollection
+                        ? MaterializeCollection(entityProp.Type, childEntity, rebuilt) ?? $"global::System.Linq.Enumerable.ToList({rebuilt})"
+                        : null;
+
                     lines.Add(isCollection
-                        ? $"        existing.{name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, __d => {field}.MapBack(__d, new {childEntityFq}(), context)));"
+                        ? $"        existing.{name} = {src} == null ? null : {back};"
                         : $"        existing.{name} = {src} == null ? null : {field}.MapBack({src}, new {childEntityFq}(), context);");
                     lines.Add("");
                 }
@@ -1221,13 +1733,13 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var settable = AllProps(entity).Where(IsSettable).ToList();
 
-        foreach (var entityProp in settable.Where(p => !EntityExcludedMembers.Contains(p.Name) && !IsEntityNavigation(p.Type)))
+        foreach (var entityProp in settable.Where(p => !IsEntityExcluded(p) && !IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: true);
 
-        foreach (var entityProp in settable.Where(p => EntityExcludedMembers.Contains(p.Name) || IsEntityNavigation(p.Type)))
+        foreach (var entityProp in settable.Where(p => IsEntityExcluded(p) || IsEntityNavigation(p.Type)))
             Emit(entityProp, withConvention: false);
 
-        return (lines, usedPairs);
+        return new EntityEmission(lines, usedPairs, consumedDto, replacedTrackedChildren);
     }
 
     // Entity-side composable child: an entity navigation (collection or single) whose same-named DTO member is a
@@ -1267,18 +1779,36 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static List<string> BuildListAssignments(ITypeSymbol entity, ITypeSymbol listDto, Compilation compilation,
+    /// <summary>
+    /// The list projection, plus the members it could NOT project.
+    /// <para>
+    /// The unmapped half exists because the list direction used to fail in total silence: a member the
+    /// generator could not map was simply absent from the projection, so the column arrived empty on the wire
+    /// with no build output of any kind.
+    /// </para>
+    /// </summary>
+    private sealed record ListEmission(List<string> Lines, List<string> Unmapped);
+
+    private static ListEmission BuildListAssignments(ITypeSymbol entity, ITypeSymbol listDto, Compilation compilation,
         MapperDirectives directives, HashSet<string> attrIgnored, Func<string, MapperDirectives> dirFor,
-        string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys)
+        string accessor, int ownerDepth, int maxDepth, HashSet<string> pathKeys, string memberPath = "")
     {
         var entityProps = AllProps(entity).Where(IsReadable).ToDictionary(p => p.Name, p => p);
         var assignments = new List<string>();
+        var unmapped = new List<string>();
 
-        foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && p.Name != "Tags"))
+        foreach (var dtoProp in AllProps(listDto).Where(p => IsSettable(p) && !IsFrameworkListMember(p)))
         {
-            // Ignore → omit the binding (a ForList customization is still composed at runtime by ComposeList).
+            // Ignore → omit the binding entirely.
             if (directives.IsIgnored(MapDir.List, dtoProp.Name) || attrIgnored.Contains(dtoProp.Name))
                 continue;
+
+            // A ForList customization is layered on at runtime by ComposeList, so the member is HANDLED and must
+            // not be reported as unmapped. It still gets its convention binding baked here: ComposeList replaces
+            // that binding when the configuration is applied, and when the mapper is used WITHOUT its
+            // configuration — resolved straight from the registry, with no repository — the convention is all
+            // there is. Dropping the binding as well as the warning made that case return null.
+            var customizedForList = directives.IsCustom(MapDir.List, dtoProp.Name);
 
             // FK → ShiftEntitySelectDTO, inlined so the projection stays SQL-translatable (the ToSelectDTO
             // helper is a method call EF can't translate; a member-init + navigation access it can). A
@@ -1287,8 +1817,8 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 entityProps.TryGetValue(dtoProp.Name + "ID", out var listFk) && (IsLong(listFk.Type) || IsNullableLong(listFk.Type)))
             {
                 const string selectDto = "global::ShiftSoftware.ShiftEntity.Model.Dtos.ShiftEntitySelectDTO";
-                var text = entityProps.TryGetValue(dtoProp.Name, out var listNav) && HasStringName(listNav.Type)
-                    ? $"{accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.Name : null"
+                var text = entityProps.TryGetValue(dtoProp.Name, out var listNav) && TextPropertyOf(listNav.Type) is { } listTextProp
+                    ? $"{accessor}.{dtoProp.Name} != null ? {accessor}.{dtoProp.Name}.{listTextProp} : null"
                     : "null";
 
                 assignments.Add(IsLong(listFk.Type)
@@ -1313,13 +1843,20 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                     // is projected directly off the source navigation, so there is NO new parameter to introduce.
                     var childAccessor = isCollection ? param : src;
                     var childPath = new HashSet<string>(pathKeys, StringComparer.Ordinal) { childKey };
-                    var childBody = BuildListAssignments(childEntity, childDto, compilation,
+                    var child = BuildListAssignments(childEntity, childDto, compilation,
                         dirFor(TripleKey(childEntity, childDto, childDto)), CollectAttrIgnored(childEntity, childDto),
-                        dirFor, childAccessor, ownerDepth + 1, maxDepth, childPath);
-                    var childInit = $"new {Fq(childDto)}\n            {{\n{string.Join("\n", childBody)}\n            }}";
+                        dirFor, childAccessor, ownerDepth + 1, maxDepth, childPath, memberPath + dtoProp.Name + ".");
+
+                    unmapped.AddRange(child.Unmapped);
+                    var childInit = $"new {Fq(childDto)}\n            {{\n{string.Join("\n", child.Lines)}\n            }}";
+
+                    var projected = $"global::System.Linq.Enumerable.Select({src}, {param} => {childInit})";
+                    var listInto = isCollection
+                        ? MaterializeCollection(dtoProp.Type, childDto, projected) ?? $"global::System.Linq.Enumerable.ToList({projected})"
+                        : null;
 
                     assignments.Add(isCollection
-                        ? $"            {dtoProp.Name} = {src} == null ? null : global::System.Linq.Enumerable.ToList(global::System.Linq.Enumerable.Select({src}, {param} => {childInit})),"
+                        ? $"            {dtoProp.Name} = {src} == null ? null : {listInto},"
                         : $"            {dtoProp.Name} = {src} == null ? null : {childInit},");
                 }
 
@@ -1327,7 +1864,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             }
 
             if (!entityProps.TryGetValue(dtoProp.Name, out var src2))
+            {
+                if (!customizedForList)
+                    unmapped.Add(SuggestListFix(entityProps, dtoProp, memberPath));
+
                 continue;
+            }
 
             if (IsImplicit(compilation, src2.Type, dtoProp.Type))
             {
@@ -1353,23 +1895,99 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsGuid(src2.Type))
+            {
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name}.ToString(),");
+                continue;
+            }
+
+            if (dtoProp.Type.SpecialType == SpecialType.System_String && IsNullableGuid(src2.Type))
+            {
+                assignments.Add($"            {dtoProp.Name} = {accessor}.{dtoProp.Name}.HasValue ? {accessor}.{dtoProp.Name}.Value.ToString() : null,");
+                continue;
+            }
+
             var srcEnum = src2.Type.TypeKind == TypeKind.Enum ? src2.Type : UnwrapNullable(src2.Type) is { TypeKind: TypeKind.Enum } se ? se : null;
             if (srcEnum is not null)
             {
                 if (dtoProp.Type.SpecialType == SpecialType.System_Int32 && src2.Type.TypeKind == TypeKind.Enum)
+                {
                     assignments.Add($"            {dtoProp.Name} = (int){accessor}.{dtoProp.Name},");
-                else if (UnwrapNullable(dtoProp.Type)?.SpecialType == SpecialType.System_Int32)
+                    continue;
+                }
+
+                if (UnwrapNullable(dtoProp.Type)?.SpecialType == SpecialType.System_Int32)
+                {
                     assignments.Add($"            {dtoProp.Name} = (int?){accessor}.{dtoProp.Name},");
+                    continue;
+                }
             }
+
+            // The general engine, restricted to what EF can turn into SQL.
+            var listSource = $"{accessor}.{dtoProp.Name}";
+
+            var general =
+                ScalarConversion(compilation, src2.Type, dtoProp.Type, listSource, sqlTranslatable: true)
+                ?? CollectionConversion(compilation, src2.Type, dtoProp.Type, listSource, sqlTranslatable: true);
+
+            if (general is not null)
+            {
+                assignments.Add($"            {dtoProp.Name} = {general},");
+                continue;
+            }
+
+            // A same-named entity member exists but nothing can convert it. Still an empty column, still worth
+            // saying so — unless the programmer already took the member over with ForList.
+            if (!customizedForList)
+                unmapped.Add(SuggestListFix(entityProps, dtoProp, memberPath));
         }
 
-        return assignments;
+        return new ListEmission(assignments, unmapped);
+    }
+
+    /// <summary>
+    /// Describes one unprojectable list member as a paste-ready fix line.
+    /// <para>
+    /// This is what makes the deliberate decision NOT to implement flattening affordable. Rather than reaching
+    /// two levels into the entity behind the programmer's back — invisible coupling, and lazy loads in the view
+    /// direction — the compiler prints the exact line to paste. Where the member name looks like a flattened
+    /// path (<c>CampaignName</c> → <c>Campaign.Name</c>) the suggestion is filled in; otherwise it is left as a
+    /// blank for the programmer.
+    /// </para>
+    /// </summary>
+    private static string SuggestListFix(Dictionary<string, IPropertySymbol> entityProps, IPropertySymbol dtoProp, string memberPath)
+    {
+        var name = dtoProp.Name;
+        var suggestion = FlattenedPath(entityProps, name) ?? "…";
+
+        return $"{memberPath}{name} (map.ForList(d => d.{name}, e => e.{suggestion}))";
+    }
+
+    /// <summary>
+    /// Splits a member name at each position and returns the first "Nav.Member" that actually exists on the
+    /// entity — the classic flattening convention, used here ONLY to word the suggestion.
+    /// </summary>
+    private static string? FlattenedPath(Dictionary<string, IPropertySymbol> entityProps, string name)
+    {
+        for (var split = 1; split < name.Length; split++)
+        {
+            var head = name.Substring(0, split);
+            var tail = name.Substring(split);
+
+            if (!entityProps.TryGetValue(head, out var nav) || nav.Type.TypeKind != TypeKind.Class)
+                continue;
+
+            if (AllProps(nav.Type).Any(p => IsReadable(p) && p.Name == tail))
+                return $"{head}.{tail}";
+        }
+
+        return null;
     }
 
     // CopyEntity is a TOP-LEVEL (shallow) copy — entity → entity, same type, so every property is copied as-is
     // (scalars + navigation REFERENCES), excluding keys/flags. No auto deep-clone: it's used by ReloadAfterSave
     // (a faithful refresh — nav references keep real keys) and copying child collections by reference is correct
-    // there. Deep or custom copy is done EXPLICITLY by the programmer (ForCopy / ForCopyChild).
+    // there. Per-member copy customization is ForCopy / IgnoreCopy / [ShiftEntityMapperIgnore].
     private static List<string> BuildCopyBody(ITypeSymbol entity, string entityName, MapperDirectives directives, HashSet<string> attrIgnored)
     {
         var lines = new List<string>();
@@ -1399,10 +2017,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var copyable = AllProps(entity).Where(p => IsReadable(p) && IsSettable(p)).ToList();
 
-        foreach (var prop in copyable.Where(p => !CopyExcludedMembers.Contains(p.Name)))
+        foreach (var prop in copyable.Where(p => !IsCopyExcluded(p)))
             Emit(prop, withConvention: true);
 
-        foreach (var prop in copyable.Where(p => CopyExcludedMembers.Contains(p.Name)))
+        foreach (var prop in copyable.Where(IsCopyExcluded))
             Emit(prop, withConvention: false);
 
         return lines;
@@ -1444,7 +2062,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             declaration = $"internal sealed partial class {pair.ClassName} : global::ShiftSoftware.ShiftEntity.Core.IShiftObjectMapper<{entityName}, {dtoName}>, {configurable}";
         }
 
-        var sb = StartClass(ns, pair.ClassName, declaration, builderType, configurable, entityName, dtoName);
+        var sb = StartClass(ns, pair.ClassName, declaration, builderType, configurable, entityName, dtoName, directives);
 
         var attrIgnored = CollectAttrIgnored(pair.Entity, pair.Dto);
         var view = BuildViewBody(key, pair.Entity, pair.Dto, entityName, dtoName, "source", pairs, skippedEdges, compilation, directives, attrIgnored, ownerDepth, maxDepth);
@@ -1480,6 +2098,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             sb.AppendLine($"    private {entityName} MapBackGenerated({dtoName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.Append(string.Join("\n", entityBody.Lines));
+            sb.AppendLine("        this.__ShiftMap.RunAfterEntity(dto, existing, context);");
             sb.AppendLine("        return existing;");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -1493,10 +2112,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         }
 
         // Conventions-only, SQL-translatable projection — used by ForListChildren/ForListChild.
+        var pairList = BuildListAssignments(pair.Entity, pair.Dto, compilation, directives, attrIgnored,
+            dirFor, "e", ownerDepth, maxDepth, new HashSet<string>(StringComparer.Ordinal) { key });
+
         sb.AppendLine($"    public static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {dtoName}>> Projection = e => new {dtoName}");
         sb.AppendLine("    {");
-        sb.Append(string.Join("\n", BuildListAssignments(pair.Entity, pair.Dto, compilation, directives, attrIgnored,
-            dirFor, "e", ownerDepth, maxDepth, new HashSet<string>(StringComparer.Ordinal) { key })));
+        sb.Append(string.Join("\n", pairList.Lines));
         sb.AppendLine();
         sb.AppendLine("    };");
         sb.AppendLine("}");
@@ -1514,10 +2135,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         if (view.Unmapped.Count > 0)
             spc.ReportDiagnostic(Diagnostic.Create(UnmappedMembers,
-                pair.UserClass?.Locations.FirstOrDefault() ?? Location.None,
+                pair.UserClass?.Locations.FirstOrDefault() ?? pair.OriginLocation ?? Location.None,
                 pair.ClassName, string.Join(", ", view.Unmapped)));
 
-        spc.AddSource($"{pair.ClassName}.g.cs", sb.ToString());
+        if (pairList.Unmapped.Count > 0)
+            spc.ReportDiagnostic(Diagnostic.Create(UnmappedListMembers,
+                pair.UserClass?.Locations.FirstOrDefault() ?? pair.OriginLocation ?? Location.None,
+                pair.ClassName, string.Join(", ", pairList.Unmapped)));
+
+        // Namespace-prefixed: two same-named pairs in different namespaces produce the same class name, and
+        // duplicate hint names make the generator fail rather than emit both.
+        spc.AddSource($"{(ns ?? "global").Replace('.', '_')}_{pair.ClassName}.g.cs", sb.ToString());
     }
 
     // ─────────────────────────────────── emission: triple mappers ───────────────────────────────────
@@ -1551,7 +2179,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         var typeRef = userClass is not null ? Fq(userClass) : $"global::{AutoNamespace}.{className}";
 
-        var sb = StartClass(ns, className, declaration, builderType, configurable, entityName, listName);
+        var sb = StartClass(ns, className, declaration, builderType, configurable, entityName, listName, directives);
 
         var attrIgnored = CollectAttrIgnored(triple.Entity, triple.ViewDto, triple.ListDto);
         var view = BuildViewBody(key, triple.Entity, triple.ViewDto, entityName, viewName, "entity", pairs, skippedEdges, compilation, directives, attrIgnored, 0, maxDepth);
@@ -1584,6 +2212,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             sb.AppendLine($"    private {entityName} MapToEntityGenerated({viewName} dto, {entityName} existing, global::ShiftSoftware.ShiftEntity.Core.MappingContext context = default)");
             sb.AppendLine("    {");
             sb.Append(string.Join("\n", entityBody.Lines));
+            sb.AppendLine("        this.__ShiftMap.RunAfterEntity(dto, existing, context);");
             sb.AppendLine("        return existing;");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -1604,10 +2233,17 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
             var select = taggable ? $"{TaggableExtensions}.SelectWithTags" : "global::System.Linq.Queryable.Select";
 
+            var listEmission = BuildListAssignments(triple.Entity, triple.ListDto, compilation, directives, attrIgnored,
+                dirFor, "e", 0, maxDepth, new HashSet<string>(StringComparer.Ordinal));
+
+            if (listEmission.Unmapped.Count > 0)
+                spc.ReportDiagnostic(Diagnostic.Create(UnmappedListMembers,
+                    userClass?.Locations.FirstOrDefault() ?? triple.RepoLocation ?? Location.None,
+                    className, string.Join(", ", listEmission.Unmapped)));
+
             sb.AppendLine($"    private static readonly global::System.Linq.Expressions.Expression<global::System.Func<{entityName}, {listName}>> __shiftListProjection = e => new {listName}");
             sb.AppendLine("    {");
-            sb.Append(string.Join("\n", BuildListAssignments(triple.Entity, triple.ListDto, compilation, directives, attrIgnored,
-                dirFor, "e", 0, maxDepth, new HashSet<string>(StringComparer.Ordinal))));
+            sb.Append(string.Join("\n", listEmission.Lines));
             sb.AppendLine();
             sb.AppendLine("    };");
             sb.AppendLine();
@@ -1663,8 +2299,34 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 
         if (view.Unmapped.Count > 0)
             spc.ReportDiagnostic(Diagnostic.Create(UnmappedMembers,
-                userClass?.Locations.FirstOrDefault() ?? Location.None,
+                userClass?.Locations.FirstOrDefault() ?? triple.RepoLocation ?? Location.None,
                 className, string.Join(", ", view.Unmapped)));
+
+        // READ/WRITE ASYMMETRY. Deliberately NOT a mirror of SHENGEN004: BuildEntityBody walks ENTITY properties,
+        // so mirroring it would warn about every internal and computed column and be useless. What is actionable
+        // is the other set — DTO members the view reads and the entity never writes back. That is precisely the
+        // failure this effort exists to prevent: the field displays correctly and silently fails to save.
+        //
+        // Legitimate asymmetries do exist (a computed, read-only DTO member). IgnoreEntity is how they are
+        // declared, which turns each one into an explicit, reviewed decision instead of an accident.
+        var neverWritten = view.Mapped
+            .Where(member => !entityBody.ConsumedDto.Contains(member))
+            .Where(member => !directives.IsIgnored(MapDir.Entity, member) && !attrIgnored.Contains(member))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (neverWritten.Count > 0)
+            spc.ReportDiagnostic(Diagnostic.Create(EntityWriteAsymmetry,
+                userClass?.Locations.FirstOrDefault() ?? triple.RepoLocation ?? Location.None,
+                className, string.Join(", ", neverWritten)));
+
+        // Automatic deep write is replace-with-new. Keeping that default is right — turning it off re-opens the
+        // silent-empty-on-save bug it was introduced to fix — so the fix is to make the dangerous case VISIBLE
+        // and give it an escape hatch, which is what AfterEntity and the existing-aware ForEntity are for.
+        foreach (var (member, childType, backReference) in entityBody.ReplacedTrackedChildren)
+            spc.ReportDiagnostic(Diagnostic.Create(DeepWriteReplacesTrackedChildren,
+                userClass?.Locations.FirstOrDefault() ?? triple.RepoLocation ?? Location.None,
+                className, member, childType, backReference));
 
         var hintName = userClass is not null
             ? $"{(ns ?? "global").Replace('.', '_')}_{className}.g.cs"
@@ -1711,6 +2373,12 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private static bool IsNullableLong(ITypeSymbol type) =>
         UnwrapNullable(type)?.SpecialType == SpecialType.System_Int64;
 
+    private static bool IsGuid(ITypeSymbol type) =>
+        type is { Name: "Guid", ContainingNamespace.Name: "System" };
+
+    private static bool IsNullableGuid(ITypeSymbol type) =>
+        UnwrapNullable(type) is { } inner && IsGuid(inner);
+
     private static ITypeSymbol? UnwrapNullable(ITypeSymbol type) =>
         type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } named
             ? named.TypeArguments[0]
@@ -1731,8 +2399,28 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static bool HasStringName(ITypeSymbol type) =>
-        AllProps(type).Any(p => p.Name == "Name" && p.Type.SpecialType == SpecialType.System_String && IsReadable(p));
+    /// <summary>
+    /// The property to read a select DTO's display text from, or null when there is none.
+    /// <para>
+    /// <c>[ShiftEntityKeyAndName]</c> names it explicitly; only when the attribute is absent is "Name" assumed.
+    /// The attribute used to be ignored here, so a type that named a different text property was read from the
+    /// wrong one — or, having no "Name" at all, from none.
+    /// </para>
+    /// </summary>
+    private static string? TextPropertyOf(ITypeSymbol type)
+    {
+        var declared = type.GetAttributes()
+            .FirstOrDefault(a => a.AttributeClass?.Name == "ShiftEntityKeyAndNameAttribute")
+            ?.ConstructorArguments is { Length: 2 } args && args[1].Value is string text
+            ? text
+            : null;
+
+        var candidate = declared ?? "Name";
+
+        return AllProps(type).Any(p => p.Name == candidate && p.Type.SpecialType == SpecialType.System_String && IsReadable(p))
+            ? candidate
+            : null;
+    }
 
     private static bool IsEntityNavigation(ITypeSymbol type)
     {

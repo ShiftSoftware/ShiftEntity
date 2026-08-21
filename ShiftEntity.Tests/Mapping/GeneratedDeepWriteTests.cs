@@ -99,6 +99,52 @@ public class GeneratedDeepWriteTests
         Assert.Contains(".MapBack(__d, new global::Sample.ShiftItem(), context)", pair.Text);
     }
 
+    /// <summary>
+    /// The same regression, asserted on OBJECTS rather than on generated text: build an entity, map it out, map
+    /// it back, and check what actually arrived. The text assertions above can only say the generator emitted a
+    /// certain line; this says the mapper produces the right result. A mapper that emitted the right substring
+    /// and still wrote an empty list would pass the tests above and fail this one.
+    /// </summary>
+    [Fact]
+    public void DeepChildrenSurviveAFullRoundTrip()
+    {
+        var sample = MapperGeneratorHarness.Load(Scaffold);
+        var mapper = sample.Mapper("Generated_Schedule_");
+
+        var item = sample.New("Sample.ShiftItem", ("Title", "Morning"), ("StartTicks", 900L));
+        var group = sample.New("Sample.ShiftGroup", ("Days", new List<int> { 1, 2 }));
+        GeneratedAssembly.Items(group, "Items").Clear();
+        ((System.Collections.IList)GeneratedAssembly.Get(group, "Items")!).Add(item);
+
+        var entity = sample.New("Sample.Schedule", ("Name", "Week 1"));
+        ((System.Collections.IList)GeneratedAssembly.Get(entity, "Groups")!).Add(group);
+
+        // ── out ──
+        var dto = mapper.MapToView(entity);
+
+        Assert.Equal("Week 1", GeneratedAssembly.Get<string>(dto, "Name"));
+
+        var dtoGroup = Assert.Single(GeneratedAssembly.Items(dto, "Groups"));
+        Assert.Equal(new List<int> { 1, 2 }, GeneratedAssembly.Get<List<int>>(dtoGroup, "Days"));
+
+        var dtoItem = Assert.Single(GeneratedAssembly.Items(dtoGroup, "Items"));
+        Assert.Equal("Morning", GeneratedAssembly.Get<string>(dtoItem, "Title"));
+        Assert.Equal(900L, GeneratedAssembly.Get<long>(dtoItem, "StartTicks"));
+
+        // ── and back: this is what silently produced an empty list before 2026-08-06 ──
+        var saved = mapper.MapToEntity(dto, sample.New("Sample.Schedule"));
+
+        Assert.Equal("Week 1", GeneratedAssembly.Get<string>(saved, "Name"));
+
+        var savedGroup = Assert.Single(GeneratedAssembly.Items(saved, "Groups"));
+        Assert.Equal(new List<int> { 1, 2 }, GeneratedAssembly.Get<List<int>>(savedGroup, "Days"));
+
+        // The grandchild is the level that actually broke — groups saved, but arrived with no items inside.
+        var savedItem = Assert.Single(GeneratedAssembly.Items(savedGroup, "Items"));
+        Assert.Equal("Morning", GeneratedAssembly.Get<string>(savedItem, "Title"));
+        Assert.Equal(900L, GeneratedAssembly.Get<long>(savedItem, "StartTicks"));
+    }
+
     /// <summary>Audit/base members are the pipeline's to write and must never be composed into the entity.</summary>
     [Fact]
     public void AuditMembers_AreNeverWrittenBackToTheEntity()

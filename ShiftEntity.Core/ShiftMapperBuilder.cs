@@ -26,13 +26,15 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Value)> listValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (MemberInfo Member, LambdaExpression Source, Type ChildEntity, Type ChildDto, bool IsCollection, Func<LambdaExpression> Projection)> listChildren = new(StringComparer.Ordinal);
 
-    // Build-time markers. The source generator reads Ignore/MaxDepth from the CALL SYNTAX at compile time
-    // (it bakes the decision into the generated code); the runtime records are kept only so the fluent
-    // calls compile and so the dynamic-config opt-out path can honour them.
+    // Build-time markers. The source generator reads Ignore/MaxDepth from the CALL SYNTAX at compile time and
+    // bakes the decision into the generated code. These runtime records exist so the fluent calls compile —
+    // and so VerifyBaked can check, after configuration runs, that the generator actually SAW each one.
     private readonly HashSet<string> ignoredView = new(StringComparer.Ordinal);
     private readonly HashSet<string> ignoredEntity = new(StringComparer.Ordinal);
     private readonly HashSet<string> ignoredList = new(StringComparer.Ordinal);
     private readonly HashSet<string> ignoredCopy = new(StringComparer.Ordinal);
+
+    private readonly List<Action<TViewDTO, TEntity, MappingContext>> afterEntity = new();
 
     private static readonly MethodInfo EnumerableSelect = typeof(Enumerable).GetMethods()
         .First(m => m.Name == nameof(Enumerable.Select) && m.GetParameters().Length == 2 &&
@@ -65,6 +67,38 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntity<TProp>(
         Expression<Func<TEntity, TProp>> member, Func<TViewDTO, TProp> value)
         => ForEntity(member, (dto, _) => value(dto));
+
+    /// <summary>
+    /// Customizes an entity property in <c>MapToEntity</c> with access to the ENTITY BEING UPDATED.
+    /// <para>
+    /// This is what a child collection needs. Automatic deep write is replace-with-new: every child DTO becomes
+    /// a brand new child entity. For children that are tracked rows with their own identity that either throws
+    /// (a required foreign key set to Restrict) or duplicates and orphans rows. Reconciling instead — match by
+    /// business key, update what is there, add what is new, soft-delete the rest — is impossible without the
+    /// current state, which is what <paramref name="value"/> receives here.
+    /// </para>
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForEntity<TProp>(
+        Expression<Func<TEntity, TProp>> member, Func<TViewDTO, TEntity, MappingContext, TProp> value)
+    {
+        this.entityValues[MemberOf(member).Name] = value;
+        return this;
+    }
+
+    /// <summary>
+    /// Runs after the generated <c>MapToEntity</c> body, with the DTO and the entity being updated.
+    /// <para>
+    /// The place for work that spans several members, or that reconciles a collection against what is already
+    /// there. Without it the only way to express such a thing was to take the whole <c>MapToEntity</c> method
+    /// over by hand, which means giving up every convention on every other member too.
+    /// </para>
+    /// <para>Hooks run in registration order.</para>
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> AfterEntity(Action<TViewDTO, TEntity, MappingContext> action)
+    {
+        this.afterEntity.Add(action ?? throw new ArgumentNullException(nameof(action)));
+        return this;
+    }
 
     /// <summary>Customizes an entity property in <c>CopyEntity</c> (value computed from the fresh source entity).</summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> ForCopy<TProp>(
@@ -431,6 +465,33 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
             ? ((Func<TViewDTO, MappingContext, TProp>)custom)(dto, context)
             : current;
 
+    /// <summary>
+    /// Invokes the registered <c>ForEntity</c> customization, passing the entity being updated when the
+    /// registered delegate asked for it. Both shapes are accepted, so adding the existing-aware overload did not
+    /// change what already-generated mappers do.
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public TProp InvokeEntity<TProp>(TViewDTO dto, TEntity existing, MappingContext context, string memberName, TProp current = default!)
+    {
+        if (!this.entityValues.TryGetValue(memberName, out var custom))
+            return current;
+
+        return custom switch
+        {
+            Func<TViewDTO, TEntity, MappingContext, TProp> withExisting => withExisting(dto, existing, context),
+            Func<TViewDTO, MappingContext, TProp> plain => plain(dto, context),
+            _ => current,
+        };
+    }
+
+    /// <summary>Runs the registered <c>AfterEntity</c> hooks, in registration order.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public void RunAfterEntity(TViewDTO dto, TEntity existing, MappingContext context)
+    {
+        foreach (var hook in this.afterEntity)
+            hook(dto, existing, context);
+    }
+
     /// <summary>Invokes the registered <c>ForCopy</c> customization for <paramref name="memberName"/>, or returns <paramref name="current"/> if none is registered.</summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public TProp InvokeCopy<TProp>(TEntity source, MappingContext context, string memberName, TProp current = default!)
@@ -439,6 +500,48 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
             : current;
 
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    /// <summary>
+    /// Checks that every member configured here was also seen by the generator at build time, and throws
+    /// naming any that was not.
+    /// <para>
+    /// The generator bakes each customize-or-convention decision into the emitted code. When it cannot read a
+    /// registration — an open-generic receiver, a member selector that is not a plain property access, and
+    /// above all a registration made from ANOTHER ASSEMBLY, which no compilation-local analysis can ever see —
+    /// it used to fall through and bake the plain convention. The call compiled, it ran, and it did nothing at
+    /// all: you could write <c>map.Ignore(x => x.Secret)</c> and still have the member mapped.
+    /// </para>
+    /// <para>
+    /// Cross-assembly configuration is why this check has to exist at runtime. It is the only place that
+    /// failure can be caught, and a loud throw on first use beats a silent no-op that reaches production.
+    /// </para>
+    /// </summary>
+    /// <param name="bakedCustom">Members the generator baked a customization for.</param>
+    /// <param name="bakedIgnored">Members the generator omitted because they were ignored.</param>
+    /// <param name="mapperName">The generated mapper, for the message.</param>
+    public void VerifyBaked(IReadOnlyCollection<string> bakedCustom, IReadOnlyCollection<string> bakedIgnored, string mapperName)
+    {
+        var missing = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var member in this.viewValues.Keys.Concat(this.entityValues.Keys).Concat(this.copyValues.Keys)
+                     .Concat(this.listValues.Keys).Concat(this.listChildren.Keys))
+            if (!bakedCustom.Contains(member))
+                missing.Add(member);
+
+        foreach (var member in this.ignoredView.Concat(this.ignoredEntity).Concat(this.ignoredList).Concat(this.ignoredCopy))
+            if (!bakedIgnored.Contains(member))
+                missing.Add(member);
+
+        if (missing.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Mapper '{mapperName}' was configured at runtime for {string.Join(", ", missing)}, but the source " +
+            "generator did not see those registrations at build time, so they have no effect. Configuration has " +
+            "to be visible to the generator: put it in the mapper's Configure hook or the repository's " +
+            "UseGeneratedMapper(map => …) IN THE SAME PROJECT as the mapper, register unconditionally, and use a " +
+            "plain property selector such as d => d.Name.");
+    }
+
     public bool TryGetViewValue(string memberName, out object? value) => this.viewValues.TryGetValue(memberName, out value);
 
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
