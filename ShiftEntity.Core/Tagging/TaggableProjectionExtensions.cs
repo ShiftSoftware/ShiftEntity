@@ -1,11 +1,10 @@
-using ShiftSoftware.ShiftEntity.Core.Tagging;
 using ShiftSoftware.ShiftEntity.Model.Dtos.Tagging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.Tagging;
+namespace ShiftSoftware.ShiftEntity.Core.Tagging;
 
 /// <summary>
 /// Helpers for projecting taggable entities to their list DTOs without hand-writing the
@@ -46,6 +45,10 @@ public static class TaggableProjectionExtensions
         var tagSelector = Expression.Lambda<Func<Tag, TagDTO>>(tagBody, tag);
 
         // entity.Tags.Select(t => new TagDTO { ... }).ToList()
+        //
+        // No soft-delete predicate here, deliberately: a tag already attached to an entity stays visible on it.
+        // Retiring a tag stops it being attached to anything NEW; it does not rewrite history. Soft-delete
+        // filtering belongs to the repository and OData layer, not to mapping.
         var tagsNav = Expression.Property(entity, nameof(IShiftEntityTaggable.Tags));
         var select = Expression.Call(
             typeof(Enumerable), nameof(Enumerable.Select), new[] { typeof(Tag), typeof(TagDTO) },

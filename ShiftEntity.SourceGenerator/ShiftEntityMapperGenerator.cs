@@ -46,7 +46,10 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
 {
     private const string AttributeFullName = "ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperAttribute";
     private const string Helpers = "global::ShiftSoftware.ShiftEntity.Core.MappingHelpers";
-    private const string TaggableExtensions = "global::ShiftSoftware.ShiftEntity.EFCore.Tagging.TaggableProjectionExtensions";
+    // Core, not EFCore: the generator ships inside ShiftEntity.Core, so emitting a call into ShiftEntity.EFCore
+    // meant a Core-only project with a taggable entity got source that did not compile. An [Obsolete] forwarder
+    // stays in EFCore for one release, because mappers baked into already-published packages call the old name.
+    private const string TaggableExtensions = "global::ShiftSoftware.ShiftEntity.Core.Tagging.TaggableProjectionExtensions";
     private const string AutoNamespace = "ShiftSoftware.ShiftEntity.GeneratedMappers";
     private const int DefaultMaxDepth = 10;   // mirror of ShiftEntityMapperDefaults.MaxDepth
 
@@ -934,8 +937,24 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
     private static readonly HashSet<string> ViewHandledMembers = new(StringComparer.Ordinal)
     { "ID", "IsDeleted", "CreateDate", "LastSaveDate", "CreatedByUserID", "LastSavedByUserID", "Tags", "Revisions" };
 
+    // The audit and soft-delete columns are deliberately NOT here: the mapper maps them, exactly as AutoMapper's
+    // unguarded ReverseMap did, and restricting who may change them is the repository's job (ShiftRepository's
+    // upsert holds the soft-delete line) or an explicit map.IgnoreEntity(...). What remains is what the SAVE
+    // PIPELINE owns exclusively — writing any of it from a request body is incoherent, not merely unsafe:
+    //   "ID"                — the primary key. Writable only through a null-tolerant convention that does not yet
+    //                         exist: EntityConvention resolves string? → long to ToLong(), which THROWS on the
+    //                         null every insert carries, and deep write would push a child's key onto a fresh
+    //                         entity (IDENTITY_INSERT). Its own change, not this one. Pinned by a test.
+    //   "ReloadAfterSave"   — [NotMapped] request-scoped flag the repository arms before mapping and reads after
+    //                         saving. A client value either cancels a needed refresh or buys unbounded round-trips.
+    //   "AuditFieldsAreSet" — [NotMapped] stamping guard. Writing it short-circuits AuditStamper for the whole
+    //                         unit of work, including the forced IsDeleted = false on insert, and leaves no trace.
+    //   "IdempotencyKey"    — repository-owned, unique-indexed dedup key. A client-chosen value lets a caller
+    //                         squat the key space and poison later idempotent creates.
+    //   "Tags"              — owned by TaggingPipeline on both legs. Writing it composes Tag rows the pipeline
+    //                         discards a line later, and "tags": null NREs on entity.Tags.Clear().
     private static readonly HashSet<string> EntityExcludedMembers = new(StringComparer.Ordinal)
-    { "ID", "CreateDate", "LastSaveDate", "IsDeleted", "CreatedByUserID", "LastSavedByUserID", "ReloadAfterSave", "AuditFieldsAreSet", "IdempotencyKey", "Tags" };
+    { "ID", "ReloadAfterSave", "AuditFieldsAreSet", "IdempotencyKey", "Tags" };
 
     private static readonly HashSet<string> CopyExcludedMembers = new(StringComparer.Ordinal)
     { "ID", "ReloadAfterSave", "AuditFieldsAreSet" };
@@ -1699,7 +1718,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
             // Child object/collection with no customization → AUTOMATIC deep write (replace-with-new) up to
             // maxDepth. Every child DTO becomes a NEW child entity via the pair's MapBack (pair this with a
             // repository that owns the previous children, e.g. delete-and-recreate). Beyond the cap / a cycle
-            // edge it is left untouched. Audit/base members never compose — the pipeline owns them.
+            // edge it is left untouched. Pipeline-owned members (Tags, the [NotMapped] flags, the key) never compose.
             if (!IsEntityExcluded(entityProp) && ownerDepth + 1 <= maxDepth &&
                 !skippedEdges.Contains(ownerKey + "|" + name) &&
                 TryGetEntityComposableChild(entityProp, dtoProps, out var childEntity, out var childDto, out var isCollection))
@@ -1728,7 +1747,7 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
                     lines.Add("");
                 }
             }
-            // Excluded/audit or beyond-cap navigation with no customization → leave existing.
+            // Pipeline-owned or beyond-cap navigation with no customization → leave existing.
         }
 
         var settable = AllProps(entity).Where(IsSettable).ToList();

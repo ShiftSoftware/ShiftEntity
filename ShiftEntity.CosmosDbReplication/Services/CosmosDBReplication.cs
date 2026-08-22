@@ -103,7 +103,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     private readonly string cosmosDbConnectionString;
     private CosmosClient client;
     private readonly string cosmosDbDatabaseId;
-    private readonly IMapper mapper;
+    private readonly IServiceProvider services;
+    private IMapper? mapper;
     private readonly DB db;
     private readonly DbSet<Entity> dbSet;
     private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
@@ -122,6 +123,15 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     //document under the OLD id + key before upserting the new one.
     Dictionary<long, string> pendingStamps = new();
 
+    //AutoMapper is the FALLBACK projection here — reached only by a Replicate / UpdateReference /
+    //UpdatePropertyReference registered WITHOUT a mapping delegate. Resolving it in the constructor made it a hard
+    //dependency of the catch-up sweep itself: the first .Replicate<>() threw on a host whose every projection is an
+    //explicit delegate. Resolve at the moment the fallback is actually taken, exactly as the trigger path already
+    //does (ShiftEntityCosmosDbOptions — Replicate, UpdateReference, UpdatePropertyReference).
+    //Still GetRequiredService, not GetService: once this branch IS taken, a missing registration is a
+    //misconfiguration and has to say so.
+    private IMapper FallbackMapper => this.mapper ??= this.services.GetRequiredService<IMapper>();
+
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
         string cosmosDbDatabaseId,
@@ -130,7 +140,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
-        this.mapper = services.GetRequiredService<IMapper>();
+        this.services = services;
         this.db = services.GetRequiredService<DB>();
         this.dbSet = this.db.Set<Entity>();
         this.query = query;
@@ -144,7 +154,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     {
         this.client = client;
         this.cosmosDbDatabaseId = cosmosDbDatabaseId;
-        this.mapper = services.GetRequiredService<IMapper>();
+        this.services = services;
         this.db = services.GetRequiredService<DB>();
         this.dbSet = this.db.Set<Entity>();
         this.query = query;
@@ -169,6 +179,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             List<Task> cosmosTasks = new();
 
+            //Resolved ONCE, above the loop, so a missing AutoMapper registration throws out of the run. Resolving it
+            //at the use site below would put it INSIDE the per-row catch, which swallows and marks the row
+            //unsuccessful — turning "the host forgot AddAutoMapper" into a sweep that reports success while leaving
+            //every row permanently dirty under a clean-looking watermark.
+            var fallbackMapper = mapping is null ? this.FallbackMapper : null;
+
             foreach (var entity in this.entities)
             {
                 //One bad row (a mapping that throws, a stamp that defeats even Deserialize's validation) must fail
@@ -180,7 +196,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     if (mapping is not null)
                         newItem = mapping(entity);
                     else
-                        newItem = this.mapper.Map<CosmosDBItem>(entity);
+                        newItem = fallbackMapper!.Map<CosmosDBItem>(entity);
 
                     var entityId = entity.ID;
 
@@ -282,7 +298,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                         if (mapping is not null)
                             propertyItem = mapping(entity);
                         else
-                            propertyItem = this.mapper.Map<CosmosDBItemReference>(entity);
+                            propertyItem = this.FallbackMapper.Map<CosmosDBItemReference>(entity);
 
                         var id = Convert.ToString(item.GetProperty("id"));
                         PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
@@ -374,7 +390,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 foreach (var entity in entry.contributors)
                 {
                     if (mapping is null)
-                        this.mapper.Map(entity, mergedDocument);
+                        this.FallbackMapper.Map(entity, mergedDocument);
                     else
                         mergedDocument = mapping(entity, mergedDocument);
                 }

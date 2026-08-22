@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.Core;
@@ -118,23 +119,65 @@ public static class MappingHelpers
     /// <summary>
     /// Parses a required (non-nullable) FK value from a ShiftEntitySelectDTO.
     /// Usage: existing.ProductBrandID = dto.ProductBrand.ToForeignKey();
+    /// <para>
+    /// A missing, blank or non-numeric select is the CLIENT's mistake, so this throws a
+    /// <see cref="ShiftEntityException"/> carrying 400 and naming the member, rather than the bare
+    /// <c>long.Parse</c> it used to be — which turned a blank <c>{"Value":""}</c> body into a 500 with a stack
+    /// trace and no indication of which field was at fault. The two paths that reach it that way are a payload
+    /// that passes validation with a blank Value, and minimal-API endpoints, whose validation filter runs
+    /// DataAnnotations only.
+    /// </para>
+    /// <para>
+    /// Never reached from a LIST projection: the generator inlines the select-DTO member-init there instead of
+    /// calling this, so no throwing code enters an expression tree.
+    /// </para>
     /// </summary>
-    public static long ToForeignKey(this ShiftEntitySelectDTO selectDTO)
+    public static long ToForeignKey(this ShiftEntitySelectDTO selectDTO,
+        [CallerArgumentExpression(nameof(selectDTO))] string? member = null)
     {
-        return long.Parse(selectDTO.Value);
+        if (selectDTO is null || string.IsNullOrWhiteSpace(selectDTO.Value))
+            throw InvalidForeignKey(member, null);
+
+        if (!long.TryParse(selectDTO.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            throw InvalidForeignKey(member, selectDTO.Value);
+
+        return id;
     }
 
     /// <summary>
     /// Parses a nullable FK value from a ShiftEntitySelectDTO.
-    /// Returns null when the DTO is null or its Value is empty.
+    /// Returns null when the DTO is null or its Value is empty — clearing the FK is legitimate here, which is
+    /// why blank is not an error on this overload. A non-numeric Value still throws 400, as above.
     /// Usage: existing.CountryOfOriginID = dto.CountryOfOrigin.ToNullableForeignKey();
     /// </summary>
-    public static long? ToNullableForeignKey(this ShiftEntitySelectDTO? selectDTO)
+    public static long? ToNullableForeignKey(this ShiftEntitySelectDTO? selectDTO,
+        [CallerArgumentExpression(nameof(selectDTO))] string? member = null)
     {
         if (selectDTO is null || string.IsNullOrWhiteSpace(selectDTO.Value))
             return null;
 
-        return long.Parse(selectDTO.Value);
+        if (!long.TryParse(selectDTO.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            throw InvalidForeignKey(member, selectDTO.Value);
+
+        return id;
+    }
+
+    // ShiftEntityCrudHandler catches ShiftEntityException around the upsert and emits the same
+    // "Model Validation Error" shape the MVC ModelState path produces, so a bad FK reads like any other field
+    // error instead of a server fault. `For` is what a form binds an inline error to, hence the trimmed member.
+    private static ShiftEntityException InvalidForeignKey(string? member, string? value)
+    {
+        var field = string.IsNullOrWhiteSpace(member)
+            ? null
+            : member!.Substring(member.LastIndexOf('.') + 1).Trim();
+
+        var title = value is null
+            ? $"'{field ?? "A required reference"}' is required."
+            : $"'{field ?? "A reference"}' is not a valid selection.";
+
+        return new ShiftEntityException(
+            new Message("Model Validation Error", title) { For = field },
+            (int)System.Net.HttpStatusCode.BadRequest);
     }
 
     /// <summary>

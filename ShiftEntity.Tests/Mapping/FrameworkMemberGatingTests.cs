@@ -96,18 +96,28 @@ public class FrameworkMemberGatingTests
     }
 
     /// <summary>
-    /// The other half of the contract: a REAL framework member still has to be left to the framework. The audit
-    /// fields belong to the save pipeline, and a mapper that wrote them from client input would let a caller set
-    /// its own <c>IsDeleted</c> — so the gate must not become a free-for-all.
+    /// The other half of the contract, and the line moved on 2026-08-22: the audit and soft-delete columns are
+    /// PAYLOAD, so the mapper maps them — matching what AutoMapper's unguarded <c>ReverseMap</c> always did.
+    /// Deciding who may change them is the repository's job (the upsert restores the stored <c>IsDeleted</c> on
+    /// update, so soft delete still needs Access.Delete) or an explicit <c>map.IgnoreEntity(...)</c>.
+    /// <para>
+    /// What the mapper still refuses to write is what the SAVE PIPELINE owns, and <c>ID</c> is the one that
+    /// matters most: <c>EntityConvention</c> would resolve <c>string? → long</c> to <c>ToLong()</c>, which throws
+    /// on the null every insert carries, and deep write would push a child's key onto a fresh entity. Anyone
+    /// "finishing the job" by removing <c>ID</c> from the set fails right here, before it reaches a database.
+    /// </para>
     /// </summary>
     [Fact]
-    public void RealFrameworkMembers_AreStillNotWrittenBackToTheEntity()
+    public void FrameworkAuditMembers_AreWrittenBackToTheEntity_ButTheKeyIsNot()
     {
         var run = MapperGeneratorHarness.Run(Scaffold);
         var entityBody = run.Source("Generated_Article_").Split("MapToEntityGenerated")[1];
 
-        foreach (var owned in new[] { "existing.ID", "existing.CreateDate", "existing.LastSaveDate", "existing.IsDeleted" })
-            Assert.DoesNotContain(owned, entityBody);
+        foreach (var payload in new[] { "existing.CreateDate", "existing.LastSaveDate", "existing.IsDeleted" })
+            Assert.Contains(payload, entityBody);
+
+        // The key stays pipeline-owned. This assertion is the guard on the carve-out, not an incidental detail.
+        Assert.DoesNotContain("existing.ID", entityBody);
 
         // ...while the identically-shaped domain members right next to them ARE written.
         Assert.Contains("existing.Tags", entityBody);

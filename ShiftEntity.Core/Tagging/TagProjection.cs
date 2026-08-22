@@ -1,11 +1,10 @@
-using ShiftSoftware.ShiftEntity.Core.Tagging;
 using ShiftSoftware.ShiftEntity.Model.Dtos.Tagging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace ShiftSoftware.ShiftEntity.EFCore.Tagging;
+namespace ShiftSoftware.ShiftEntity.Core.Tagging;
 
 /// <summary>
 /// The single, canonical <see cref="Tag"/> → <see cref="TagDTO"/> projection. Tag IDs are plain
@@ -31,7 +30,22 @@ public static class TagProjection
 
     private static readonly Func<Tag, TagDTO> ToDtoFunc = ToDto.Compile();
 
-    /// <summary>Materialized projection for already-loaded tags (the single-entity read path).</summary>
+    /// <summary>
+    /// Materialized projection for already-loaded tags (the single-entity read path).
+    /// <para>
+    /// Deliberately does NOT filter soft-deleted tags. A tag that was attached to an entity stays on that entity
+    /// and is returned as-is; retiring a tag from the vocabulary only stops it being attached to anything NEW
+    /// (<c>TaggingPipeline</c> resolves live tags only). Soft-delete filtering is the repository and OData
+    /// layer's job, not mapping's — see the note on Step B10 in the AutoMapper-removal plan.
+    /// </para>
+    /// </summary>
     public static List<TagDTO> ToDtoList(IEnumerable<Tag>? tags)
         => tags is null ? new List<TagDTO>() : tags.Select(ToDtoFunc).ToList();
+
+    /// <summary>
+    /// Materialized projection of ONE already-loaded tag, so <see cref="ShiftTagMapper.MapToView"/> can reuse
+    /// this definition instead of restating the tag shape. The caller chains <c>MapBaseFields</c> for the audit
+    /// columns this projection deliberately leaves out.
+    /// </summary>
+    public static TagDTO ToDtoSingle(Tag tag) => ToDtoFunc(tag);
 }

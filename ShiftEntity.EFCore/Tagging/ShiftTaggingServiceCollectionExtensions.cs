@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Tagging;
+using ShiftSoftware.ShiftEntity.Model.Dtos.Tagging;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using System;
 
@@ -50,6 +52,15 @@ public static class ShiftTaggingServiceCollectionExtensions
 
         services.AddScoped<ShiftTagRepository<TDbContext>>();
 
+        // The framework's own mapper for the Tag triple. Registered explicitly because the generator cannot
+        // reach it — it is attached as an analyzer only to ShiftEntity.Core, so a triple whose repository lives
+        // in ShiftEntity.EFCore never gets generated code, and ShiftTagRepository is framework-owned, so a
+        // consumer has no seam to supply one. TryAdd, so a host that wants its own tag mapping still wins.
+        // ShiftRepository resolves it from DI; ShiftTagRepository's two-argument constructor also accepts it.
+        services.TryAddScoped<IShiftEntityMapper<Tag, TagListDTO, TagDTO>, ShiftTagMapper>();
+
+        // Still registered: the AutoMapper tagging profile remains the fallback until the fallback itself goes
+        // in Stage F. With ShiftTagMapper in DI it is no longer what serves Tag CRUD.
         services.Configure<ShiftEntityOptions>(opts =>
             opts.AddAutoMapper(typeof(ShiftTaggingAutoMapperProfile).Assembly));
 

@@ -145,14 +145,20 @@ public class GeneratedDeepWriteTests
         Assert.Equal(900L, GeneratedAssembly.Get<long>(savedItem, "StartTicks"));
     }
 
-    /// <summary>Audit/base members are the pipeline's to write and must never be composed into the entity.</summary>
+    /// <summary>
+    /// What the save pipeline owns is never composed into the entity. Narrowed on 2026-08-22: the audit and
+    /// soft-delete columns became mapper payload (see <c>FrameworkMemberGatingTests</c>), so what is left here is
+    /// the key and the pipeline-owned navigations. <c>ScheduleDTO</c> derives from <c>ShiftEntityDTOBase</c>, so
+    /// it carries only <c>ID</c> and <c>IsDeleted</c> — and <c>IsDeleted</c> is now written, which is why it is
+    /// no longer in this list.
+    /// </summary>
     [Fact]
-    public void AuditMembers_AreNeverWrittenBackToTheEntity()
+    public void KeyAndPipelineMembers_AreNeverWrittenBackToTheEntity()
     {
         var triple = Generate().Single(s => s.Name.Contains("Generated_Schedule_"));
         var entityBody = triple.Text.Split("MapToEntityGenerated")[1];
 
-        foreach (var excluded in new[] { "existing.ID", "existing.CreateDate", "existing.LastSaveDate", "existing.IsDeleted" })
+        foreach (var excluded in new[] { "existing.ID", "existing.ReloadAfterSave", "existing.AuditFieldsAreSet" })
             Assert.DoesNotContain(excluded, entityBody);
     }
 

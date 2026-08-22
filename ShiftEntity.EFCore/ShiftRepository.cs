@@ -195,10 +195,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     public virtual void CopyEntity(EntityType source, EntityType target, MappingContext context = default)
     {
-        if (innerMapper is not null)
-            innerMapper.CopyEntity(source, target, context.WithFallbackServices(MapperServiceProvider));
-        else
-            source.ShallowCopyTo(target);
+        if (innerMapper is null)
+            throw new InvalidOperationException(
+                "No mapper configured. Override CopyEntity() or set one via UseMapper(). " +
+                "source.ShallowCopyTo(target) is the default body.");
+        innerMapper.CopyEntity(source, target, context.WithFallbackServices(MapperServiceProvider));
     }
 
     #endregion
@@ -208,7 +209,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (queryable is null)
             queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
-        return MapToList(queryable, new MappingContext(MapperServiceProvider));
+        // No-tracking is a property of the LIST PATH, not of one mapper implementation. Applied here it holds for
+        // every mapper kind — AutoMapper, source-generated and hand-written alike — including a mapper that
+        // materializes entities before projecting, which would otherwise fill the change tracker on every list
+        // request with nothing to stop it. A pure projection to a DTO is not tracked either way, so this is a
+        // guard rather than a fix for a live leak. AsNoTracking returns a NEW queryable; the caller's is untouched.
+        // NOT on GetIQueryable: its entity results ARE mutated and saved (bulk delete), so no-tracking there breaks.
+        return MapToList(queryable.AsNoTracking(), new MappingContext(MapperServiceProvider));
     }
 
     public virtual ValueTask<ViewAndUpsertDTO> ViewAsync(EntityType entity)
@@ -290,7 +297,25 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             throw new ShiftEntityException(
                 new Message("Forbidden", "This record is protected and cannot be modified or deleted."), (int)HttpStatusCode.Forbidden);
 
+        // Deleting is not something an UPDATE may do. DELETE is a separate operation behind Access.Delete;
+        // an upsert only needs Access.Write, so honouring IsDeleted from a PUT body would make the delete
+        // permission bypassable — and, in the other direction, an undelete the framework exposes no API for.
+        //
+        // This is a REPOSITORY policy, deliberately not a mapping rule. Mappers map every property they are
+        // given, IsDeleted included — that is what AutoMapper always did and what the generated mappers do —
+        // and the repository is what decides which of those writes it is willing to keep. So the flag is
+        // captured before mapping and put back after, rather than being excluded somewhere upstream.
+        //
+        // Insert is exempt on purpose: the entity is a fresh new() and AuditStamper forces IsDeleted = false
+        // there anyway, so there is nothing to preserve and nothing to gain.
+        var softDeleteBeforeMapping = actionType == ActionTypes.Update && entity is IShiftEntityAudit audited
+            ? audited.IsDeleted
+            : (bool?)null;
+
         entity = MapToEntity(dto, entity, new MappingContext(MapperServiceProvider, actionType));
+
+        if (softDeleteBeforeMapping is { } storedSoftDelete && entity is IShiftEntityAudit mappedAudited)
+            mappedAudited.IsDeleted = storedSoftDelete;
 
         if (_hasTaggableInterface && dto is IShiftEntityTaggableDTO taggableDto && entity is IShiftEntityTaggable taggableEntity)
         {
