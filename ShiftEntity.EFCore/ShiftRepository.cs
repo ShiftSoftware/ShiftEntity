@@ -137,18 +137,29 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         //   1. An IShiftEntityMapper<Entity, List, View> explicitly registered in DI (e.g. supplied through
         //      the [ShiftEntityEndpoint<…, TMapper>] attribute). Resolved via GetService (returns null when
         //      absent — no exception on the common no-mapper path).
-        //   2. The registered AutoMapper, wrapped as an IShiftEntityMapper.
-        //   3. Nothing — the mapping methods then throw "No mapper configured" unless overridden.
+        //   2. The SOURCE-GENERATED mapper from ShiftEntityMapperRegistry — but only under GeneratedFirst or
+        //      GeneratedOnly. Until this step the registry was read by UseGeneratedMapper() and endpoint
+        //      discovery and by nothing else, so a generated mapper could exist, be correct, be registered,
+        //      and the repository would still use AutoMapper and never know (gap B-1).
+        //   3. The registered AutoMapper, wrapped as an IShiftEntityMapper. Skipped under GeneratedOnly.
+        //   4. Nothing — the mapping methods then throw "No mapper configured" unless overridden.
         // A ShiftRepository also implements IShiftEntityMapper<…>, so any repository resolution is ignored
         // to avoid a repository being used as its own (recursive) mapper.
         if (!this.ShiftRepositoryOptions.MapperConfigured)
         {
+            var mode = TryGetService<ShiftEntityOptions>(db)?.MappingMode ?? ShiftEntityMappingMode.AutoMapperFirst;
+
             var diMapper = MapperServiceProvider.GetService<IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>>();
             if (diMapper is not null && diMapper is not ShiftRepositoryBase)
             {
                 this.ShiftRepositoryOptions.Mapper = diMapper;
             }
-            else
+            else if (mode is not ShiftEntityMappingMode.AutoMapperFirst
+                     && GeneratedMapperFactory.Create<EntityType, ListDTO, ViewAndUpsertDTO>() is { } generated)
+            {
+                this.ShiftRepositoryOptions.Mapper = generated;
+            }
+            else if (mode is not ShiftEntityMappingMode.GeneratedOnly)
             {
                 var autoMapper = TryGetService<IMapper>(db);
                 if (autoMapper is not null)

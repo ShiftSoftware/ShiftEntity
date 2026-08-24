@@ -134,11 +134,43 @@ public static class IServiceCollectionExtensions
             //    Added LAST and deduped against everything above so a repository scan or a custom user
             //    profile for the same pair is kept — AutoMapper would otherwise let this later profile
             //    silently override it.
-            if (options.EndpointDefaultMaps.Count > 0)
-                cfg.AddProfile(new DefaultAutoMapperProfile(options.EndpointDefaultMaps, GetConfiguredPairs(cfg)));
+            //    Under GeneratedFirst/GeneratedOnly a triple the registry covers gets its mapper from the
+            //    registry (see ShiftRepository.InitCommon), so synthesizing an AutoMapper map for it is dead
+            //    weight — and this is the last framework path that reaches for AutoMapper BY DEFAULT, which
+            //    has to stop before Stage F can delete the profile machinery.
+            //
+            //    The filter lives HERE rather than in RegisterShiftRepositories because the mode is only
+            //    final once every Configure<ShiftEntityOptions> callback has run, and this factory is
+            //    deferred until IMapper is first resolved — so by now it is.
+            var endpointMaps = options.MappingMode == ShiftEntityMappingMode.AutoMapperFirst
+                ? options.EndpointDefaultMaps
+                : options.EndpointDefaultMaps.Where(m => !HasGeneratedMapper(m)).ToList();
+
+            if (endpointMaps.Count > 0)
+                cfg.AddProfile(new DefaultAutoMapperProfile(endpointMaps, GetConfiguredPairs(cfg)));
         }, typeof(DefaultAutoMapperProfile).Assembly);
 
         return services;
+    }
+
+    /// <summary>
+    /// True when the source generator produced a mapper for this endpoint's <c>[entity, listDto, viewDto]</c>.
+    /// The module initializer that populates the registry is not triggered by reflection alone, so force it
+    /// first — otherwise the answer depends on whatever happened to touch the assembly earlier.
+    /// </summary>
+    private static bool HasGeneratedMapper(Type[] triple)
+    {
+        try
+        {
+            System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor(triple[0].Module.ModuleHandle);
+            return ShiftEntityMapperRegistry.Find(triple[0], triple[1], triple[2]) is not null;
+        }
+        catch
+        {
+            // A consumer assembly whose module initializer throws must not take down mapper configuration —
+            // keeping the AutoMapper map is the safe answer, since it is what would have been built anyway.
+            return false;
+        }
     }
 
     // The (source, dest) pairs already declared by the profiles added to cfg so far, via AutoMapper 14's

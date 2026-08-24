@@ -24,6 +24,18 @@ public class ShiftEntityOptions
     //internal int MaxTop;
     //internal Func<IServiceProvider, int?>? MaxTopResolver;
 
+    /// <summary>
+    /// Which mapper a repository resolves when it configured none itself. Defaults to
+    /// <see cref="ShiftEntityMappingMode.AutoMapperFirst"/>, so leaving it alone changes nothing.
+    /// <para>
+    /// This is the per-service switch off AutoMapper: <see cref="ShiftEntityMappingMode.GeneratedFirst"/>
+    /// prefers the source-generated mapper and still falls back for triples it does not cover;
+    /// <see cref="ShiftEntityMappingMode.GeneratedOnly"/> removes the fallback, and is what startup validation
+    /// hard-fails on.
+    /// </para>
+    /// </summary>
+    public ShiftEntityMappingMode MappingMode { get; set; } = ShiftEntityMappingMode.AutoMapperFirst;
+
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
         _WrapValidationErrorResponseWithShiftEntityResponse = wrapValidationErrorResponse;

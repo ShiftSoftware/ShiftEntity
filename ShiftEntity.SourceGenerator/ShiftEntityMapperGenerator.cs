@@ -2481,6 +2481,11 @@ public sealed class ShiftEntityMapperGenerator : IIncrementalGenerator
         sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
         sb.AppendLine("    internal static void Register()");
         sb.AppendLine("    {");
+        // No version stamp here on purpose. Version skew — this mapper's assembly built against an older
+        // ShiftEntity than the host loads — is detected at startup by JIT-preparing these methods, which
+        // resolves their call targets and throws if one is gone (ShiftEntityMapperRegistry.VerifyBindings).
+        // That needs nothing emitted and nothing maintained, where a hand-written ABI number would fire on
+        // additive changes that break nothing and stay silent whenever somebody forgot to bump it.
         sb.AppendLine("        global::ShiftSoftware.ShiftEntity.Core.ShiftEntityMapperRegistry.Register(");
         sb.AppendLine($"            typeof({entityName}), typeof({listName}), typeof({viewName}), typeof({typeRef}));");
         sb.AppendLine("    }");
