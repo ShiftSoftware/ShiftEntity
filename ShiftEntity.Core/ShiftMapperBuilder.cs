@@ -179,6 +179,16 @@ public class ShiftMapperBuilder<TEntity, TListDTO, TViewDTO>
     /// </summary>
     public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> MaxDepth(int depth) => this;
 
+    /// <summary>
+    /// Requires member names to match EXACTLY, including case, for this mapper.
+    /// <para>
+    /// Like <see cref="MaxDepth"/>, this is read from the CALL SYNTAX at build time and baked into the
+    /// generated code, so the runtime method has nothing to do. Registering it conditionally, or from another
+    /// assembly, is caught by SHENGEN005/009 rather than silently ignored.
+    /// </para>
+    /// </summary>
+    public ShiftMapperBuilder<TEntity, TListDTO, TViewDTO> CaseSensitive() => this;
+
     // ─── deep-mapping sugar: wire the generated PAIR mappers explicitly, without boilerplate ───
 
     /// <summary>

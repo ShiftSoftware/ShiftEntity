@@ -41,4 +41,11 @@ public static class ShiftEntityMapperDefaults
 {
     /// <summary>Default automatic deep-mapping depth when no <see cref="ShiftEntityMapperMaxDepthAttribute"/> or <c>map.MaxDepth(n)</c> is set.</summary>
     public const int MaxDepth = 10;
+
+    /// <summary>
+    /// Whether member names must match case exactly. <c>false</c> — AutoMapper's behaviour, and the setting
+    /// under which migrating to a generated mapper does not silently lose members. Opt in per mapper with
+    /// <c>map.CaseSensitive()</c>.
+    /// </summary>
+    public const bool CaseSensitiveMatching = false;
 }
