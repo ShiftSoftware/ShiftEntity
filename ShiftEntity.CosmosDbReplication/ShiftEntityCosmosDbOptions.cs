@@ -1,5 +1,4 @@
-﻿using AutoMapper;
-using EntityFrameworkCore.Triggered;
+﻿using EntityFrameworkCore.Triggered;
 using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
@@ -76,7 +75,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
     {
         this.cosmosDbTriggerReferenceOperations
             .Replicate(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
@@ -94,7 +93,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
         string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
     {
         this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, null, mapping);
@@ -113,7 +112,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel3Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
     {
         this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, partitionKeyLevel3Expression, mapping);
@@ -175,15 +174,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         this.replicateAction = async (entity, services, db) =>
         {
-            CosmosDbItem item;
-
-            if (mapping is not null)
-                item = mapping(new EntityWrapper<Entity>(entity, services));
-            else
-            {
-                var autoMapper = services.GetRequiredService<IMapper>();
-                item = autoMapper.Map<CosmosDbItem>(entity);
-            }
+            // The mapping delegate is REQUIRED. It used to be optional and fall through to AutoMapper, which
+            // meant a call site that simply forgot one still compiled and still ran — and any failure on this
+            // path is swallowed per row, so it surfaced as a permanently-dirty document under a clean-looking
+            // watermark rather than as an exception. The compiler now asks the question instead.
+            CosmosDbItem item = mapping(new EntityWrapper<Entity>(entity, services));
 
             var container = db.GetContainer(cosmosContainerId);
 
@@ -286,7 +281,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
     public CosmosDbTriggerReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
                 Func<IQueryable<CosmosDbItem>, EntityWrapper<Entity>, IQueryable<CosmosDbItem>> finder,
-                Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem>? mapping = null)
+                Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem> mapping)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
 
@@ -304,14 +299,10 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             foreach (var item in items)
             {
-                CosmosDbItem tempItems = item;
-                if (mapping is null)
-                {
-                    var mapper = services.GetRequiredService<IMapper>();
-                    mapper.Map(entity, tempItems);
-                }
-                else
-                    tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
+                // Merge-onto-existing: the delegate receives the stored document and returns what to write, so
+                // it decides which members survive. That is not expressible as a plain entity->document map,
+                // which is why this overload exists and why its delegate was never optional in spirit.
+                CosmosDbItem tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
 
                 cosmosTasks.Add(container.UpsertItemAsync<CosmosDbItem>(tempItems)
                     .ContinueWith(x =>
@@ -331,7 +322,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     public CosmosDbTriggerReferenceOperations<Entity> UpdatePropertyReference<CosmosDbItemReference, DestinationContainer>(
         string cosmosContainerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
-        Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
+        Func<EntityWrapper<Entity>, CosmosDbItemReference> mapping)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression);
 
@@ -353,14 +344,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             foreach (var item in items)
             {
-                CosmosDbItemReference propertyItem;
-                if (mapping is null)
-                {
-                    var mapper = services.GetRequiredService<IMapper>();
-                    propertyItem = mapper.Map<CosmosDbItemReference>(entity);
-                }
-                else
-                    propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
+                CosmosDbItemReference propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
 
                 var id = Convert.ToString(item.GetProperty("id"));
                 PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item!);

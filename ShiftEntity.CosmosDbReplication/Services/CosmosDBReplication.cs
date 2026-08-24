@@ -1,5 +1,4 @@
-﻿using AutoMapper;
-using EntityFrameworkCore.Triggered.Extensions;
+﻿using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -81,9 +80,9 @@ public class CosmosDbReplicationOperation<DB, Entity>
     /// </summary>
     /// <typeparam name="CosmosDBItem"></typeparam>
     /// <param name="containerId"></param>
-    /// <param name="mapping">If null, it use Auto Mapper for mapping</param>
+    /// <param name="mapping">Required. Projects the entity into the Cosmos document.</param>
     /// <returns></returns>
-    public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem> mapping)
     {
         CosmosDbReferenceOperation<DB, Entity> referenceOperations;
 
@@ -104,7 +103,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     private CosmosClient client;
     private readonly string cosmosDbDatabaseId;
     private readonly IServiceProvider services;
-    private IMapper? mapper;
     private readonly DB db;
     private readonly DbSet<Entity> dbSet;
     private readonly Func<IQueryable<Entity>, IQueryable<Entity>>? query;
@@ -122,15 +120,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     //the NEXT sync — trigger or catch-up — can detect an id or partition-key change and delete the stale Cosmos
     //document under the OLD id + key before upserting the new one.
     Dictionary<long, string> pendingStamps = new();
-
-    //AutoMapper is the FALLBACK projection here — reached only by a Replicate / UpdateReference /
-    //UpdatePropertyReference registered WITHOUT a mapping delegate. Resolving it in the constructor made it a hard
-    //dependency of the catch-up sweep itself: the first .Replicate<>() threw on a host whose every projection is an
-    //explicit delegate. Resolve at the moment the fallback is actually taken, exactly as the trigger path already
-    //does (ShiftEntityCosmosDbOptions — Replicate, UpdateReference, UpdatePropertyReference).
-    //Still GetRequiredService, not GetService: once this branch IS taken, a missing registration is a
-    //misconfiguration and has to say so.
-    private IMapper FallbackMapper => this.mapper ??= this.services.GetRequiredService<IMapper>();
 
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
@@ -165,9 +154,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// </summary>
     /// <typeparam name="CosmosDBItem"></typeparam>
     /// <param name="containerId"></param>
-    /// <param name="mapping">If null, it use Auto Mapper for mapping</param>
+    /// <param name="mapping">Required. Projects the entity into the Cosmos document.</param>
     /// <returns></returns>
-    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem> mapping)
     {
         this.cosmosContainerIds.Add(containerId);
 
@@ -179,12 +168,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
             List<Task> cosmosTasks = new();
 
-            //Resolved ONCE, above the loop, so a missing AutoMapper registration throws out of the run. Resolving it
-            //at the use site below would put it INSIDE the per-row catch, which swallows and marks the row
-            //unsuccessful — turning "the host forgot AddAutoMapper" into a sweep that reports success while leaving
-            //every row permanently dirty under a clean-looking watermark.
-            var fallbackMapper = mapping is null ? this.FallbackMapper : null;
-
             foreach (var entity in this.entities)
             {
                 //One bad row (a mapping that throws, a stamp that defeats even Deserialize's validation) must fail
@@ -192,11 +175,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 //catch-up run for every other entity.
                 try
                 {
-                    CosmosDBItem newItem;
-                    if (mapping is not null)
-                        newItem = mapping(entity);
-                    else
-                        newItem = fallbackMapper!.Map<CosmosDBItem>(entity);
+                    //The mapping delegate is REQUIRED. It used to be optional and fall through to AutoMapper,
+                    //so a call site that simply forgot one compiled and ran — and every failure on this path is
+                    //swallowed by the catch below, which means it surfaced as permanently-dirty rows under a
+                    //clean watermark instead of an exception. The compiler now asks the question up front.
+                    CosmosDBItem newItem = mapping(entity);
 
                     var entityId = entity.ID;
 
@@ -272,7 +255,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, Entity, IQueryable<DestinationContainer>> finder,
-        Func<Entity, CosmosDBItemReference>? mapping = null)
+        Func<Entity, CosmosDBItemReference> mapping)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression); ;
         this.cosmosContainerIds.Add(containerId);
@@ -294,11 +277,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 {
                     foreach (var item in items)
                     {
-                        CosmosDBItemReference propertyItem;
-                        if (mapping is not null)
-                            propertyItem = mapping(entity);
-                        else
-                            propertyItem = this.FallbackMapper.Map<CosmosDBItemReference>(entity);
+                        CosmosDBItemReference propertyItem = mapping(entity);
 
                         var id = Convert.ToString(item.GetProperty("id"));
                         PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
@@ -332,7 +311,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
-        Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
+        Func<Entity, CosmosDBItem, CosmosDBItem> mapping)
     {
         this.cosmosContainerIds.Add(containerId);
 
@@ -389,10 +368,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                 foreach (var entity in entry.contributors)
                 {
-                    if (mapping is null)
-                        this.FallbackMapper.Map(entity, mergedDocument);
-                    else
-                        mergedDocument = mapping(entity, mergedDocument);
+                    //Merge-onto-existing: the delegate receives the stored document and returns what to write,
+                    //so it decides which members survive a merge. That was never expressible as a plain
+                    //entity->document map, which is why this overload exists.
+                    mergedDocument = mapping(entity, mergedDocument);
                 }
 
                 //A successful (or failed) write counts for EVERY source entity that merged into the document.

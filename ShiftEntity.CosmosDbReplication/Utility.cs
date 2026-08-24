@@ -71,9 +71,22 @@ internal static class Utility
     {
         var details = GetPartitionKeyDetails(containerResponse, item);
 
+        var id = Convert.ToString(item.GetProperty("id"));
+
+        // A document with no id cannot be addressed again. This stamp is what the NEXT sync uses to find and
+        // delete the stale document when an id or partition key changes, so an empty one breaks change
+        // detection for that row permanently — while the upsert itself still succeeds and stamps the row
+        // clean. Throwing marks the row unsuccessful instead, so it stays dirty and is retried, which is what
+        // a mapping that forgot to set `id` deserves.
+        if (string.IsNullOrWhiteSpace(id))
+            throw new InvalidOperationException(
+                $"The mapping for '{item.GetType().Name}' produced a document with no 'id'. Replication cannot " +
+                "track a document it cannot address — the id is half of the coordinates used to remove the " +
+                "stale document when an id or partition key changes. Set 'id' in the mapping delegate.");
+
         return new LastReplicationStamp
         {
-            Id = Convert.ToString(item.GetProperty("id")),
+            Id = id,
             Level1 = ToLevel(details.level1),
             Level2 = ToLevel(details.level2),
             Level3 = ToLevel(details.level3),
