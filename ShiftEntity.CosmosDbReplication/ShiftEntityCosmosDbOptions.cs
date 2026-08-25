@@ -71,7 +71,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">If null, it use auto mapper to map it</param>
+    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
@@ -87,7 +87,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">If null, it use auto mapper to map it</param>
+    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,
@@ -105,7 +105,7 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">If null, it use auto mapper to map it</param>
+    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,

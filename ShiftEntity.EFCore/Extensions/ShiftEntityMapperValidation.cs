@@ -13,10 +13,10 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 /// Startup validation for the mapping layer: every triple the app will serve either resolves a mapper, or the
 /// app does not start.
 /// <para>
-/// Until this existed, every mapping gap was a FIRST-REQUEST failure. There is no
-/// <c>AssertConfigurationIsValid</c> anywhere in the tree and the AutoMapper registration uses a deferred
-/// factory, so an uncovered triple sat silent through startup, through smoke tests, and surfaced as a 500 on
-/// whichever endpoint a user happened to open first. This turns that into one boot-time error carrying the
+/// Until this existed, every mapping gap was a FIRST-REQUEST failure. Nothing ever called
+/// <c>AssertConfigurationIsValid</c>, and the AutoMapper registration it would have validated was built by a
+/// deferred factory, so an uncovered triple sat silent through startup, through smoke tests, and surfaced as
+/// a 500 on whichever endpoint a user happened to open first. This turns that into one boot-time error carrying the
 /// COMPLETE list — which is the difference between "caught in CI" and "caught in production".
 /// </para>
 /// </summary>

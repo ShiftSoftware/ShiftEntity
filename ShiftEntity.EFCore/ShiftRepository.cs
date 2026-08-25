@@ -214,7 +214,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             queryable = await GetIQueryable(asOf: null, includes: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false);
 
         // No-tracking is a property of the LIST PATH, not of one mapper implementation. Applied here it holds for
-        // every mapper kind — AutoMapper, source-generated and hand-written alike — including a mapper that
+        // every mapper kind — source-generated and hand-written alike — including a mapper that
         // materializes entities before projecting, which would otherwise fill the change tracker on every list
         // request with nothing to stop it. A pure projection to a DTO is not tracked either way, so this is a
         // guard rather than a fix for a live leak. AsNoTracking returns a NEW queryable; the caller's is untouched.

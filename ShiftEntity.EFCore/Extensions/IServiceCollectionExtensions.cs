@@ -222,7 +222,7 @@ public static class IServiceCollectionExtensions
 
         // Validate the mapping layer once, at startup, with the complete picture — instead of discovering each
         // gap as a 500 on whichever endpoint a user opens first. Deferred behind a startup filter because the
-        // mapping MODE is only final after every Configure<ShiftEntityOptions> callback has run, and callers
+        // options are only final after every Configure<ShiftEntityOptions> callback has run, and callers
         // routinely configure options after calling this method.
         var scanned = (assemblies ?? [Assembly.GetEntryAssembly()!]).ToList();
         services.AddOptions<ShiftEntityOptions>().PostConfigure(options =>

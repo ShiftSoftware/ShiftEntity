@@ -12,9 +12,9 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Tagging;
 /// Hand-written on purpose, and it has to be. The source generator is attached as an analyzer only to
 /// <c>ShiftEntity.Core</c> with <c>PrivateAssets="all"</c>, so nothing generates a mapper for a triple whose
 /// repository lives in <c>ShiftEntity.EFCore</c> — and <see cref="ShiftTagRepository{DB}"/> is framework-owned,
-/// so a consumer has no seam to supply one either. Without this class, Tag CRUD rides on
-/// <c>ShiftTaggingAutoMapperProfile</c> and 500s in every consumer that called <c>AddShiftTagging</c> the day
-/// the AutoMapper fallback goes, with no consumer-side workaround.
+/// so a consumer has no seam to supply one either. Without this class, Tag CRUD would have ridden on
+/// <c>ShiftTaggingAutoMapperProfile</c> and 500d in every consumer that called <c>AddShiftTagging</c> the day
+/// the AutoMapper fallback was removed, with no consumer-side workaround — which is why it was written first.
 /// </para>
 /// <para>
 /// Registered by <c>AddShiftTagging</c>. <see cref="ShiftTagRepository{DB}"/> already has a constructor taking
