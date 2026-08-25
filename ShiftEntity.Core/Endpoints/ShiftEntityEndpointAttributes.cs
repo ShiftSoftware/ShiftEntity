@@ -7,15 +7,16 @@ namespace ShiftSoftware.ShiftEntity.Core;
 /// Base for the attribute-driven CRUD endpoint declarations placed on entity classes.
 ///
 /// The framework scans entities for these attributes (<see cref="ShiftEntityEndpointDiscovery"/>)
-/// and auto-generates the minimal-API CRUD endpoints + the default AutoMapper map, so an entity
-/// needs no controller and — unless it opts into a custom repository or mapper — no extra class either.
+/// and auto-generates the minimal-API CRUD endpoints, mapped by the source-generated mapper for the
+/// endpoint's <c>(entity, list, view)</c> triple, so an entity needs no controller and — unless it opts
+/// into a custom repository or mapper — no extra class either.
 ///
 /// Four families, each with an anonymous and a <c>Secure</c> (RequireAuthorization + per-verb TypeAuth) form:
 /// <list type="bullet">
-///   <item><c>ShiftEntityEndpoint&lt;TList, TView&gt;</c> — built-in repository + default AutoMapper mapping.</item>
+///   <item><c>ShiftEntityEndpoint&lt;TList, TView&gt;</c> — built-in repository + the source-generated mapper.</item>
 ///   <item><c>ShiftEntityEndpoint&lt;TList, TView, TRepository&gt;</c> — a custom repository (used as-is).</item>
 ///   <item><c>ShiftEntityEndpointWithMapper&lt;TList, TView, TMapper&gt;</c> — built-in repository, but the
-///   supplied <c>IShiftEntityMapper&lt;TEntity, TList, TView&gt;</c> replaces AutoMapper.</item>
+///   supplied <c>IShiftEntityMapper&lt;TEntity, TList, TView&gt;</c> replaces the generated mapping.</item>
 /// </list>
 /// All variants allow multiple, so one entity can expose several endpoints.
 ///
@@ -56,10 +57,12 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
     public virtual Type? MapperType => null;
 
     /// <summary>
-    /// When true, the built-in repository uses the SOURCE-GENERATED mapper for this endpoint's
-    /// (entity, list, view) triple — a <c>[ShiftEntityMapper]</c> partial class must exist for it —
-    /// instead of the default AutoMapper mapping. Not valid on the <c>WithMapper</c> variants (the mapper
-    /// is already explicit) or the custom-repository variants (a custom repository does its own mapping).
+    /// When true, discovery resolves the SOURCE-GENERATED mapper for this endpoint's (entity, list, view)
+    /// triple up front and hands it to the built-in repository, failing at startup when the registry holds
+    /// none. The built-in repository already falls back to the generated mapper on its own, so this is the
+    /// explicit, fail-loud form of the same choice rather than a switch away from some other default.
+    /// Not valid on the <c>WithMapper</c> variants (the mapper is already explicit) or the
+    /// custom-repository variants (a custom repository does its own mapping).
     /// </summary>
     public bool UseGeneratedMapper { get; set; }
 
@@ -72,7 +75,7 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
 // ---- Anonymous ----
 
 /// <summary>
-/// Anonymous CRUD endpoints over the framework's built-in repository (default AutoMapper mapping).
+/// Anonymous CRUD endpoints over the framework's built-in repository (source-generated mapping).
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
 public sealed class ShiftEntityEndpointAttribute<TListDTO, TViewDTO> : ShiftEntityEndpointAttributeBase
@@ -104,8 +107,8 @@ public sealed class ShiftEntityEndpointAttribute<TListDTO, TViewDTO, TRepository
 }
 
 /// <summary>
-/// Anonymous CRUD endpoints over the built-in repository, but with AutoMapper replaced by the supplied
-/// mapper <typeparamref name="TMapper"/> (an <c>IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;</c>).
+/// Anonymous CRUD endpoints over the built-in repository, but with the generated mapping replaced by the
+/// supplied mapper <typeparamref name="TMapper"/> (an <c>IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;</c>).
 /// No repository class is needed. Discovery validates that the mapper implements the interface for this
 /// entity's exact <c>(entity, list, view)</c> triple.
 /// </summary>
@@ -128,7 +131,7 @@ public sealed class ShiftEntityEndpointWithMapperAttribute<TListDTO, TViewDTO, T
 /// <summary>
 /// Secure CRUD endpoints (RequireAuthorization + per-verb TypeAuth using the
 /// <paramref name="actionName"/> node on <typeparamref name="TActionTree"/>) over the built-in
-/// repository (default AutoMapper mapping).
+/// repository (source-generated mapping).
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
 public sealed class ShiftEntitySecureEndpointAttribute<TListDTO, TViewDTO, TActionTree> : ShiftEntityEndpointAttributeBase
@@ -172,8 +175,8 @@ public sealed class ShiftEntitySecureEndpointAttribute<TListDTO, TViewDTO, TActi
 }
 
 /// <summary>
-/// Secure CRUD endpoints over the built-in repository, but with AutoMapper replaced by the supplied
-/// mapper <typeparamref name="TMapper"/> (an <c>IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;</c>).
+/// Secure CRUD endpoints over the built-in repository, but with the generated mapping replaced by the
+/// supplied mapper <typeparamref name="TMapper"/> (an <c>IShiftEntityMapper&lt;TEntity, TListDTO, TViewDTO&gt;</c>).
 /// No repository class is needed. Discovery validates that the mapper implements the interface for this
 /// entity's exact <c>(entity, list, view)</c> triple.
 /// </summary>

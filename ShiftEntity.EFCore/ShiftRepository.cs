@@ -1,4 +1,3 @@
-using AutoMapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -35,8 +34,10 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     internal DbSet<EntityType> dbSet = default!;
     public override object? GetDbContext() => db;
 
-    // The default/plugged mapper that this repository's own (virtual) mapping methods delegate to.
-    // Defaults to an AutoMapper-backed mapper; replaced by UseMapper(...) when a custom one is plugged.
+    // The mapper that this repository's own (virtual) mapping methods delegate to. Resolved in InitCommon:
+    // UseMapper/UseGeneratedMapper on the options first, then an IShiftEntityMapper<E, L, V> registered in DI,
+    // then the source-generated mapper from ShiftEntityMapperRegistry. Null only when nothing covers the triple
+    // — the mapping methods then throw unless the repository overrides them (startup validation flags it first).
     protected IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? innerMapper { get; private set; }
     public ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> ShiftRepositoryOptions { get; set; } = default!;
     public IDefaultDataLevelAccess? defaultDataLevelAccess { get; private set; }
@@ -57,7 +58,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     // Optional service resolution: db.GetService<T>() throws when a service isn't registered, so this
     // wraps it to return null instead. It uses EF's resolution (which also checks the application
-    // service provider, where AutoMapper / TypeAuth / HashId are typically registered).
+    // service provider, where TypeAuth / HashId are typically registered).
     private static TService? TryGetService<TService>(DB db) where TService : class
     {
         try { return db.GetService<TService>(); }
@@ -137,33 +138,25 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         //   1. An IShiftEntityMapper<Entity, List, View> explicitly registered in DI (e.g. supplied through
         //      the [ShiftEntityEndpoint<…, TMapper>] attribute). Resolved via GetService (returns null when
         //      absent — no exception on the common no-mapper path).
-        //   2. The SOURCE-GENERATED mapper from ShiftEntityMapperRegistry — but only under GeneratedFirst or
-        //      GeneratedOnly. Until this step the registry was read by UseGeneratedMapper() and endpoint
-        //      discovery and by nothing else, so a generated mapper could exist, be correct, be registered,
-        //      and the repository would still use AutoMapper and never know (gap B-1).
-        //   3. The registered AutoMapper, wrapped as an IShiftEntityMapper. Skipped under GeneratedOnly.
-        //   4. Nothing — the mapping methods then throw "No mapper configured" unless overridden.
+        //   2. The SOURCE-GENERATED mapper from ShiftEntityMapperRegistry. Until Step D1 the registry was
+        //      read by UseGeneratedMapper() and endpoint discovery and by nothing else, so a generated mapper
+        //      could exist, be correct, be registered, and the repository would still use AutoMapper and never
+        //      know (gap B-1).
+        //   3. Nothing — the mapping methods then throw "No mapper configured" unless overridden. There is no
+        //      convention-mapping fallback behind this any more: a triple nothing covers is a startup error
+        //      (ShiftEntityMapperValidation), not a request-time surprise.
         // A ShiftRepository also implements IShiftEntityMapper<…>, so any repository resolution is ignored
         // to avoid a repository being used as its own (recursive) mapper.
         if (!this.ShiftRepositoryOptions.MapperConfigured)
         {
-            var mode = TryGetService<ShiftEntityOptions>(db)?.MappingMode ?? ShiftEntityMappingMode.AutoMapperFirst;
-
             var diMapper = MapperServiceProvider.GetService<IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>>();
             if (diMapper is not null && diMapper is not ShiftRepositoryBase)
             {
                 this.ShiftRepositoryOptions.Mapper = diMapper;
             }
-            else if (mode is not ShiftEntityMappingMode.AutoMapperFirst
-                     && GeneratedMapperFactory.Create<EntityType, ListDTO, ViewAndUpsertDTO>() is { } generated)
+            else if (GeneratedMapperFactory.Create<EntityType, ListDTO, ViewAndUpsertDTO>() is { } generated)
             {
                 this.ShiftRepositoryOptions.Mapper = generated;
-            }
-            else if (mode is not ShiftEntityMappingMode.GeneratedOnly)
-            {
-                var autoMapper = TryGetService<IMapper>(db);
-                if (autoMapper is not null)
-                    this.ShiftRepositoryOptions.Mapper = new AutoMapperShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(autoMapper);
             }
         }
 

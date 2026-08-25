@@ -7,7 +7,7 @@ namespace ShiftSoftware.ShiftEntity.Core;
 
 /// <summary>
 /// A single CRUD-endpoint declaration discovered from an entity's endpoint attribute. Drives both
-/// the DI registration (default map + repository) and the minimal-API endpoint generation.
+/// the DI registration (repository + mapper + DTO-map entry) and the minimal-API endpoint generation.
 /// </summary>
 public sealed class ShiftEntityEndpointSpec
 {
@@ -20,7 +20,7 @@ public sealed class ShiftEntityEndpointSpec
 
     /// <summary>
     /// A custom mapper type (an <c>IShiftEntityMapper&lt;Entity, ListDto, ViewDto&gt;</c> implementation) the
-    /// built-in repository should use instead of AutoMapper, or null. Mutually exclusive with
+    /// built-in repository should use instead of the source-generated mapper, or null. Mutually exclusive with
     /// <see cref="Repository"/> (a custom repository does its own mapping).
     /// </summary>
     public Type? Mapper { get; init; }
@@ -34,7 +34,7 @@ public sealed class ShiftEntityEndpointSpec
 /// <summary>
 /// Scans assemblies for entity classes decorated with the ShiftEntity endpoint attributes and
 /// produces <see cref="ShiftEntityEndpointSpec"/>s. Used at startup by both the service registration
-/// (to register repositories + default maps) and the endpoint generation (to map the routes).
+/// (to register repositories and any explicit mappers) and the endpoint generation (to map the routes).
 /// </summary>
 public static class ShiftEntityEndpointDiscovery
 {

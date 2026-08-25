@@ -24,30 +24,26 @@ public static class ShiftEntityMapperValidation
 {
     /// <summary>
     /// Validates that each discovered triple resolves a mapper, and reports registry conflicts and codegen ABI
-    /// skew. Under <see cref="ShiftEntityMappingMode.GeneratedOnly"/> an uncovered triple is fatal; under the
-    /// other modes it is not, because AutoMapper is still there to catch it.
+    /// skew. An uncovered triple is always fatal: there is no convention mapper behind it any more, so the
+    /// alternative is a repository that throws on the first request that touches it.
     /// </summary>
     /// <param name="services">The built provider is not needed — validation is type-level, so this runs without booting the app.</param>
     /// <param name="assemblies">The same assemblies <c>RegisterShiftRepositories</c> scanned.</param>
-    /// <param name="mode">The configured mapping mode.</param>
-    public static void Validate(IServiceCollection services, IReadOnlyList<Assembly> assemblies, ShiftEntityMappingMode mode)
+    public static void Validate(IServiceCollection services, IReadOnlyList<Assembly> assemblies)
     {
         EnsureRegistryPopulated(assemblies);
 
         var problems = new List<string>();
 
         // ── uncovered triples ─────────────────────────────────────────────────────────────────────────────
-        if (mode == ShiftEntityMappingMode.GeneratedOnly)
+        foreach (var (triple, repository) in DiscoverTriples(assemblies))
         {
-            foreach (var (triple, repository) in DiscoverTriples(assemblies))
-            {
-                if (ResolvesAMapper(services, triple, repository)) continue;
+            if (ResolvesAMapper(services, triple, repository)) continue;
 
-                problems.Add(
-                    $"  ({triple.Entity.Name}, {triple.ListDto.Name}, {triple.ViewDto.Name}) — no mapper. " +
-                    "Add a [ShiftEntityMapper] partial class, call UseMapper/UseGeneratedMapper in the " +
-                    "repository, or override the mapping methods.");
-            }
+            problems.Add(
+                $"  ({triple.Entity.Name}, {triple.ListDto.Name}, {triple.ViewDto.Name}) — no mapper. " +
+                "Add a [ShiftEntityMapper] partial class, call UseMapper/UseGeneratedMapper in the " +
+                "repository, or override the mapping methods.");
         }
 
         // ── registry conflicts ────────────────────────────────────────────────────────────────────────────
@@ -69,7 +65,7 @@ public static class ShiftEntityMapperValidation
         if (problems.Count == 0) return;
 
         var message = new StringBuilder()
-            .AppendLine($"ShiftEntity mapping validation failed ({problems.Count} problem(s)), mode = {mode}:")
+            .AppendLine($"ShiftEntity mapping validation failed ({problems.Count} problem(s)):")
             .AppendLine()
             .AppendLine(string.Join(Environment.NewLine, problems))
             .ToString();

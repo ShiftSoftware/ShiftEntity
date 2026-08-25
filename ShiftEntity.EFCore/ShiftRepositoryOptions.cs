@@ -44,21 +44,29 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
-    /// The mapper the repository uses. When the builder doesn't call <see cref="UseMapper"/>, the
-    /// repository fills this with the default AutoMapper-backed mapper (when AutoMapper is registered).
+    /// The mapper the repository uses. When the builder calls neither <see cref="UseMapper"/> nor
+    /// <see cref="UseGeneratedMapper"/>, the repository resolves one itself, in this order:
+    /// <list type="number">
+    ///   <item>an <c>IShiftEntityMapper&lt;EntityType, ListDTO, ViewAndUpsertDTO&gt;</c> registered in DI;</item>
+    ///   <item>the SOURCE-GENERATED mapper for the triple, from <see cref="ShiftEntityMapperRegistry"/>.</item>
+    /// </list>
+    /// There is no further fallback: when neither covers the triple this stays <see langword="null"/> and the
+    /// repository's mapping methods throw unless it overrides them. That case is caught at startup by
+    /// <see cref="ShiftEntityMapperValidation"/>, not on the first request.
     /// </summary>
     public IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? Mapper { get; internal set; }
 
     /// <summary>
-    /// True once <see cref="UseMapper"/> has been called — tells the repository not to overwrite the
-    /// programmer's choice (including an explicit <see langword="null"/>) with the AutoMapper default.
+    /// True once <see cref="UseMapper"/> or <see cref="UseGeneratedMapper"/> has been called — tells the
+    /// repository not to overwrite the programmer's choice (including an explicit <see langword="null"/>)
+    /// with a mapper resolved from DI or from <see cref="ShiftEntityMapperRegistry"/>.
     /// </summary>
     internal bool MapperConfigured { get; private set; }
 
     /// <summary>
-    /// Sets the mapper the repository uses, overriding the AutoMapper default (even when AutoMapper is
-    /// registered). Pass <see langword="null"/> to use no mapper (override the mapping methods instead,
-    /// or — in future — rely on source-generated mapping).
+    /// Sets the mapper the repository uses, ahead of anything the repository would resolve on its own (a
+    /// DI registration, then the source-generated mapper). Pass <see langword="null"/> to use no mapper at
+    /// all — the repository must then override the mapping methods, which otherwise throw.
     /// </summary>
     public void UseMapper(IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? mapper)
     {
@@ -67,10 +75,11 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
-    /// Uses the SOURCE-GENERATED mapper for this repository's (entity, list, view) triple, overriding
-    /// the AutoMapper default. Mappers are generated automatically for every triple the source generator
-    /// discovers (repository declarations and endpoint attributes) and registered in
-    /// <see cref="ShiftEntityMapperRegistry"/> at module load — no mapper class is declared by hand.
+    /// Uses the SOURCE-GENERATED mapper for this repository's (entity, list, view) triple, explicitly and
+    /// ahead of any <c>IShiftEntityMapper</c> registered in DI for the same triple. Mappers are generated
+    /// automatically for every triple the source generator discovers (repository declarations and endpoint
+    /// attributes) and registered in <see cref="ShiftEntityMapperRegistry"/> at module load — no mapper class
+    /// is declared by hand.
     /// </summary>
     /// <param name="configure">
     /// Optional per-property customization (<c>ForView</c>/<c>ForList</c>/<c>ForEntity</c>/<c>ForCopy</c>).

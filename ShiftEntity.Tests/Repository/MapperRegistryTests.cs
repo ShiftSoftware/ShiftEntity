@@ -18,7 +18,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 /// observe resolution would be asserting against whatever else the run had already loaded.
 /// </para>
 /// </summary>
-public class MappingModeTests
+public class MapperRegistryTests
 {
     // Types exist only as registry keys. Each test uses its own so the global registry cannot make one test's
     // outcome depend on another's — the registry has no reset, by design, since production never needs one.
@@ -145,12 +145,4 @@ public class MappingModeTests
         Assert.DoesNotContain(ShiftEntityMapperRegistry.VerifyBindings(), b => b.MapperType == typeof(MapperB));
     }
 
-    // ── the mode itself ───────────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void MappingMode_DefaultsToAutoMapperFirst()
-    {
-        // The whole safety property of D1: shipping it changes nothing until someone opts in.
-        Assert.Equal(ShiftEntityMappingMode.AutoMapperFirst, new ShiftEntityOptions().MappingMode);
-    }
 }

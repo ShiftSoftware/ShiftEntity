@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.EFCore;
+using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Tests.Auditing.Scenario;
 using ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 using Xunit;
@@ -11,17 +12,20 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 
 /// <summary>
-/// Step D1's acceptance criterion: flipping the mode changes which mapper a repository resolves, with no code
-/// edit anywhere.
+/// Which mapper a repository resolves when the builder configured none: an explicit DI registration first,
+/// then the source-generated mapper from <see cref="ShiftEntityMapperRegistry"/>, then nothing.
 /// <para>
-/// The gap this closes (B-1) is that <c>ShiftRepository</c> never consulted
-/// <see cref="ShiftEntityMapperRegistry"/>. A source-generated mapper could exist, be correct, be registered,
-/// and the repository would still use AutoMapper — which the Stage C parity inventory found live on one
-/// triple. The mode exists rather than wiring the registry in unconditionally because doing it silently is
-/// exactly the change that swaps a hand-tuned profile for convention output without telling anyone.
+/// The gap this closes (B-1) is that <c>ShiftRepository</c> never consulted the registry at all. A
+/// source-generated mapper could exist, be correct, be registered, and the repository would still fall
+/// through to AutoMapper and never know — which the Stage C parity inventory found live on one triple.
+/// </para>
+/// <para>
+/// This used to be gated behind a <c>MappingMode</c> switch, so that wiring the registry in could not silently
+/// swap a hand-tuned AutoMapper profile for convention output. With AutoMapper gone there is nothing to swap
+/// FROM and nothing to opt into, so the mode went with it and the registry is consulted unconditionally.
 /// </para>
 /// </summary>
-public class MappingModeResolutionTests
+public class MapperResolutionTests
 {
     /// <summary>Stands in for a source-generated mapper: parameterless, registry-resolvable, unmistakable.</summary>
     private sealed class RegistryOrderMapper : IShiftEntityMapper<OrderEntity, OrderListDTO, OrderListDTO>
@@ -37,7 +41,13 @@ public class MappingModeResolutionTests
         public void CopyEntity(OrderEntity source, OrderEntity target, MappingContext context = default) => throw new NotSupportedException();
     }
 
-    private static ServiceProvider Host(ShiftEntityMappingMode? mode)
+    /// <summary>A DTO nothing is ever registered for — the "no mapper covers this triple" case.</summary>
+    private sealed class UnregisteredOrderDTO : ShiftEntityDTOBase
+    {
+        public override string? ID { get; set; }
+    }
+
+    private static ServiceProvider Host(bool withOptions = true)
     {
         var services = new ServiceCollection();
 
@@ -47,10 +57,8 @@ public class MappingModeResolutionTests
         services.AddSingleton<IHashIdService>(new IdentityHashIdService());
         services.AddSingleton<IDefaultDataLevelAccess>(new RecordingDefaultDataLevelAccess());
 
-        // Absent entirely when mode is null — the shape of a host that never configured ShiftEntityOptions,
-        // which must behave as AutoMapperFirst rather than throwing.
-        if (mode is { } m)
-            services.AddSingleton(new ShiftEntityOptions { MappingMode = m });
+        if (withOptions)
+            services.AddSingleton(new ShiftEntityOptions());
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
@@ -63,55 +71,50 @@ public class MappingModeResolutionTests
             typeof(OrderEntity), typeof(OrderListDTO), typeof(OrderListDTO), typeof(RegistryOrderMapper));
 
     [Fact]
-    public void GeneratedFirst_ResolvesTheRegistryMapper()
+    public void ResolvesTheRegistryMapper()
     {
         RegisterGeneratedMapper();
 
-        using var provider = Host(ShiftEntityMappingMode.GeneratedFirst);
-        using var scope = provider.CreateScope();
-
-        Assert.IsType<RegistryOrderMapper>(Repo(scope).ShiftRepositoryOptions.Mapper);
-    }
-
-    [Fact]
-    public void GeneratedOnly_ResolvesTheRegistryMapper()
-    {
-        RegisterGeneratedMapper();
-
-        using var provider = Host(ShiftEntityMappingMode.GeneratedOnly);
+        using var provider = Host();
         using var scope = provider.CreateScope();
 
         Assert.IsType<RegistryOrderMapper>(Repo(scope).ShiftRepositoryOptions.Mapper);
     }
 
     /// <summary>
-    /// The safety property that makes D1 shippable on its own: the registry is NOT consulted under the default
-    /// mode, so upgrading to a framework that has this step changes nothing until someone opts in.
+    /// A host that never configured <see cref="ShiftEntityOptions"/> resolves the registry just the same. The
+    /// options object used to carry the mode that decided this; nothing about mapper resolution reads it any
+    /// more, and a missing options registration must not quietly come to mean "no mapping".
     /// </summary>
     [Fact]
-    public void AutoMapperFirst_DoesNotConsultTheRegistry()
+    public void ResolvesTheRegistryMapper_EvenWithoutOptionsConfigured()
     {
         RegisterGeneratedMapper();
 
-        using var provider = Host(ShiftEntityMappingMode.AutoMapperFirst);
+        using var provider = Host(withOptions: false);
         using var scope = provider.CreateScope();
 
-        // No AutoMapper in this host either, so the correct outcome is NO mapper at all — the mapping methods
-        // then throw. What matters is that the registry mapper was not silently picked up.
-        Assert.Null(Repo(scope).ShiftRepositoryOptions.Mapper);
+        Assert.IsType<RegistryOrderMapper>(Repo(scope).ShiftRepositoryOptions.Mapper);
     }
 
+    /// <summary>
+    /// A triple nothing covers resolves NO mapper, and the mapping methods throw rather than mapping by
+    /// convention. This is the end state of the AutoMapper removal, and the case startup validation exists to
+    /// catch before any request reaches it.
+    /// </summary>
     [Fact]
-    public void NoOptionsConfigured_BehavesAsAutoMapperFirst()
+    public void AnUncoveredTriple_ResolvesNoMapper_AndThrowsOnUse()
     {
-        RegisterGeneratedMapper();
-
-        using var provider = Host(mode: null);
+        using var provider = Host();
         using var scope = provider.CreateScope();
 
-        // A host that never called AddShiftEntity at all must not start resolving generated mappers because
-        // the framework was upgraded underneath it.
-        Assert.Null(Repo(scope).ShiftRepositoryOptions.Mapper);
+        var repo = new ShiftRepository<OrderingDbContext, OrderEntity, UnregisteredOrderDTO, UnregisteredOrderDTO>(
+            scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
+
+        Assert.Null(repo.ShiftRepositoryOptions.Mapper);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => repo.MapToView(new OrderEntity()));
+        Assert.Contains("No mapper configured", ex.Message);
     }
 
     /// <summary>
@@ -125,7 +128,7 @@ public class MappingModeResolutionTests
     {
         RegisterGeneratedMapper();
 
-        using var provider = Host(ShiftEntityMappingMode.GeneratedFirst);
+        using var provider = Host();
         using var scope = provider.CreateScope();
 
         var first = Repo(scope).ShiftRepositoryOptions.Mapper;
@@ -135,13 +138,13 @@ public class MappingModeResolutionTests
         Assert.NotSame(first, second);
     }
 
-    /// <summary>An explicitly configured mapper still wins — the mode only decides the DEFAULT.</summary>
+    /// <summary>An explicitly configured mapper still wins — the registry only supplies the DEFAULT.</summary>
     [Fact]
     public void AnExplicitMapper_StillBeatsTheRegistry()
     {
         RegisterGeneratedMapper();
 
-        using var provider = Host(ShiftEntityMappingMode.GeneratedFirst);
+        using var provider = Host();
         using var scope = provider.CreateScope();
 
         var explicitMapper = new RegistryOrderMapper();

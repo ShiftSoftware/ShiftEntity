@@ -10,31 +10,11 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public class ShiftEntityOptions
 {
     internal bool _WrapValidationErrorResponseWithShiftEntityResponse;
-    internal List<Assembly> AutoMapperAssemblies = new List<Assembly>();
     internal List<Assembly> DataAssemblies = new List<Assembly>();
     internal List<AzureStorageOption> azureStorageOptions = new List<AzureStorageOption>();
 
-    /// <summary>
-    /// Entity + DTO generic-argument sets (each <c>[entity, listDto, viewDto]</c>) for attribute-driven
-    /// endpoints whose entities have no repository class for the AutoMapper assembly scanner to discover.
-    /// Their default maps are built from these sets (deduped against the repository scan + user profiles).
-    /// Populated by <c>RegisterShiftRepositories(...)</c> when it discovers endpoint-attributed entities.
-    /// </summary>
-    internal List<Type[]> EndpointDefaultMaps = new List<Type[]>();
     //internal int MaxTop;
     //internal Func<IServiceProvider, int?>? MaxTopResolver;
-
-    /// <summary>
-    /// Which mapper a repository resolves when it configured none itself. Defaults to
-    /// <see cref="ShiftEntityMappingMode.AutoMapperFirst"/>, so leaving it alone changes nothing.
-    /// <para>
-    /// This is the per-service switch off AutoMapper: <see cref="ShiftEntityMappingMode.GeneratedFirst"/>
-    /// prefers the source-generated mapper and still falls back for triples it does not cover;
-    /// <see cref="ShiftEntityMappingMode.GeneratedOnly"/> removes the fallback, and is what startup validation
-    /// hard-fails on.
-    /// </para>
-    /// </summary>
-    public ShiftEntityMappingMode MappingMode { get; set; } = ShiftEntityMappingMode.AutoMapperFirst;
 
     public ShiftEntityOptions WrapValidationErrorResponseWithShiftEntityResponse(bool wrapValidationErrorResponse)
     {
@@ -43,25 +23,9 @@ public class ShiftEntityOptions
         return this;
     }
 
-    public ShiftEntityOptions AddAutoMapper(params Assembly[] assemblies)
-    {
-        AutoMapperAssemblies.AddRange(assemblies);
-        return this;
-    }
-
     public ShiftEntityOptions AddDataAssembly(params Assembly[] assemblies)
     {
         DataAssemblies.AddRange(assemblies);
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a default entity↔DTO map for an attribute-driven endpoint whose entity has no
-    /// repository class. Normally called indirectly by <c>RegisterShiftRepositories(...)</c>.
-    /// </summary>
-    public ShiftEntityOptions AddEndpointDefaultMap(Type entity, Type listDto, Type viewAndUpsertDto)
-    {
-        EndpointDefaultMaps.Add(new[] { entity, listDto, viewAndUpsertDto });
         return this;
     }
 

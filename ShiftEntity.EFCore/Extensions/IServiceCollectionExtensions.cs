@@ -175,9 +175,11 @@ public static class IServiceCollectionExtensions
             services.AddSingleton(map);
 
         // Attribute-driven endpoints: an entity decorated with [ShiftEntityEndpoint<…>] /
-        // [ShiftEntitySecureEndpoint<…>] needs the built-in repository (registered just below), its default
-        // AutoMapper map, and a DTO-map entry. Wire that here off the same assemblies — so the programmer makes
-        // no extra service call — and map the routes in the pipeline with app.MapShiftEntityEndpoints<DB>().
+        // [ShiftEntitySecureEndpoint<…>] needs the built-in repository (registered just below), a DTO-map entry,
+        // and — only when the attribute names one explicitly — a mapper registration; otherwise the repository
+        // picks up its source-generated mapper from ShiftEntityMapperRegistry on its own. Wire that here off the
+        // same assemblies — so the programmer makes no extra service call — and map the routes in the pipeline
+        // with app.MapShiftEntityEndpoints<DB>().
         var endpointSpecs = ShiftEntityEndpointDiscovery.Discover(assemblies ?? [Assembly.GetEntryAssembly()!]);
 
         // The entity → TypeAuth action registry. Registered here even when it stays empty, so
@@ -205,18 +207,13 @@ public static class IServiceCollectionExtensions
                 if (spec.Secure)
                     actionMap.Register(spec.Entity.Name, ShiftEntityEndpointActionResolver.ResolveAction(spec.ActionTreeType!, spec.ActionName!));
 
-                if (spec.Mapper is null)
-                {
-                    // Plain / custom-repository endpoint: synthesize the default AutoMapper entity↔DTO map.
-                    services.Configure<ShiftEntityOptions>(o => o.AddEndpointDefaultMap(spec.Entity, spec.ListDto, spec.ViewDto));
-                }
-                else
+                if (spec.Mapper is not null)
                 {
                     // A [ShiftEntityEndpoint<…, TMapper>] entity keeps the built-in repository but supplies a
                     // custom mapper. Register it as IShiftEntityMapper<Entity, ListDto, ViewDto> so the built-in
-                    // repository resolves and prefers it over AutoMapper (see ShiftRepository.InitCommon). No
-                    // AutoMapper default map is synthesized — the entity has opted out of AutoMapper for these
-                    // DTOs, so an entity↔DTO map AutoMapper may not even be able to express is not built.
+                    // repository resolves it ahead of the generated one (see ShiftRepository.InitCommon).
+                    // An endpoint WITHOUT a mapper needs nothing registered here: the repository finds the
+                    // source-generated mapper in the registry, and if there is none, startup validation says so.
                     var mapperInterface = typeof(IShiftEntityMapper<,,>).MakeGenericType(spec.Entity, spec.ListDto, spec.ViewDto);
                     services.TryAddScoped(mapperInterface, spec.Mapper);
                 }
@@ -229,7 +226,7 @@ public static class IServiceCollectionExtensions
         // routinely configure options after calling this method.
         var scanned = (assemblies ?? [Assembly.GetEntryAssembly()!]).ToList();
         services.AddOptions<ShiftEntityOptions>().PostConfigure(options =>
-            ShiftEntityMapperValidation.Validate(services, scanned, options.MappingMode));
+            ShiftEntityMapperValidation.Validate(services, scanned));
 
         return services;
     }

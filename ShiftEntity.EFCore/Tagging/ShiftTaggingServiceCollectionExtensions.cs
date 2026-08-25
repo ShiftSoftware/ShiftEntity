@@ -18,8 +18,9 @@ public static class ShiftTaggingServiceCollectionExtensions
     ///   <item>Auto-includes the <c>Tags</c> navigation on single-entity reads and auto-maps it onto
     ///         <see cref="Model.Dtos.Tagging.IShiftEntityTaggableDTO"/> DTOs — entity mappers never touch Tags.</item>
     ///   <item>Registers <see cref="ShiftTagRepository{TDbContext}"/> as a scoped service.</item>
-    ///   <item>Adds <c>Tag → TagDTO</c> AutoMapper maps via the standard
-    ///         <c>ShiftEntityOptions.AddAutoMapper</c> path.</item>
+    ///   <item>Registers <see cref="ShiftTagMapper"/> — the framework's
+    ///         <c>IShiftEntityMapper&lt;Tag, TagListDTO, TagDTO&gt;</c> — as a scoped service with
+    ///         <c>TryAddScoped</c>, so a host that wants its own tag mapping still wins.</item>
     /// </list>
     /// Call <c>app.MapShiftTaggingEndpoints&lt;TDbContext&gt;()</c> in the Web layer to expose
     /// the REST surface, or set <see cref="ShiftTaggingOptions.SkipEndpointRegistration"/> = true
@@ -58,11 +59,6 @@ public static class ShiftTaggingServiceCollectionExtensions
         // consumer has no seam to supply one. TryAdd, so a host that wants its own tag mapping still wins.
         // ShiftRepository resolves it from DI; ShiftTagRepository's two-argument constructor also accepts it.
         services.TryAddScoped<IShiftEntityMapper<Tag, TagListDTO, TagDTO>, ShiftTagMapper>();
-
-        // Still registered: the AutoMapper tagging profile remains the fallback until the fallback itself goes
-        // in Stage F. With ShiftTagMapper in DI it is no longer what serves Tag CRUD.
-        services.Configure<ShiftEntityOptions>(opts =>
-            opts.AddAutoMapper(typeof(ShiftTaggingAutoMapperProfile).Assembly));
 
         return services;
     }
