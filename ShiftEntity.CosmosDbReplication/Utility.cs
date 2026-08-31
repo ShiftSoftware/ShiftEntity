@@ -9,6 +9,36 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
 internal static class Utility
 {
+    /// <summary>
+    /// Rejects an entity that re-declares <c>ID</c>, hiding <see cref="Core.ShiftEntityBase.ID"/>.
+    /// </summary>
+    /// <remarks>
+    /// EF Core maps the re-declared property to the key column, so the base property — the one this assembly
+    /// reads through the <c>ShiftEntity&lt;&gt;</c> constraint — is never populated and stays 0 for EVERY row.
+    /// All of the entity's rows then collapse onto a single bookkeeping key: they share one
+    /// <c>LastReplicationStamp</c>, and the next sync issues a stale-document delete against one arbitrary
+    /// document on behalf of all of them, which races the upsert that writes it and can permanently remove a
+    /// live document. That is silent and unrecoverable, so refuse to replicate the entity at all.
+    /// </remarks>
+    internal static void GuardAgainstShadowedId(Type entityType)
+    {
+        for (var t = entityType; t is not null && t != typeof(Core.ShiftEntityBase); t = t.BaseType)
+        {
+            var shadowed = t.GetProperty("ID",
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+            if (shadowed is null)
+                continue;
+
+            throw new InvalidOperationException(
+                $"'{entityType.Name}' re-declares a public 'ID' property (on '{t.Name}'), which hides " +
+                "'ShiftEntityBase.ID'. EF Core maps the re-declared property to the key column, so the base " +
+                "property that Cosmos replication reads stays 0 for every row — every row of this entity would " +
+                "share one LastReplicationStamp, and the next sync would delete one arbitrary document on " +
+                $"behalf of all of them. Remove the 'ID' property from '{t.Name}' and inherit ShiftEntityBase.ID.");
+        }
+    }
+
     internal static PartitionKey GetPartitionKey(ContainerResponse containerResponse, object item)
     {
         PartitionKeyBuilder partitionKeyBuilder = new PartitionKeyBuilder();

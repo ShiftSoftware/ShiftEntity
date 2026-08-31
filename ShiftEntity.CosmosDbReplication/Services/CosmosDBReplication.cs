@@ -413,6 +413,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     public async Task RunAsync(bool updateAll = false)
     {
+        Utility.GuardAgainstShadowedId(typeof(Entity));
+
         //Return fail replicated entities
         var queryable = this.dbSet.AsQueryable();
 
