@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 
@@ -60,8 +61,22 @@ public sealed class TypeAuthAccessibleItemsSource : IAccessibleItemsSource
         }
     }
 
-    // Join with '|' (delimiter, not concatenation) so distinct self-id sets can't collide on the cache key
-    // (e.g. ["1","23"] vs ["12","3"]). Ids here are numeric or alphanumeric hashids, so '|' never appears in one.
+    // Length-prefix every value so the key remains unambiguous even when a self-id contains punctuation that could
+    // otherwise act as a delimiter. Values stay in caller order because that is the existing cache-key contract.
     private static string SelfIdsKey(string[]? selfIds)
-        => selfIds is null || selfIds.Length == 0 ? string.Empty : string.Join("|", selfIds);
+    {
+        if (selfIds is null || selfIds.Length == 0)
+            return string.Empty;
+
+        var key = new StringBuilder();
+        foreach (var selfId in selfIds)
+        {
+            if (selfId is null)
+                key.Append("-1:");
+            else
+                key.Append(selfId.Length).Append(':').Append(selfId);
+        }
+
+        return key.ToString();
+    }
 }

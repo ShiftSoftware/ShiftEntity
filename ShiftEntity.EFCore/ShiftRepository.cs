@@ -47,6 +47,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private bool _hasAttentionInterface;
     private bool _needsAttentionTransaction;
     private bool _hasTaggableInterface;
+    private bool _dataLevelAccessPolicyResolved;
+    private DataLevelAccessPolicy<EntityType>? _dataLevelAccessPolicy;
 
     private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
     private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
@@ -415,7 +417,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         // fetch changes: lists always filter (GetIQueryable callers are untouched), and the caller's
         // disableDefaultDataLevelAccess bypass keeps skipping fetch-filter and row check alike.
         var revealOutOfScopeRow =
-            this.ShiftRepositoryOptions?.DataLevelAccessPolicy?.DeniedBehavior == DataLevelDeniedBehavior.Forbidden;
+            DataLevelAccessPolicy?.DeniedBehavior == DataLevelDeniedBehavior.Forbidden;
 
         var q = await GetIQueryable(asOf, includes, disableDefaultDataLevelAccess || revealOutOfScopeRow, disableGlobalFilters);
 
@@ -557,15 +559,14 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     }
 
     /// <summary>
-    /// The query-path data-level filter: when a v2 policy was declared via
-    /// <see cref="ShiftRepositoryOptions{EntityType, ListDTO, ViewAndUpsertDTO}.DataLevelAccess"/> the declaration is the whole truth for the
-    /// entity — its filter replaces the legacy default filters entirely (an explicit <c>Unscoped()</c> applies no
-    /// filter from either path). With no declaration, today's legacy default filters run unchanged (opt-in
-    /// coexistence, D1).
+    /// The query-path data-level filter. The effective v2 policy is an optional host profile (Web hosts can opt into
+    /// automatic standard-marker mapping) overlaid by the repository's explicit declaration. An explicit dimension
+    /// replaces the profile dimension for the same TypeAuth action; other profile dimensions remain. When neither a
+    /// profile nor a declaration applies, today's legacy default filters run unchanged for compatibility.
     /// </summary>
     private IQueryable<EntityType> ApplyDataLevelFilters(IQueryable<EntityType> query)
     {
-        var policy = this.ShiftRepositoryOptions.DataLevelAccessPolicy;
+        var policy = DataLevelAccessPolicy;
 
         if (policy is null)
             return this.defaultDataLevelAccess!.ApplyDefaultDataLevelFilters(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, query);
@@ -581,10 +582,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     /// <summary>
     /// The row-path data-level check — the row twin of <see cref="ApplyDataLevelFilters"/>, with the same routing:
-    /// a declared v2 policy means the verdict is <see cref="DataLevelAccessPolicy{TEntity}.Authorize"/> and the
-    /// legacy row check does <b>not</b> also run (the declaration is the whole truth for the entity); no declaration
-    /// means today's legacy <see cref="IDefaultDataLevelAccess.HasDefaultDataLevelAccess"/> runs unchanged (opt-in
-    /// coexistence, D1). The operation site picks the level (D6): Find/View ⇒ Read, Insert/Edit ⇒ Write,
+    /// an effective v2 policy means the verdict is <see cref="DataLevelAccessPolicy{TEntity}.Authorize"/> and the
+    /// legacy row check does <b>not</b> also run; no effective policy means today's legacy
+    /// <see cref="IDefaultDataLevelAccess.HasDefaultDataLevelAccess"/> runs unchanged. The operation site picks the level (D6): Find/View ⇒ Read, Insert/Edit ⇒ Write,
     /// Delete ⇒ Delete — so a Read-only grant can View a row but never write or delete it.
     /// <para>
     /// An explicit <c>Unscoped()</c> passes without resolving the per-request context, so an unscoped entity works
@@ -597,7 +597,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     /// </summary>
     private bool HasDataLevelAccess(EntityType? entity, Access access)
     {
-        var policy = this.ShiftRepositoryOptions.DataLevelAccessPolicy;
+        var policy = DataLevelAccessPolicy;
 
         if (policy is null)
             return this.defaultDataLevelAccess!.HasDefaultDataLevelAccess(
@@ -613,8 +613,57 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     }
 
     /// <summary>
-    /// The per-request v2 <see cref="DataLevelAccessContext"/>, resolved lazily so repositories without a declared
-    /// policy never depend on it (non-web hosts may not register data-level access at all). A declared policy with
+    /// The effective policy used by this repository, exposed for manual/ad-hoc queries that deliberately sit
+    /// outside <see cref="GetIQueryable(DateTimeOffset?, List{string}?, bool, bool)"/>. In hosts opted into a standard
+    /// profile this includes automatic marker dimensions plus explicit repository overrides. It is resolved once,
+    /// lazily, so a derived repository constructor can replace its standard options after the base constructor.
+    /// </summary>
+    public DataLevelAccessPolicy<EntityType>? DataLevelAccessPolicy
+    {
+        get
+        {
+            if (_dataLevelAccessPolicyResolved)
+                return _dataLevelAccessPolicy;
+
+            var declaredPolicy = ShiftRepositoryOptions.DataLevelAccessPolicy;
+            var profile = MapperServiceProvider.GetService<IDataLevelAccessProfile<EntityType>>();
+
+            if (profile is null)
+            {
+                _dataLevelAccessPolicy = declaredPolicy;
+            }
+            else
+            {
+                var effective = new DataLevelAccessBuilder<EntityType>();
+                profile.AddDimensions(effective, ShiftRepositoryOptions.DefaultDataLevelAccessOptions);
+
+                if (effective.IsUnscoped)
+                    throw new InvalidOperationException(
+                        $"The data-level profile for '{typeof(EntityType).Name}' called Unscoped(). " +
+                        "Profiles may only add default dimensions; opt out explicitly in the repository declaration.");
+
+                if (effective.HasDeniedBehavior)
+                    throw new InvalidOperationException(
+                        $"The data-level profile for '{typeof(EntityType).Name}' called WhenDenied(...). " +
+                        "Profiles may only add default dimensions; choose denied-row disclosure explicitly in the repository declaration.");
+
+                if (ShiftRepositoryOptions.DataLevelAccessDeclaration is { } declaration)
+                    effective.ApplyOverridesFrom(declaration);
+
+                _dataLevelAccessPolicy = effective.Dimensions.Count == 0 && !effective.IsUnscoped
+                    ? null
+                    : new DataLevelAccessPolicy<EntityType>(effective);
+            }
+
+            _dataLevelAccessPolicyResolved = true;
+
+            return _dataLevelAccessPolicy;
+        }
+    }
+
+    /// <summary>
+    /// The per-request v2 <see cref="DataLevelAccessContext"/>, resolved lazily so repositories without an effective
+    /// policy never depend on it (non-web hosts may not register data-level access at all). An effective policy with
     /// no resolvable context is fatal — fail closed; running the query unfiltered would leak out-of-scope rows.
     /// </summary>
     private DataLevelAccessContext GetRequiredDataLevelAccessContext()
@@ -623,9 +672,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
         return serviceProvider.GetService<DataLevelAccessContext>()
             ?? throw new InvalidOperationException(
-                $"'{typeof(EntityType).Name}' declares data-level access, but no {nameof(DataLevelAccessContext)} is " +
-                $"registered. Call AddShiftEntityDataLevelAccess() on the host's service collection " +
-                $"(AddShiftEntityWebSharedCore does this automatically).");
+                $"'{typeof(EntityType).Name}' has an effective v2 data-level policy, but no {nameof(DataLevelAccessContext)} is " +
+                $"registered. Call AddShiftEntityDataLevelAccess() on the host's service collection.");
     }
 
     public virtual IQueryable<RevisionDTO> GetRevisionsAsync(long id)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 
 namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
@@ -38,14 +39,22 @@ public sealed class DataLevelAccessContext
     }
 
     /// <summary>
-    /// The value of the caller's first <paramref name="claimType"/> claim, or <see langword="null"/> when there is no
+    /// All values of the caller's <paramref name="claimType"/> claims, or an empty array when there is no
     /// <em>authenticated</em> user or no such claim. Requiring <c>Identity.IsAuthenticated</c> matches the legacy
     /// claim reads (<c>ClaimsPrincipalExtensions.GetClaimValues</c>) — claims on an unauthenticated principal must
-    /// never grant data access (4.1 parity alignment; fail closed). The value is returned verbatim (in whatever
-    /// encoding the claim stores — e.g. a hashed id), to be decoded by the dimension's own converter so the
-    /// self/owner id lands in the same id-space as the dimension's grant ids. An absent claim resolves to
-    /// <see langword="null"/>, which the policy treats as "no self/owner id" — fail closed, never wildcard.
+    /// never grant data access (4.1 parity alignment; fail closed). Values are returned verbatim (in whatever
+    /// encoding the claims store — e.g. hashed ids), to be decoded by the dimension's own converter so self ids land
+    /// in the same id-space as grant ids. Returning every value matters for multi-membership claims such as Teams.
     /// </summary>
-    public string? GetClaim(string claimType)
-        => user?.Identity?.IsAuthenticated == true ? user.FindFirst(claimType)?.Value : null;
+    public string[] GetClaims(string claimType)
+        => user?.Identity?.IsAuthenticated == true
+            ? user.FindAll(claimType).Select(claim => claim.Value).ToArray()
+            : Array.Empty<string>();
+
+    /// <summary>
+    /// The first value returned by <see cref="GetClaims"/>, or <see langword="null"/> when none exists. Owner
+    /// dimensions and ordinary <c>Self</c> dimensions intentionally remain single-valued; <c>SelfMany</c> consumes
+    /// all values.
+    /// </summary>
+    public string? GetClaim(string claimType) => GetClaims(claimType).FirstOrDefault();
 }

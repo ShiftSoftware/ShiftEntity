@@ -18,14 +18,18 @@ public class StandardScopedEntity : ShiftEntity<StandardScopedEntity>,
     IEntityHasRegion<StandardScopedEntity>,
     IEntityHasCompany<StandardScopedEntity>,
     IEntityHasCompanyBranch<StandardScopedEntity>,
-    IEntityHasCity<StandardScopedEntity>
+    IEntityHasBrand<StandardScopedEntity>,
+    IEntityHasCity<StandardScopedEntity>,
+    IEntityHasTeam<StandardScopedEntity>
 {
     public string Name { get; set; } = "";
     public long? CountryID { get; set; }
     public long? RegionID { get; set; }
     public long? CompanyID { get; set; }
     public long? CompanyBranchID { get; set; }
+    public long? BrandID { get; set; }
     public long? CityID { get; set; }
+    public long? TeamID { get; set; }
 
     /// <summary>
     /// One row per interesting value of <em>one</em> dimension's column (set via <paramref name="setKey"/>):

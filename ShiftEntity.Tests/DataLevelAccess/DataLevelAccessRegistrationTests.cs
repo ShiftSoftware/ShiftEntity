@@ -9,7 +9,7 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 
 /// <summary>
-/// Slice 2.5 — the scoped DI wiring: <c>AddShiftEntityDataLevelAccess()</c> registers
+/// The single host opt-in: <c>AddShiftEntityDataLevelAccess()</c> registers the standard profile plus
 /// <see cref="IAccessibleItemsSource"/> → <see cref="TypeAuthAccessibleItemsSource"/> and
 /// <see cref="DataLevelAccessContext"/>, both <b>scoped</b>. These tests pin the lifetime contract from the 2.1
 /// notes — the source's memoization lives exactly one request (shared within a scope, never across), nothing
@@ -28,7 +28,7 @@ public class DataLevelAccessRegistrationTests
 
         // What TypeAuth's AddTypeAuth contributes: a per-request ITypeAuthService built from the caller's claims.
         services.AddScoped<ITypeAuthService>(_ => ScopedTypeAuth.ToCompany(Companies.Intermediary));
-        // What AddShiftEntityWebSharedCore / AddShiftEntity contribute.
+        // What AddShiftEntityWebSharedCore / AddShiftEntity contribute independently of data-level access.
         services.AddScoped<ICurrentUserProvider>(_ => FakeCurrentUserProvider.Anonymous());
         services.AddSingleton<IHashIdService>(new RecordingHashIdService());
 
@@ -99,6 +99,44 @@ public class DataLevelAccessRegistrationTests
         using var scope = provider.CreateScope();
 
         Assert.IsType<FakeAccessibleItemsSource>(scope.ServiceProvider.GetRequiredService<IAccessibleItemsSource>());
+    }
+
+    [Fact]
+    public void SingleHostOptIn_RegistersEngineAndStandardProfile()
+    {
+        var services = new ServiceCollection();
+
+        services.AddShiftEntityDataLevelAccess();
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IAccessibleItemsSource)
+            && descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(DataLevelAccessContext)
+            && descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IDataLevelAccessProfile<>));
+    }
+
+    [Fact]
+    public void StandardHostEntryPoints_DoNotOptTheHostIntoDataLevelAccess()
+    {
+        var webServices = new ServiceCollection();
+        webServices.AddControllers().AddShiftEntityWeb();
+        AssertNotRegistered(webServices);
+
+        var functionsServices = new ServiceCollection();
+        functionsServices.AddShiftEntityFunctions();
+        AssertNotRegistered(functionsServices);
+    }
+
+    private static void AssertNotRegistered(IServiceCollection services)
+    {
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(IAccessibleItemsSource));
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(DataLevelAccessContext));
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(IDataLevelAccessProfile<>));
     }
 
     /// <summary>Stand-in custom source — only ever resolved (to prove the TryAdd seam), never invoked.</summary>

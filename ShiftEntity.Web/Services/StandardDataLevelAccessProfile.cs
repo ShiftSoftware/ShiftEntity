@@ -2,11 +2,13 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using ShiftSoftware.ShiftIdentity.Core;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Country;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using System;
 
 namespace ShiftSoftware.ShiftEntity.Web.Services;
@@ -19,12 +21,11 @@ namespace ShiftSoftware.ShiftEntity.Web.Services;
 /// today (the cross-column OR and the other v2 capabilities remain explicit, per-entity declarations).
 /// </summary>
 /// <remarks>
-/// Built one dimension per slice — 4.1 Company, 4.2 Country; Region/Branch/Brand/City/Team follow (4.3–4.7) — each
-/// proven against the real legacy implementation by the parity tests. The profile only <em>declares</em> dimensions;
-/// nothing routes entities onto it automatically yet (that flip is decided once all seven are at parity). Note an
-/// entity whose markers are all flag-disabled (or that has no markers) gets <em>no</em> dimensions — compiling a
-/// policy from such an empty declaration throws by design (fail closed), so the future auto-wiring must declare a
-/// policy only when at least one dimension landed.
+/// Built one dimension per slice — 4.1 Company, 4.2 Country, 4.3 Region, 4.4 Branch, 4.5 Brand, 4.6 City, and
+/// 4.7 Team — each proven against the real legacy implementation by the parity tests. Once a host explicitly
+/// registers <see cref="StandardDataLevelAccessProfileProvider{TEntity}"/>, marker-bearing entities route onto this
+/// profile automatically. An entity whose markers are all flag-disabled (or that has no markers) gets no automatic
+/// policy, preserving the legacy no-filter outcome; an explicit declaration is then still honored on its own.
 /// </remarks>
 public static class StandardDataLevelAccessProfile
 {
@@ -35,8 +36,10 @@ public static class StandardDataLevelAccessProfile
     /// <b>Country</b> (<see cref="IEntityHasCountry{Entity}"/>, slice 4.2),
     /// <b>Region</b> (<see cref="IEntityHasRegion{Entity}"/>, slice 4.3),
     /// <b>Company</b> (<see cref="IEntityHasCompany{Entity}"/>, slice 4.1),
-    /// <b>Branch</b> (<see cref="IEntityHasCompanyBranch{Entity}"/>, slice 4.4) and
-    /// <b>City</b> (<see cref="IEntityHasCity{Entity}"/>, slice 4.6).
+    /// <b>Branch</b> (<see cref="IEntityHasCompanyBranch{Entity}"/>, slice 4.4),
+    /// <b>Brand</b> (<see cref="IEntityHasBrand{Entity}"/>, slice 4.5),
+    /// <b>City</b> (<see cref="IEntityHasCity{Entity}"/>, slice 4.6), and
+    /// <b>Team</b> (<see cref="IEntityHasTeam{Entity}"/>, slice 4.7).
     /// </summary>
     public static DataLevelAccessBuilder<TEntity> AddStandardDimensions<TEntity>(
         this DataLevelAccessBuilder<TEntity> access, DefaultDataLevelAccessOptions options)
@@ -80,13 +83,45 @@ public static class StandardDataLevelAccessProfile
                 .HashId<CompanyBranchDTO>()
                 .Self(Core.Constants.CompanyBranchIdClaim);
 
-        // City (4.6) — Brand (4.5) slots between Branch and City when it lands, keeping legacy's order.
+        // Brand (4.5) — legacy has no Brand self claim, so the profile deliberately omits Self(...).
+        if (!options.DisableDefaultBrandFilter && typeof(IEntityHasBrand<TEntity>).IsAssignableFrom(typeof(TEntity)))
+            access.On(ShiftIdentityActions.DataLevelAccess.Brands)
+                .Key(x => ((IEntityHasBrand<TEntity>)x!).BrandID)
+                .HashId<BrandDTO>();
+
+        // City (4.6)
         if (!options.DisableDefaultCityFilter && typeof(IEntityHasCity<TEntity>).IsAssignableFrom(typeof(TEntity)))
             access.On(ShiftIdentityActions.DataLevelAccess.Cities)
                 .Key(x => ((IEntityHasCity<TEntity>)x!).CityID)
                 .HashId<CityDTO>()
                 .Self(Core.Constants.CityIdClaim);
 
+        // Team (4.7) — unlike the other self dimensions, a caller can carry several TeamIds claims. The engine's
+        // SelfMany(...) resolution passes all of them to TypeAuth, matching legacy GetHashedTeamIDs().
+        if (!options.DisableDefaultTeamFilter && typeof(IEntityHasTeam<TEntity>).IsAssignableFrom(typeof(TEntity)))
+            access.On(ShiftIdentityActions.DataLevelAccess.Teams)
+                .Key(x => ((IEntityHasTeam<TEntity>)x!).TeamID)
+                .HashId<TeamDTO>()
+                .SelfMany(Core.Constants.TeamIdsClaim);
+
         return access;
+    }
+}
+
+/// <summary>
+/// The ShiftIdentity-coupled standard profile. It contributes the seven marker dimensions as defaults.
+/// ShiftEntity.EFCore centrally overlays any repository declaration so an explicit TypeAuth action replaces the
+/// marker dimension for that same action while every other marker remains automatic.
+/// </summary>
+public sealed class StandardDataLevelAccessProfileProvider<TEntity> : IDataLevelAccessProfile<TEntity>
+{
+    public void AddDimensions(DataLevelAccessBuilder<TEntity> builder, DefaultDataLevelAccessOptions options)
+    {
+        if (builder is null)
+            throw new ArgumentNullException(nameof(builder));
+        if (options is null)
+            throw new ArgumentNullException(nameof(options));
+
+        builder.AddStandardDimensions(options);
     }
 }

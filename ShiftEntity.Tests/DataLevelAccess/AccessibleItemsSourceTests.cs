@@ -65,6 +65,20 @@ public class AccessibleItemsSourceTests
     }
 
     [Fact]
+    public void GetByAccess_DistinguishesSelfIdSequencesContainingTheOldDelimiter()
+    {
+        var source = new TypeAuthAccessibleItemsSource(ScopedTypeAuth.Self());
+
+        var first = source.GetByAccess(ScopedTypeAuth.CompaniesAction, "a|b", "c");
+        var second = source.GetByAccess(ScopedTypeAuth.CompaniesAction, "a", "b|c");
+
+        // Both sequences joined to "a|b|c" under the old key and incorrectly shared the first result.
+        Assert.NotSame(first, second);
+        Assert.Equal(new[] { "a|b", "c" }, first.For(Access.Read).AccessibleIds);
+        Assert.Equal(new[] { "a", "b|c" }, second.For(Access.Read).AccessibleIds);
+    }
+
+    [Fact]
     public void GetByAccess_NullAction_Throws()
     {
         var source = new TypeAuthAccessibleItemsSource(ScopedTypeAuth.None());

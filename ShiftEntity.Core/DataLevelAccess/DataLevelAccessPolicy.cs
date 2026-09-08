@@ -196,14 +196,19 @@ public sealed class DataLevelAccessPolicy<TEntity>
     }
 
     /// <summary>
-    /// The self-ids fed to TypeAuth for self-reference resolution: the caller's claim value when <c>Self(claim)</c>
-    /// was declared (none when the claim is absent — the self-reference then resolves to nothing). The claim is passed
-    /// verbatim, in the same encoding as the grant ids, to be decoded uniformly by <see cref="Converter"/>.
+    /// The self-ids fed to TypeAuth for self-reference resolution: the first value of the caller's claim for
+    /// <c>Self(claim)</c>, or every value for <c>SelfMany(claim)</c> (none when the claim is absent — the self-reference
+    /// then resolves to nothing). Explicit cardinality preserves multi-membership dimensions such as Teams without
+    /// letting duplicate scalar claims widen Company/Country/etc. Claims are passed verbatim, in the same encoding
+    /// as the grant ids, to be decoded uniformly by <see cref="Converter"/>.
     /// </summary>
     private static string[] ResolveSelfIds(DataLevelDimension<TEntity> dimension, DataLevelAccessContext context)
     {
         if (dimension.SelfClaimType is null)
             return Array.Empty<string>();
+
+        if (dimension.UsesAllSelfClaims)
+            return context.GetClaims(dimension.SelfClaimType);
 
         var raw = context.GetClaim(dimension.SelfClaimType);
         return raw is null ? Array.Empty<string>() : new[] { raw };

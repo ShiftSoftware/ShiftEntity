@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Flags;
@@ -125,7 +127,9 @@ public sealed class RecordingDefaultDataLevelAccess : IDefaultDataLevelAccess
 /// (fresh database per host), scoped <see cref="ITypeAuthService"/> (the scenario's scoped
 /// <see cref="TypeAuthContext"/>), scoped <see cref="ICurrentUserProvider"/> + <see cref="IdentityClaimProvider"/>,
 /// singleton <see cref="IHashIdService"/>, the recording legacy <see cref="IDefaultDataLevelAccess"/>, and — unless
-/// a test opts out to prove fail-closed behavior — <c>AddShiftEntityDataLevelAccess()</c>. Scope validation is on,
+/// a test opts out to prove fail-closed behavior — the v2 engine services. Standard-profile tests use the public
+/// <c>AddShiftEntityDataLevelAccess()</c> host opt-in; other repository tests register only the engine as test
+/// infrastructure so their legacy-vs-explicit routing assertions remain isolated. Scope validation is on,
 /// the same startup check a Development host runs.
 /// </summary>
 public static class RepositoryHost
@@ -134,7 +138,9 @@ public static class RepositoryHost
         Func<ITypeAuthService>? typeAuth = null,
         RecordingDefaultDataLevelAccess? legacy = null,
         bool withDataLevelAccess = true,
-        Func<ICurrentUserProvider>? currentUser = null)
+        Func<ICurrentUserProvider>? currentUser = null,
+        bool withHostDataLevelAccess = false,
+        Action<IServiceCollection>? registerBeforeDataLevelAccess = null)
     {
         var services = new ServiceCollection();
 
@@ -149,8 +155,15 @@ public static class RepositoryHost
         services.AddSingleton<IHashIdService>(new RecordingHashIdService());
         services.AddSingleton<IDefaultDataLevelAccess>(legacy ?? new RecordingDefaultDataLevelAccess());
 
-        if (withDataLevelAccess)
+        registerBeforeDataLevelAccess?.Invoke(services);
+
+        if (withHostDataLevelAccess)
             services.AddShiftEntityDataLevelAccess();
+        else if (withDataLevelAccess)
+        {
+            services.TryAddScoped<IAccessibleItemsSource, TypeAuthAccessibleItemsSource>();
+            services.TryAddScoped<DataLevelAccessContext>();
+        }
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }

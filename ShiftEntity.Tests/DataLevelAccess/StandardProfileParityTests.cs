@@ -3,11 +3,13 @@ using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 using ShiftSoftware.ShiftEntity.Web.Services;
 using ShiftSoftware.ShiftIdentity.Core;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Brand;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.City;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Company;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.CompanyBranch;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Country;
 using ShiftSoftware.ShiftIdentity.Core.DTOs.Region;
+using ShiftSoftware.ShiftIdentity.Core.DTOs.Team;
 using ShiftSoftware.TypeAuth.Core;
 using ShiftSoftware.TypeAuth.Core.Actions;
 using Xunit;
@@ -44,7 +46,8 @@ public class StandardProfileParityTests
         string ActionField,                              // the JSON node under DataLevelAccess (= the field name)
         DynamicReadWriteDeleteAction Action,
         Type DtoType,
-        string SelfClaimType,
+        string? SelfClaimType,
+        bool UsesAllSelfClaims,
         Action<DefaultDataLevelAccessOptions, bool> SetDisabled,
         Action<StandardScopedEntity, long?> SetKey);
 
@@ -56,6 +59,7 @@ public class StandardProfileParityTests
             ShiftIdentityActions.DataLevelAccess.Countries,
             typeof(CountryDTO),
             Constants.CountryIdClaim,
+            false,
             (options, value) => options.DisableDefaultCountryFilter = value,
             (entity, value) => entity.CountryID = value),
 
@@ -65,6 +69,7 @@ public class StandardProfileParityTests
             ShiftIdentityActions.DataLevelAccess.Regions,
             typeof(RegionDTO),
             Constants.RegionIdClaim,
+            false,
             (options, value) => options.DisableDefaultRegionFilter = value,
             (entity, value) => entity.RegionID = value),
 
@@ -74,6 +79,7 @@ public class StandardProfileParityTests
             ShiftIdentityActions.DataLevelAccess.Companies,
             typeof(CompanyDTO),
             Constants.CompanyIdClaim,
+            false,
             (options, value) => options.DisableDefaultCompanyFilter = value,
             (entity, value) => entity.CompanyID = value),
 
@@ -84,8 +90,19 @@ public class StandardProfileParityTests
             ShiftIdentityActions.DataLevelAccess.Branches,
             typeof(CompanyBranchDTO),
             Constants.CompanyBranchIdClaim,
+            false,
             (options, value) => options.DisableDefaultCompanyBranchFilter = value,
             (entity, value) => entity.CompanyBranchID = value),
+
+        ["Brand"] = new(
+            "Brand",
+            nameof(ShiftIdentityActions.DataLevelAccess.Brands),
+            ShiftIdentityActions.DataLevelAccess.Brands,
+            typeof(BrandDTO),
+            null, // Brand has no self claim in the legacy implementation.
+            false,
+            (options, value) => options.DisableDefaultBrandFilter = value,
+            (entity, value) => entity.BrandID = value),
 
         ["City"] = new(
             "City",
@@ -93,8 +110,19 @@ public class StandardProfileParityTests
             ShiftIdentityActions.DataLevelAccess.Cities,
             typeof(CityDTO),
             Constants.CityIdClaim,
+            false,
             (options, value) => options.DisableDefaultCityFilter = value,
             (entity, value) => entity.CityID = value),
+
+        ["Team"] = new(
+            "Team",
+            nameof(ShiftIdentityActions.DataLevelAccess.Teams),
+            ShiftIdentityActions.DataLevelAccess.Teams,
+            typeof(TeamDTO),
+            Constants.TeamIdsClaim,
+            true,
+            (options, value) => options.DisableDefaultTeamFilter = value,
+            (entity, value) => entity.TeamID = value),
     };
 
     public static TheoryData<string> Dimensions()
@@ -102,6 +130,14 @@ public class StandardProfileParityTests
         var data = new TheoryData<string>();
         foreach (var name in SpecsByName.Keys)
             data.Add(name);
+        return data;
+    }
+
+    public static TheoryData<string> DimensionsWithSelf()
+    {
+        var data = new TheoryData<string>();
+        foreach (var spec in SpecsByName.Values.Where(spec => spec.SelfClaimType is not null))
+            data.Add(spec.Name);
         return data;
     }
 
@@ -243,7 +279,7 @@ public class StandardProfileParityTests
     }
 
     [Theory]
-    [MemberData(nameof(Dimensions))]
+    [MemberData(nameof(DimensionsWithSelf))]
     public void SelfReferenceGrant_ResolvesTheClaim_Parity(string dimension)
     {
         // A self-reference grant + the caller's dimension claim (the hashed-id claim legacy reads via
@@ -253,7 +289,7 @@ public class StandardProfileParityTests
         var arms = Build(
             spec,
             IdentityScopedTypeAuth.Self(spec.ActionField),
-            FakeCurrentUserProvider.WithClaims((spec.SelfClaimType, "4")));
+            FakeCurrentUserProvider.WithClaims((spec.SelfClaimType!, "4")));
 
         AssertQueryParity(arms, 3);
         AssertRowParity(arms);
@@ -262,30 +298,95 @@ public class StandardProfileParityTests
     }
 
     [Theory]
-    [MemberData(nameof(Dimensions))]
-    public void SelfReferenceGrant_CallerWithoutTheClaim_LegacyCrashes_ProfileFailsClosed(string dimension)
+    [MemberData(nameof(DimensionsWithSelf))]
+    public void SelfReferenceGrant_CallerWithoutTheClaim_ProfileFailsClosedBeforeDecoding(string dimension)
     {
         // Claims on an UNAUTHENTICATED principal grant nothing (legacy's GetClaimValues requires IsAuthenticated;
         // v2's GetClaim matches — the 4.1 alignment). But the two arms get there very differently, and this
         // characterizes both — a legacy defect found by running the REAL DefaultDataLevelAccess:
-        //   • Legacy: the missing claim resolves selfId to null, TypeAuth resolves the self-reference grant TO that
-        //     null id, and ConvertIds crashes decoding it — the query path throws ArgumentNullException (an
-        //     unhandled 500). This bites ANY caller without the dimension claim (unauthenticated or just
-        //     claim-less) whose access tree grants the dimension's self reference — on every dimension alike.
+        //   • Legacy: the missing scalar claim reaches the decoder as null; Team's null params array leaves the
+        //     self-reference sentinel in the result. What a production decoder does with either unresolved value is
+        //     configuration-dependent (throw, decode to 0, etc.), so this test pins the mechanism rather than a
+        //     particular exception type.
         //   • Profile (v2): the absent claim resolves to "no self ids", the self reference folds to nothing, and
-        //     the caller is cleanly denied everything — fail closed, no crash.
+        //     the caller is cleanly denied everything before the hash decoder is ever invoked.
         var spec = SpecsByName[dimension];
+        var hashIds = new RecordingHashIdService(
+            decode: (key, _) => throw new InvalidOperationException(
+                $"Legacy passed an unresolved self value to the decoder: {key ?? "<null>"}"));
         var arms = Build(
             spec,
             IdentityScopedTypeAuth.Self(spec.ActionField),
-            FakeCurrentUserProvider.WithUnauthenticatedClaims((spec.SelfClaimType, "4")));
+            FakeCurrentUserProvider.WithUnauthenticatedClaims((spec.SelfClaimType!, "4")),
+            hashIds);
 
-        Assert.Throws<ArgumentNullException>(() => LegacyVisible(arms)); // today's behavior, pinned as 0.3 pins defects
-        Assert.Empty(ProfileVisible(arms));                              // v2: no crash, no rows
+        Assert.Empty(ProfileVisible(arms));
+        Assert.Empty(hashIds.DecodeCalls);
+
+        Assert.Throws<InvalidOperationException>(() => LegacyVisible(arms));
+        var legacyDecode = Assert.Single(hashIds.DecodeCalls);
+        if (dimension == "Team")
+            Assert.Equal(TypeAuthContext.SelfReferenceKey, legacyDecode.Key);
+        else
+            Assert.Null(legacyDecode.Key);
 
         // The row paths don't crash (no id decoding) — both arms deny everything, including the caller's "own"
         // row, at every level.
         AssertRowParity(arms);
+        Assert.False(LegacyRow(arms, 3, Access.Read));
+    }
+
+    [Fact]
+    public void BrandSelfReferenceGrant_NoSelfClaim_DeniesCleanlyOnBothPaths()
+    {
+        // Brand deliberately has no Self(...) wiring in either implementation. A self-reference grant therefore
+        // resolves to no ids rather than to a caller claim (and, unlike the claim-backed dimensions, legacy does
+        // not receive a null self-id that later crashes during decoding).
+        var spec = SpecsByName["Brand"];
+        var arms = Build(spec, IdentityScopedTypeAuth.Self(spec.ActionField));
+
+        Assert.Null(spec.SelfClaimType);
+        AssertQueryParity(arms);
+        AssertRowParity(arms);
+        Assert.False(LegacyRow(arms, 3, Access.Read));
+    }
+
+    [Fact]
+    public void TeamSelfReferenceGrant_AllCallerTeamsBecomeAccessible_Parity()
+    {
+        // TeamIds is a repeated claim. Both legacy and v2 must pass every value to TypeAuth: a caller in teams 2
+        // and 4 sees both rows, not just whichever claim happened to be emitted first.
+        var spec = SpecsByName["Team"];
+        var arms = Build(
+            spec,
+            IdentityScopedTypeAuth.Self(spec.ActionField),
+            FakeCurrentUserProvider.WithClaims(
+                (Constants.TeamIdsClaim, "2"),
+                (Constants.TeamIdsClaim, "4")));
+
+        AssertQueryParity(arms, 2, 3);
+        AssertRowParity(arms);
+        Assert.True(LegacyRow(arms, 2, Access.Read));
+        Assert.True(LegacyRow(arms, 3, Access.Write));
+        Assert.False(LegacyRow(arms, 1, Access.Read));
+    }
+
+    [Fact]
+    public void ScalarSelfReferenceGrant_OnlyFirstClaimBecomesAccessible_Parity()
+    {
+        // Company is single-valued. Even if a malformed principal carries duplicate claims, both implementations
+        // use only the first value; treating ordinary Self(...) as multi-valued would silently widen access.
+        var spec = SpecsByName["Company"];
+        var arms = Build(
+            spec,
+            IdentityScopedTypeAuth.Self(spec.ActionField),
+            FakeCurrentUserProvider.WithClaims(
+                (Constants.CompanyIdClaim, "2"),
+                (Constants.CompanyIdClaim, "4")));
+
+        AssertQueryParity(arms, 2);
+        AssertRowParity(arms);
+        Assert.True(LegacyRow(arms, 2, Access.Read));
         Assert.False(LegacyRow(arms, 3, Access.Read));
     }
 
@@ -369,6 +470,7 @@ public class StandardProfileParityTests
         Assert.Same(spec.Action, source.Action);
         Assert.Equal(spec.DtoType, declared.HashIdDtoType);
         Assert.Equal(spec.SelfClaimType, declared.SelfClaimType);
+        Assert.Equal(spec.UsesAllSelfClaims, declared.UsesAllSelfClaims);
         var keys = Assert.IsType<KeysPredicate<StandardScopedEntity>>(declared.Predicate);
         Assert.Single(keys.Selectors);
     }

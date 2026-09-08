@@ -14,11 +14,17 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     public DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions { get; set; } = new();
 
     /// <summary>
-    /// The compiled v2 data-level policy declared via <see cref="DataLevelAccess"/>, or <see langword="null"/> when
-    /// none was declared (the repository then keeps today's legacy behavior). Recorded here in Phase 2.5; consumed by
-    /// <c>ShiftRepository</c>'s query/row paths in Phase 3.
+    /// The compiled explicit policy declared via <see cref="DataLevelAccess"/>, or <see langword="null"/> when none
+    /// was declared. A repository can still have an effective automatic policy supplied by its host profile; use
+    /// <c>ShiftRepository.DataLevelAccessPolicy</c> when applying the effective policy manually.
     /// </summary>
     public DataLevelAccessPolicy<EntityType>? DataLevelAccessPolicy { get; private set; }
+
+    /// <summary>
+    /// The validated declaration retained so a host profile can compose its automatic dimensions with explicit
+    /// repository overrides when the effective policy is resolved lazily.
+    /// </summary>
+    internal DataLevelAccessBuilder<EntityType>? DataLevelAccessDeclaration { get; private set; }
     private ICurrentUserProvider? CurrentUserProvider { get; set; }
     private ITypeAuthService? TypeAuthService { get; set; }
     private IHashIdService? HashIdService { get; set; }
@@ -120,9 +126,10 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     /// not at query time.
     /// </summary>
     /// <remarks>
-    /// Phase 2.5: the policy is recorded on the options only — <c>ShiftRepository</c> starts enforcing it
-    /// (query filter + per-operation row authorization) in Phase 3. Declaring twice throws: one entity has one
-    /// policy, and a silent overwrite of a security declaration would be a leak waiting to happen.
+    /// The repository enforces the compiled policy on query and per-operation row paths. When the host opted into a
+    /// default profile, this declaration overlays it: TypeAuth actions declared here replace matching automatic
+    /// dimensions and unrelated defaults remain. Declaring twice throws; silently overwriting a security declaration
+    /// would be a leak waiting to happen.
     /// </remarks>
     public void DataLevelAccess(Action<DataLevelAccessBuilder<EntityType>> declare)
     {
@@ -134,7 +141,10 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
         var builder = new DataLevelAccessBuilder<EntityType>();
         declare(builder);
 
-        this.DataLevelAccessPolicy = new DataLevelAccessPolicy<EntityType>(builder);
+        var policy = new DataLevelAccessPolicy<EntityType>(builder);
+
+        this.DataLevelAccessDeclaration = builder;
+        this.DataLevelAccessPolicy = policy;
     }
 
     public CustomValueFilter<EntityType, TValue> FilterByCustomValue<TValue>(

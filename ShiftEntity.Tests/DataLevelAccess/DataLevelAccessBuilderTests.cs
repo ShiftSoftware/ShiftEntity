@@ -72,6 +72,18 @@ public class DataLevelAccessBuilderTests
         var dim = Assert.Single(access.Dimensions);
         Assert.Equal(typeof(FakeDto), dim.HashIdDtoType);
         Assert.Equal("company_id", dim.SelfClaimType);
+        Assert.False(dim.UsesAllSelfClaims);
+    }
+
+    [Fact]
+    public void On_SelfMany_RecordsMultiValueClaimCardinality()
+    {
+        var access = Access();
+        access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID).SelfMany("team_ids");
+
+        var dim = Assert.Single(access.Dimensions);
+        Assert.Equal("team_ids", dim.SelfClaimType);
+        Assert.True(dim.UsesAllSelfClaims);
     }
 
     [Fact]
@@ -150,6 +162,16 @@ public class DataLevelAccessBuilderTests
         var dimension = access.OnOwner("user_id").Key(x => x.AssignedUserID);
 
         Assert.Throws<InvalidOperationException>(() => { dimension.Self("company_id"); });
+        Assert.Throws<InvalidOperationException>(() => { dimension.SelfMany("team_ids"); });
+    }
+
+    [Fact]
+    public void Self_AndSelfMany_AreMutuallyExclusive()
+    {
+        var access = Access();
+        var dimension = access.On(VehicleDataLevel.Companies).Key(x => x.CompanyID).Self("company_id");
+
+        Assert.Throws<InvalidOperationException>(() => dimension.SelfMany("team_ids"));
     }
 
     [Fact]

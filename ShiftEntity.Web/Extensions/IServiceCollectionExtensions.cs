@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
 using ShiftSoftware.ShiftEntity.Web.Services;
@@ -122,10 +124,25 @@ public static class IServiceCollectionExtensions
         services.AddScoped<IdentityClaimProvider>();
         services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
-        // v2 data-level-access engine (scoped IAccessibleItemsSource + DataLevelAccessContext) — registered
-        // alongside the legacy IDefaultDataLevelAccess; ShiftRepository starts consuming it in Phase 3.
-        services.AddShiftEntityDataLevelAccess();
+        return services;
+    }
 
+    /// <summary>
+    /// Opts this host into data-level access v2. Registers the scoped query/row engine and the standard profile, so
+    /// the seven existing marker interfaces route automatically through v2 while explicit repository declarations
+    /// replace a standard dimension for the same TypeAuth action and extend all unrelated marker dimensions.
+    /// </summary>
+    /// <remarks>
+    /// This is the single public host opt-in and is intentionally not implied by <c>AddShiftEntityWeb</c> or
+    /// <c>AddShiftEntityFunctions</c>: a package upgrade must not silently change authorization. Both engine services
+    /// are scoped; registrations use <c>TryAdd</c>, so a custom accessible-items source or profile registered first
+    /// wins.
+    /// </remarks>
+    public static IServiceCollection AddShiftEntityDataLevelAccess(this IServiceCollection services)
+    {
+        services.TryAddScoped<IAccessibleItemsSource, TypeAuthAccessibleItemsSource>();
+        services.TryAddScoped<DataLevelAccessContext>();
+        services.TryAddSingleton(typeof(IDataLevelAccessProfile<>), typeof(StandardDataLevelAccessProfileProvider<>));
         return services;
     }
 }

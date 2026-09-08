@@ -78,5 +78,12 @@ public sealed class DataLevelDimension<TEntity>
     /// <summary>The claim type whose value resolves the TypeAuth self-reference key; <see langword="null"/> ⇒ no self resolution.</summary>
     public string? SelfClaimType { get; internal set; }
 
+    /// <summary>
+    /// Whether every claim of <see cref="SelfClaimType"/> resolves the self-reference key. <see langword="false"/>
+    /// means only the first claim is used. This is explicit because most identity dimensions are single-valued,
+    /// while membership dimensions such as Teams are deliberately multi-valued.
+    /// </summary>
+    public bool UsesAllSelfClaims { get; internal set; }
+
     internal DataLevelDimension(DataLevelValueSource valueSource) => ValueSource = valueSource;
 }

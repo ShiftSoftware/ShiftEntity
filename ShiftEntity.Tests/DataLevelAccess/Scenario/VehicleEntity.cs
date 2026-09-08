@@ -1,5 +1,6 @@
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Flags;
+using ShiftSoftware.ShiftEntity.Model.Flags;
 
 namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 
@@ -10,9 +11,13 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 /// POCO deliberately isn't. Same two company legs, seeded from the same sample set. A top-level class because the
 /// repository tests also map it through EF (which does not support nested entity types).
 /// </summary>
-public class VehicleEntity : ShiftEntity<VehicleEntity>, IEntityHasIdempotencyKey<VehicleEntity>
+public class VehicleEntity : ShiftEntity<VehicleEntity>,
+    IEntityHasCountry<VehicleEntity>,
+    IEntityHasCompany<VehicleEntity>,
+    IEntityHasIdempotencyKey<VehicleEntity>
 {
     public string Name { get; set; } = "";
+    public long? CountryID { get; set; }
     public long? CompanyID { get; set; }
     public long? IntermediaryCompanyID { get; set; }
 
@@ -32,6 +37,7 @@ public class VehicleEntity : ShiftEntity<VehicleEntity>, IEntityHasIdempotencyKe
             {
                 ID = v.Id,
                 Name = v.Name,
+                CountryID = 8,
                 CompanyID = v.CompanyID,
                 IntermediaryCompanyID = v.IntermediaryCompanyID,
                 AssignedUserID = v.AssignedUserID,

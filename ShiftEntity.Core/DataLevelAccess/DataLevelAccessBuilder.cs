@@ -7,8 +7,8 @@ namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 
 /// <summary>
 /// Fluent declaration of an entity's data-level dimensions (D11 predicate-contributor model). Passed to
-/// <c>ShiftRepositoryOptions.DataLevelAccess(...)</c> (Phase 2.5). Records declarations only — the query filter and
-/// row check are applied by the policy in Phase 2.3/2.4. Dimensions AND-compose; a dimension's predicate is OR-internal.
+/// <c>ShiftRepositoryOptions.DataLevelAccess(...)</c>. The declaration compiles into the policy that drives both the
+/// query filter and row check. Dimensions AND-compose; a dimension's predicate is OR-internal.
 /// </summary>
 public sealed class DataLevelAccessBuilder<TEntity>
 {
@@ -26,6 +26,13 @@ public sealed class DataLevelAccessBuilder<TEntity>
     /// <see cref="DataLevelDeniedBehavior.NotFound"/> unless <see cref="WhenDenied"/> declared otherwise.
     /// </summary>
     public DataLevelDeniedBehavior DeniedBehavior => deniedBehavior ?? DataLevelDeniedBehavior.NotFound;
+
+    /// <summary>
+    /// True when <see cref="WhenDenied"/> was explicitly called. Profiles may contribute dimensions only, so the
+    /// repository uses this declaration flag (rather than the defaulted <see cref="DeniedBehavior"/> value) to
+    /// reject a profile that tries to control row-disclosure behavior.
+    /// </summary>
+    internal bool HasDeniedBehavior => deniedBehavior is not null;
 
     /// <summary>Declares a dimension whose accessible set comes from a TypeAuth dynamic action.</summary>
     public DataLevelDimensionBuilder<TEntity> On(DynamicAction action)
@@ -85,6 +92,53 @@ public sealed class DataLevelAccessBuilder<TEntity>
                     $"A data-level dimension on {typeof(TEntity).Name} declared a value source but no predicate — call Key, Keys, or Match.");
         }
     }
+
+    /// <summary>
+    /// Applies an explicit repository declaration over a builder that was seeded from a default profile. Explicit
+    /// TypeAuth dimensions replace seeded dimensions for the same action (the same reference or action-tree path);
+    /// all other seeded dimensions remain, and owner/custom dimensions are appended. Several explicit dimensions on
+    /// the same action are kept together, allowing a consumer to deliberately AND-compose multiple predicates over
+    /// one accessible set.
+    /// </summary>
+    /// <remarks>
+    /// Internal because ShiftRepository owns composition centrally: profiles only contribute defaults and cannot
+    /// silently drop the explicit declaration. Action identity follows TypeAuth: singleton reference when paths have
+    /// not been populated yet, otherwise the action-tree path identifies equivalent action instances.
+    /// </remarks>
+    internal void ApplyOverridesFrom(DataLevelAccessBuilder<TEntity> overrides)
+    {
+        if (overrides is null)
+            throw new ArgumentNullException(nameof(overrides));
+
+        if (overrides.IsUnscoped)
+        {
+            dimensions.Clear();
+            deniedBehavior = null;
+            IsUnscoped = true;
+            return;
+        }
+
+        var overriddenActions = new List<DynamicAction>();
+        foreach (var dimension in overrides.dimensions)
+            if (dimension.ValueSource is TypeAuthValueSource typeAuth
+                && !overriddenActions.Exists(action => IsSameAction(action, typeAuth.Action)))
+                overriddenActions.Add(typeAuth.Action);
+
+        dimensions.RemoveAll(dimension =>
+            dimension.ValueSource is TypeAuthValueSource typeAuth
+            && overriddenActions.Exists(action => IsSameAction(action, typeAuth.Action)));
+
+        dimensions.AddRange(overrides.dimensions);
+
+        if (overrides.deniedBehavior is not null)
+            deniedBehavior = overrides.deniedBehavior;
+    }
+
+    private static bool IsSameAction(DynamicAction left, DynamicAction right)
+        => ReferenceEquals(left, right)
+            || (left.Path is not null
+                && right.Path is not null
+                && string.Equals(left.Path, right.Path, StringComparison.Ordinal));
 
     private DataLevelDimensionBuilder<TEntity> AddDimension(DataLevelValueSource source)
     {
@@ -150,19 +204,31 @@ public sealed class DataLevelDimensionBuilder<TEntity>
     }
 
     /// <summary>
-    /// Declares the claim whose value resolves the TypeAuth self-reference key (own-data access). Valid only on a
-    /// TypeAuth-action dimension (<see cref="DataLevelAccessBuilder{TEntity}.On"/>).
+    /// Declares the single-valued claim whose first value resolves the TypeAuth self-reference key (own-data
+    /// access). Valid only on a TypeAuth-action dimension (<see cref="DataLevelAccessBuilder{TEntity}.On"/>).
     /// </summary>
     public DataLevelDimensionBuilder<TEntity> Self(string claimType)
+        => SetSelf(claimType, usesAllClaims: false);
+
+    /// <summary>
+    /// Declares a repeated claim whose every value resolves the TypeAuth self-reference key. Use this only for a
+    /// genuinely multi-valued membership claim such as Teams; scalar identity claims should use <see cref="Self"/>
+    /// so duplicate or malformed claims cannot widen access.
+    /// </summary>
+    public DataLevelDimensionBuilder<TEntity> SelfMany(string claimType)
+        => SetSelf(claimType, usesAllClaims: true);
+
+    private DataLevelDimensionBuilder<TEntity> SetSelf(string claimType, bool usesAllClaims)
     {
         if (claimType is null)
             throw new ArgumentNullException(nameof(claimType));
         if (dimension.ValueSource is not TypeAuthValueSource)
-            throw new InvalidOperationException("Self(...) applies only to a TypeAuth-action dimension declared with On(...).");
+            throw new InvalidOperationException("Self(...) and SelfMany(...) apply only to a TypeAuth-action dimension declared with On(...).");
         if (dimension.SelfClaimType is not null)
-            throw new InvalidOperationException("Self has already been declared for this dimension.");
+            throw new InvalidOperationException("Self or SelfMany has already been declared for this dimension.");
 
         dimension.SelfClaimType = claimType;
+        dimension.UsesAllSelfClaims = usesAllClaims;
         return this;
     }
 
