@@ -323,6 +323,12 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
         if (result.Stream is not null)
             return Results.Stream(result.Stream, result.ContentType ?? "application/octet-stream");
 
+        // MVC's Ok(string) emits plain text. In particular, ShiftBlazor uses
+        // the print-token response verbatim as a URL query string; JSON
+        // encoding it adds quotes and makes the print link invalid.
+        if (result.Body is string text)
+            return Results.Text(text, "text/plain", statusCode: result.StatusCode);
+
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
