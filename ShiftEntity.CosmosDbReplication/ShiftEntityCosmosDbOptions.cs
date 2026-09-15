@@ -67,15 +67,20 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
+    /// <param name="mapping">
+    /// Builds the Cosmos document from the entity. Optional: when omitted, the document is mapped through the host's
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>. No registered mapper, or none declaring the pair, fails the
+    /// sync loudly rather than leaving the row dirty.
+    /// </param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
         this.cosmosDbTriggerReferenceOperations
             .Replicate(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
@@ -83,17 +88,22 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
+    /// <param name="mapping">
+    /// Builds the Cosmos document from the entity. Optional: when omitted, the document is mapped through the host's
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>. No registered mapper, or none declaring the pair, fails the
+    /// sync loudly rather than leaving the row dirty.
+    /// </param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
         this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, null, mapping);
@@ -101,18 +111,23 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <typeparam name="CosmosDbItem"></typeparam>
     /// <param name="cosmosContainerId"></param>
-    /// <param name="mapping">Builds the Cosmos document from the entity. Required — there is no fallback.</param>
+    /// <param name="mapping">
+    /// Builds the Cosmos document from the entity. Optional: when omitted, the document is mapped through the host's
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>. No registered mapper, or none declaring the pair, fails the
+    /// sync loudly rather than leaving the row dirty.
+    /// </param>
     /// <returns></returns>
     public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel3Expression,
-        Func<EntityWrapper<Entity>, CosmosDbItem> mapping)
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
         this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, partitionKeyLevel3Expression, mapping);
@@ -174,11 +189,14 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         this.replicateAction = async (entity, services, db) =>
         {
-            // The mapping delegate is REQUIRED. It used to be optional and fall through to AutoMapper, which
-            // meant a call site that simply forgot one still compiled and still ran — and any failure on this
-            // path is swallowed per row, so it surfaced as a permanently-dirty document under a clean-looking
-            // watermark rather than as an exception. The compiler now asks the question instead.
-            CosmosDbItem item = mapping(new EntityWrapper<Entity>(entity, services));
+            //No delegate → the host's ShiftMapper mapper, resolved and pair-checked BEFORE anything is written. A
+            //missing registration then throws out of the run (the trigger logs it and the row stays dirty) instead
+            //of surfacing as a permanently-dirty document under a clean-looking watermark, which is what the old
+            //AutoMapper fallback did when the host had forgotten to register it.
+            CosmosDbItem item = mapping is not null
+                ? mapping(new EntityWrapper<Entity>(entity, services))
+                : ReplicationMapper.ResolveCreate<Entity, CosmosDbItem>(services,
+                    $"Replicate<{typeof(CosmosDbItem).Name}>(\"{cosmosContainerId}\")")(entity);
 
             var container = db.GetContainer(cosmosContainerId);
 
@@ -279,14 +297,27 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                                "Only boolean or number or string partition key types allowed");
     }
 
+    /// <param name="mapping">
+    /// Merges the entity ONTO the stored document and returns what to write. Optional: when omitted, the host's
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>) copies the entity onto the stored
+    /// document through its <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>; a member that map ignores — typically
+    /// the partition key — survives the merge.
+    /// </param>
     public CosmosDbTriggerReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
                 Func<IQueryable<CosmosDbItem>, EntityWrapper<Entity>, IQueryable<CosmosDbItem>> finder,
-                Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem> mapping)
+                Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem>? mapping = null)
     {
         this.cosmosContainerIds.Add(cosmosContainerId);
 
         this.upsertReferenceActions.Add(async (entity, services, db) =>
         {
+            //Resolved above the loop and before the lookup, so a host with no usable mapper fails on the first
+            //run — whether or not any document currently references this entity.
+            var merge = mapping is null
+                ? ReplicationMapper.ResolveMerge<Entity, CosmosDbItem>(services,
+                    $"UpdateReference<{typeof(CosmosDbItem).Name}>(\"{cosmosContainerId}\")")
+                : null;
+
             bool? isSucceeded = null;
             var container = db.GetContainer(cosmosContainerId);
 
@@ -299,10 +330,12 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             foreach (var item in items)
             {
-                // Merge-onto-existing: the delegate receives the stored document and returns what to write, so
-                // it decides which members survive. That is not expressible as a plain entity->document map,
-                // which is why this overload exists and why its delegate was never optional in spirit.
-                CosmosDbItem tempItems = mapping(new EntityWrapper<Entity>(entity, services), item);
+                // Merge-onto-existing: the stored document is handed in and what comes back is what gets written,
+                // so the delegate (or the mapper's update overload) decides which members survive. That is not
+                // expressible as a plain entity->document map, which is why this overload exists.
+                CosmosDbItem tempItems = mapping is not null
+                    ? mapping(new EntityWrapper<Entity>(entity, services), item)
+                    : merge!(entity, item);
 
                 cosmosTasks.Add(container.UpsertItemAsync<CosmosDbItem>(tempItems)
                     .ContinueWith(x =>
@@ -319,10 +352,15 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         return this;
     }
 
+    /// <param name="mapping">
+    /// Builds the embedded reference document from the entity. Optional: when omitted, it is mapped through the
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDbItemReference&gt;()</c>.
+    /// </param>
     public CosmosDbTriggerReferenceOperations<Entity> UpdatePropertyReference<CosmosDbItemReference, DestinationContainer>(
         string cosmosContainerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
-        Func<EntityWrapper<Entity>, CosmosDbItemReference> mapping)
+        Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression);
 
@@ -330,6 +368,12 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         this.upsertReferenceActions.Add(async (entity, services, db) =>
         {
+            //Resolved above the loop and before the lookup — see UpdateReference.
+            var create = mapping is null
+                ? ReplicationMapper.ResolveCreate<Entity, CosmosDbItemReference>(services,
+                    $"UpdatePropertyReference<{typeof(CosmosDbItemReference).Name}, {typeof(DestinationContainer).Name}>(\"{cosmosContainerId}\")")
+                : null;
+
             bool? isSucceeded = null;
             var container = db.GetContainer(cosmosContainerId);
 
@@ -344,7 +388,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             foreach (var item in items)
             {
-                CosmosDbItemReference propertyItem = mapping(new EntityWrapper<Entity>(entity, services));
+                CosmosDbItemReference propertyItem = mapping is not null
+                    ? mapping(new EntityWrapper<Entity>(entity, services))
+                    : create!(entity);
 
                 var id = Convert.ToString(item.GetProperty("id"));
                 PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item!);

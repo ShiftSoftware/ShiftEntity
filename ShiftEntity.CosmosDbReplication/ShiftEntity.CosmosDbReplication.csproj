@@ -31,8 +31,15 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+		<!-- 10.0.11, not 10.0.10: ShiftMapper pins 10.0.11, and a direct reference below a transitive one is NU1605. -->
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
+		<!-- ShiftMapper is the fallback both pipelines map through when a Replicate / UpdateReference /
+		     UpdatePropertyReference call passes no mapping delegate (see ReplicationMapper.cs). Runtime library only:
+		     this project declares no maps of its own, so it has no use for the generator the package also carries.
+		     Referenced the way every sibling is — the project when the ShiftMapper repo is cloned beside this one,
+		     the package at $(ShiftMapperVersion) (ShiftFrameworkGlobalSettings.props) otherwise. -->
+		<PackageReference Include="ShiftSoftware.ShiftMapper" Version="$(ShiftMapperVersion)" Condition="!Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -43,6 +50,12 @@
 	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
+		<ProjectReference Include="..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj" Condition="Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- ReplicationMapper is internal plumbing; the tests drive its resolution rules over hand-written doubles. -->
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Tests" />
 	</ItemGroup>
 
 </Project>

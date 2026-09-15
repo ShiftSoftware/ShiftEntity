@@ -76,13 +76,18 @@ public class CosmosDbReplicationOperation<DB, Entity>
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <typeparam name="CosmosDBItem"></typeparam>
     /// <param name="containerId"></param>
-    /// <param name="mapping">Required. Projects the entity into the Cosmos document.</param>
+    /// <param name="mapping">
+    /// Projects the entity into the Cosmos document. Optional: when omitted, the document is mapped through the
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDBItem&gt;()</c>. No registered mapper, or none declaring the pair, throws out of
+    /// <see cref="CosmosDbReferenceOperation{DB, Entity}.RunAsync"/> before any row is touched.
+    /// </param>
     /// <returns></returns>
-    public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem> mapping)
+    public CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
         CosmosDbReferenceOperation<DB, Entity> referenceOperations;
 
@@ -150,19 +155,30 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     }
 
     /// <summary>
-    /// 
+    ///
     /// </summary>
     /// <typeparam name="CosmosDBItem"></typeparam>
     /// <param name="containerId"></param>
-    /// <param name="mapping">Required. Projects the entity into the Cosmos document.</param>
+    /// <param name="mapping">
+    /// Projects the entity into the Cosmos document. Optional: when omitted, the document is mapped through the
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>).
+    /// </param>
     /// <returns></returns>
-    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem> mapping)
+    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
     {
         this.cosmosContainerIds.Add(containerId);
 
         //Upsert fail replicated entities into cosmos container
         this.upsertActions.Add(async () =>
         {
+            //No delegate → the host's ShiftMapper mapper. Resolved ONCE, above the loop, so a missing registration
+            //(or a mapper that does not declare this pair) throws out of the run. Resolving it at the use site
+            //below would put it INSIDE the per-row catch, which swallows and marks the row unsuccessful — turning
+            //"the host forgot AddShiftMapper" into a sweep that reports success while leaving every row permanently
+            //dirty under a clean-looking watermark. That is exactly how the old AutoMapper fallback failed.
+            var map = mapping ?? ReplicationMapper.ResolveCreate<Entity, CosmosDBItem>(this.services,
+                $"Replicate<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
+
             var container = this.cosmosDatabase.GetContainer(containerId);
             var containerResponse = await container.ReadContainerAsync();
 
@@ -175,11 +191,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 //catch-up run for every other entity.
                 try
                 {
-                    //The mapping delegate is REQUIRED. It used to be optional and fall through to AutoMapper,
-                    //so a call site that simply forgot one compiled and ran — and every failure on this path is
-                    //swallowed by the catch below, which means it surfaced as permanently-dirty rows under a
-                    //clean watermark instead of an exception. The compiler now asks the question up front.
-                    CosmosDBItem newItem = mapping(entity);
+                    CosmosDBItem newItem = map(entity);
 
                     var entityId = entity.ID;
 
@@ -252,10 +264,15 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return this;
     }
 
+    /// <param name="mapping">
+    /// Builds the embedded reference document from the entity. Optional: when omitted, it is mapped through the
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// <c>CreateMap&lt;Entity, CosmosDBItemReference&gt;()</c>.
+    /// </param>
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
         string containerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, Entity, IQueryable<DestinationContainer>> finder,
-        Func<Entity, CosmosDBItemReference> mapping)
+        Func<Entity, CosmosDBItemReference>? mapping = null)
     {
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression); ;
         this.cosmosContainerIds.Add(containerId);
@@ -263,6 +280,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //Update reference
         this.upsertActions.Add(async () =>
         {
+            //Resolved once, above the loop — see Replicate for why it must never move inside it.
+            var map = mapping ?? ReplicationMapper.ResolveCreate<Entity, CosmosDBItemReference>(this.services,
+                $"UpdatePropertyReference<{typeof(CosmosDBItemReference).Name}, {typeof(DestinationContainer).Name}>(\"{containerId}\")");
+
             var container = this.cosmosDatabase.GetContainer(containerId);
 
             var containerReposne = await container.ReadContainerAsync();
@@ -277,7 +298,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 {
                     foreach (var item in items)
                     {
-                        CosmosDBItemReference propertyItem = mapping(entity);
+                        CosmosDBItemReference propertyItem = map(entity);
 
                         var id = Convert.ToString(item.GetProperty("id"));
                         PartitionKey partitionKey = Utility.GetPartitionKey(containerReposne, item);
@@ -309,14 +330,24 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return this;
     }
 
+    /// <param name="mapping">
+    /// Merges the entity ONTO the stored document and returns what to write. Optional: when omitted, the host's
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>) copies the entity onto the stored
+    /// document through its <c>CreateMap&lt;Entity, CosmosDBItem&gt;()</c>; a member that map ignores — typically
+    /// the partition key — survives the merge.
+    /// </param>
     public CosmosDbReferenceOperation<DB, Entity> UpdateReference<CosmosDBItem>(string containerId,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder,
-        Func<Entity, CosmosDBItem, CosmosDBItem> mapping)
+        Func<Entity, CosmosDBItem, CosmosDBItem>? mapping = null)
     {
         this.cosmosContainerIds.Add(containerId);
 
         this.upsertActions.Add(async () =>
         {
+            //Resolved once, above the loop — see Replicate for why it must never move inside it.
+            var merge = mapping ?? ReplicationMapper.ResolveMerge<Entity, CosmosDBItem>(this.services,
+                $"UpdateReference<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
+
             var container = this.cosmosDatabase.GetContainer(containerId);
             var containerResponse = await container.ReadContainerAsync();
 
@@ -368,10 +399,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                 foreach (var entity in entry.contributors)
                 {
-                    //Merge-onto-existing: the delegate receives the stored document and returns what to write,
-                    //so it decides which members survive a merge. That was never expressible as a plain
-                    //entity->document map, which is why this overload exists.
-                    mergedDocument = mapping(entity, mergedDocument);
+                    //Merge-onto-existing: the stored document is handed in and what comes back is what gets
+                    //written, so the delegate (or the mapper's update overload) decides which members survive a
+                    //merge. That was never expressible as a plain entity->document map, which is why this
+                    //overload exists.
+                    mergedDocument = merge(entity, mergedDocument);
                 }
 
                 //A successful (or failed) write counts for EVERY source entity that merged into the document.
