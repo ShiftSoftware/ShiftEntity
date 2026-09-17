@@ -6,10 +6,11 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins how <see cref="ReplicationMapper"/> picks the ShiftMapper mapper a delegate-less replication call maps
-/// through, over hand-written <see cref="IShiftMapper"/> doubles. The helper's job is RESOLUTION — which mapper,
-/// and how a bad host configuration is reported; what a real generated mapper produces is pinned by the
-/// replication goldens in the template's test project, not here.
+/// Pins how <see cref="ReplicationMapper"/> reaches the ShiftMapper mapper a delegate-less replication call maps
+/// through, over hand-written <see cref="IShiftMapper"/> doubles. The helper's job is RESOLUTION — the one
+/// <see cref="IShiftMapper"/> door <c>AddShiftMapper</c> registers (a mapper, or the <see cref="CompositeShiftMapper"/>
+/// it builds over several), and how a bad host configuration is reported; what a real generated mapper produces is
+/// pinned by the replication goldens in the template's test project, not here.
 /// </summary>
 public class ReplicationMapperTests
 {
@@ -48,12 +49,18 @@ public class ReplicationMapperTests
         public IQueryable<TDestination> ProjectTo<TSource, TDestination>(IQueryable<TSource> source) => throw new NotSupportedException();
     }
 
+    /// <summary>
+    /// What <c>AddShiftMapper</c> leaves in the container: nothing, the mapper itself, or one composite over all of
+    /// them — never several <see cref="IShiftMapper"/> descriptors.
+    /// </summary>
     private static IServiceProvider Host(params IShiftMapper[] mappers)
     {
         var services = new ServiceCollection();
 
-        foreach (var mapper in mappers)
-            services.AddSingleton(mapper);
+        if (mappers.Length == 1)
+            services.AddSingleton(mappers[0]);
+        else if (mappers.Length > 1)
+            services.AddSingleton<IShiftMapper>(new CompositeShiftMapper(mappers));
 
         return services.BuildServiceProvider();
     }
@@ -87,12 +94,13 @@ public class ReplicationMapperTests
     }
 
     [Fact]
-    public void SeveralMappers_TheLastOneDeclaringThePairWins()
+    public void SeveralMappers_TheCompositeAnswers_AndTheFirstOneDeclaringThePairWins()
     {
-        //Three registrations: the pair is declared by the first and the second, not the third. The container's own
-        //rule for IShiftMapper is "last wins", and the helper follows it AMONG the mappers that can actually map
-        //the pair — so a framework mapper registered after the application's does not shadow a pair only the
-        //application's declares, and vice versa.
+        //Three mappers behind the one composite AddShiftMapper registers: the pair is declared by the first and the
+        //second, not the third. The helper resolves the composite and asks IT — it does not enumerate mappers or
+        //choose between them — and the composite's own rule is first registered wins. (Two mappers each writing
+        //their OWN map for a pair is refused by ShiftMapper before any of this runs; two answering here can only be
+        //one declaration reached two ways, where either runs the same map.)
         var host = Host(
             new FakeMapper("First", (typeof(Row), typeof(Document))),
             new FakeMapper("Second", (typeof(Row), typeof(Document))),
@@ -103,7 +111,25 @@ public class ReplicationMapperTests
         var document = create(new Row { ID = 7 });
 
         Assert.Equal("7", document.id);
-        Assert.Equal("Second", document.Tag);
+        Assert.Equal("First", document.Tag);
+    }
+
+    [Fact]
+    public void SeveralMappersWithoutThePair_Throws_NamingEveryMapperBehindTheComposite()
+    {
+        //A host reading "CompositeShiftMapper declares no map" would learn nothing; the message has to name the
+        //mappers the host actually registered.
+        var host = Host(
+            new FakeMapper("First", (typeof(Row), typeof(string))),
+            new FakeMapper("Second", (typeof(Row), typeof(int))));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            ReplicationMapper.ResolveCreate<Row, Document>(host, "Replicate<Document>(\"docs\")"));
+
+        Assert.Contains("none of the 2 registered", error.Message);
+        Assert.Contains("FakeMapper, FakeMapper", error.Message);
+        Assert.DoesNotContain("CompositeShiftMapper", error.Message);
+        Assert.Contains("'Row' to 'Document'", error.Message);
     }
 
     [Fact]

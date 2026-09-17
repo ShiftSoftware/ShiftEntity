@@ -16,11 +16,15 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 /// that into an <see cref="InvalidOperationException"/> out of the run, naming the operation, the pair and the fix.
 /// </para>
 /// <para>
-/// <c>AddShiftMapper</c> is additive, so a host may register several mappers — a framework-supplied one such as
-/// ShiftIdentity's replication mapper next to its own. Every registered <see cref="IShiftMapper"/> is consulted and
-/// the LAST one that declares the pair wins, matching the container's own "last registration wins" rule for the
-/// interface. The one door <see cref="IShiftMapper.CanMap"/> does not vouch for is the merge overload, which needs
-/// the exact declared pair; that miss is ShiftMapper's own exception, and it is thrown before any row is written.
+/// <see cref="IShiftMapper"/> is ONE door however many mappers the host registers. <c>AddShiftMapper</c> keeps a
+/// single registry per collection — a framework's own registration (ShiftIdentity's replication mapper, say) and
+/// the application's land in the same one, in any order — and registers the interface once: the mapper itself when
+/// there is one, a <see cref="CompositeShiftMapper"/> over all of them when there are several, which hands each pair
+/// to the first registered mapper that declares it. Two mappers each writing their OWN map for a pair never reach
+/// this code: ShiftMapper refuses that at build time (SM0040) and again when the container is built. So this resolves
+/// the one door and asks it; it does not enumerate mappers or choose between them. The one door
+/// <see cref="IShiftMapper.CanMap"/> does not vouch for is the merge overload, which needs the exact declared pair;
+/// that miss is ShiftMapper's own exception, and it is thrown before any row is written.
 /// </para>
 /// </summary>
 internal static class ReplicationMapper
@@ -54,24 +58,29 @@ internal static class ReplicationMapper
     {
         var pair = $"'{typeof(TEntity).Name}' to '{typeof(TDocument).Name}'";
 
-        var mappers = services.GetServices<IShiftMapper>().ToList();
-
-        if (mappers.Count == 0)
-            throw new InvalidOperationException(
-                $"Replication {operation} passes no mapping delegate and no ShiftMapper mapper is registered, so " +
-                $"there is nothing to map {pair} with. Register one with services.AddShiftMapper<YourMapper>() " +
-                $"whose constructor declares CreateMap<{typeof(TEntity).Name}, {typeof(TDocument).Name}>() (or adds " +
-                "a profile that does), or pass the mapping delegate explicitly.");
-
-        //Last wins, matching what GetRequiredService<IShiftMapper>() would hand back when several are registered.
-        var mapper = mappers.LastOrDefault(x => x.CanMap(typeof(TEntity), typeof(TDocument)));
+        var mapper = services.GetService<IShiftMapper>();
 
         if (mapper is null)
             throw new InvalidOperationException(
-                $"Replication {operation} passes no mapping delegate and none of the {mappers.Count} registered " +
-                $"ShiftMapper mapper(s) ({string.Join(", ", mappers.Select(x => x.GetType().Name))}) declares a map " +
-                $"{pair}. Add CreateMap<{typeof(TEntity).Name}, {typeof(TDocument).Name}>() to the mapper (or to a " +
-                "profile it adds), or pass the mapping delegate explicitly.");
+                $"Replication {operation} passes no mapping delegate and no ShiftMapper mapper is registered, so " +
+                $"there is nothing to map {pair} with. Register one with services.AddShiftMapper(o => o.AddMapper<YourMapper>()) " +
+                $"whose constructor declares CreateMap<{typeof(TEntity).Name}, {typeof(TDocument).Name}>() (or includes " +
+                "a mapper that does), or pass the mapping delegate explicitly.");
+
+        if (!mapper.CanMap(typeof(TEntity), typeof(TDocument)))
+        {
+            //The composite is what IShiftMapper resolves to with several mappers registered; naming each of them is
+            //what tells the host which mapper it expected the pair on.
+            var registered = mapper is CompositeShiftMapper composite
+                ? composite.Mappers.Select(x => x.GetType().Name).ToList()
+                : [mapper.GetType().Name];
+
+            throw new InvalidOperationException(
+                $"Replication {operation} passes no mapping delegate and none of the {registered.Count} registered " +
+                $"ShiftMapper mapper(s) ({string.Join(", ", registered)}) declares a map {pair}. Add " +
+                $"CreateMap<{typeof(TEntity).Name}, {typeof(TDocument).Name}>() to the mapper (or include a mapper " +
+                "that declares it), or pass the mapping delegate explicitly.");
+        }
 
         return mapper;
     }
