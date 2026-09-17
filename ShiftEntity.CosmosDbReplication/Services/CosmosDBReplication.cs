@@ -82,7 +82,7 @@ public class CosmosDbReplicationOperation<DB, Entity>
     /// <param name="containerId"></param>
     /// <param name="mapping">
     /// Projects the entity into the Cosmos document. Optional: when omitted, the document is mapped through the
-    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>), which must declare
     /// <c>CreateMap&lt;Entity, CosmosDBItem&gt;()</c>. No registered mapper, or none declaring the pair, throws out of
     /// <see cref="CosmosDbReferenceOperation{DB, Entity}.RunAsync"/> before any row is touched.
     /// </param>
@@ -161,7 +161,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// <param name="containerId"></param>
     /// <param name="mapping">
     /// Projects the entity into the Cosmos document. Optional: when omitted, the document is mapped through the
-    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>).
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>).
     /// </param>
     /// <returns></returns>
     internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
@@ -266,7 +266,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     /// <param name="mapping">
     /// Builds the embedded reference document from the entity. Optional: when omitted, it is mapped through the
-    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>), which must declare
+    /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>), which must declare
     /// <c>CreateMap&lt;Entity, CosmosDBItemReference&gt;()</c>.
     /// </param>
     public CosmosDbReferenceOperation<DB, Entity> UpdatePropertyReference<CosmosDBItemReference, DestinationContainer>(
@@ -332,7 +332,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     /// <param name="mapping">
     /// Merges the entity ONTO the stored document and returns what to write. Optional: when omitted, the host's
-    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IShiftMapper"/>) copies the entity onto the stored
+    /// registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>) copies the entity onto the stored
     /// document through its <c>CreateMap&lt;Entity, CosmosDBItem&gt;()</c>; a member that map ignores — typically
     /// the partition key — survives the merge.
     /// </param>
