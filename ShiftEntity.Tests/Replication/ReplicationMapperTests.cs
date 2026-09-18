@@ -48,6 +48,8 @@ public class ReplicationMapperTests
         }
 
         public IQueryable<TDestination> ProjectTo<TSource, TDestination>(IQueryable<TSource> source) => throw new NotSupportedException();
+
+        public void Configure(ShiftMapperConfigurationSurface surface) => throw new NotSupportedException();
     }
 
     /// <summary>What the helper sees in the container: nothing, or the one <see cref="IMapper"/> door.</summary>
