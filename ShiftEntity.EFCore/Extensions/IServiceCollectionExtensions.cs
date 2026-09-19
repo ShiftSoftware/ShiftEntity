@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
+using ShiftSoftware.ShiftEntity.Core.Mapping;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.TypeAuth.Core.Actions;
@@ -219,6 +221,25 @@ public static class IServiceCollectionExtensions
                 }
             }
         }
+
+        // ShiftMapper. This call, made FROM this assembly, registers ShiftEntity.EFCore's own generated mapper
+        // (the framework pairs in Tagging/ShiftEntityFrameworkMaps.cs) and SHARES the rules pack with every
+        // project that registers — an inline lambda on purpose, since the registering assembly is the lambda's.
+        // Then the generated mapper of every assembly scanned (the data projects, whose builds declared the
+        // repository maps through the markers on ShiftRepository<,,,> and the endpoint attributes), so a host
+        // that hands its data assembly here has its maps registered with no line of its own; a host that also
+        // calls AddShiftMapper() itself adds its own generated mapper, which answers first. Every call lands in
+        // ShiftMapper's one registry; a repeat is a no-op there.
+        services.AddShiftMapper(o => o.ShareConversions<ShiftEntityConversions>());
+
+        foreach (var assembly in assemblies ?? [Assembly.GetEntryAssembly()!])
+            services.AddShiftMapper(assembly);
+
+        // What a ShiftMapper map runs under (Insert/Update during a write), and how ShiftMapper reaches a
+        // repository's Mapping(...) configuration when a customized map is used before that repository ran.
+        services.TryAddScoped<ShiftEntityMappingContext>();
+        services.TryAddScoped<IShiftEntityMappingContext>(sp => sp.GetRequiredService<ShiftEntityMappingContext>());
+        services.TryAddSingleton<IShiftMapperConfiguratorResolver, ShiftEntityConfiguratorResolver>();
 
         // Validate the mapping layer once, at startup, with the complete picture — instead of discovering each
         // gap as a 500 on whichever endpoint a user opens first. Deferred behind a startup filter because the

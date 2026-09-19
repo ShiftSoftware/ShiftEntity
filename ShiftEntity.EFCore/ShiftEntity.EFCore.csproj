@@ -36,6 +36,11 @@
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
+		<!-- ShiftMapper: the repository's mapping door (Mapping/ShiftMapperEntityMapper.cs), the marker on
+		     ShiftRepository<,,,> that declares each repository's maps in the consumer's build, the framework's own
+		     pairs (Tagging/ShiftEntityFrameworkMaps.cs) and the registration RegisterShiftRepositories makes. Its
+		     generator MUST run on this assembly, for the same reason as in ShiftEntity.Core. Same reference pattern. -->
+		<PackageReference Include="ShiftSoftware.ShiftMapper" Version="$(ShiftMapperVersion)" Condition="!Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -49,6 +54,8 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
+		<ProjectReference Include="..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj" Condition="Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
+		<ProjectReference Include="..\..\ShiftMapper\ShiftMapper.Generator\ShiftMapper.Generator.csproj" Condition="Exists('..\..\ShiftMapper\ShiftMapper.Generator\ShiftMapper.Generator.csproj')" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 
 </Project>

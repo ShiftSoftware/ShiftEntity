@@ -165,7 +165,9 @@ public static class MappingHelpers
     // ShiftEntityCrudHandler catches ShiftEntityException around the upsert and emits the same
     // "Model Validation Error" shape the MVC ModelState path produces, so a bad FK reads like any other field
     // error instead of a server fault. `For` is what a form binds an inline error to, hence the trimmed member.
-    private static ShiftEntityException InvalidForeignKey(string? member, string? value)
+    // Internal: the ShiftMapper rules pack (Mapping/ShiftEntityConversions.cs) throws the same shape for the same
+    // mistake arriving through a ShiftMapper map.
+    internal static ShiftEntityException InvalidForeignKey(string? member, string? value)
     {
         var field = string.IsNullOrWhiteSpace(member)
             ? null

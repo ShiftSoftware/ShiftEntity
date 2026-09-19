@@ -119,6 +119,38 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
+    /// What <see cref="Mapping"/> was given, run by the repository into a <see cref="ShiftEntityMapping{EntityType, ListDTO, ViewAndUpsertDTO}"/>
+    /// and handed to the host's <c>IMapper</c> when the repository is constructed. Null when nothing was configured.
+    /// </summary>
+    internal Action<ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>>? MappingConfiguration { get; private set; }
+
+    /// <summary>
+    /// Customizes the repository's AUTOMATIC maps — the four ShiftMapper declares for this triple from the
+    /// repository's type arguments (entity ↔ view, entity → list, entity → entity) — member by member, in the
+    /// ShiftMapper vocabulary:
+    /// <code>
+    /// o.Mapping(m =&gt; m.List.ForMember(d =&gt; d.Total, opt =&gt; opt.MapFrom(i =&gt; i.Lines.Sum(l =&gt; l.Amount))));
+    /// o.Mapping(m =&gt; m.View.ForMember(d =&gt; d.Secret, opt =&gt; opt.Ignore()));
+    /// </code>
+    /// The lambda is read at BUILD time by the ShiftMapper generator for its shape — which members are customized
+    /// — and baked into the maps; its value delegates stay at run time and reach the mapper through this
+    /// repository. Write it as plain statements: a call behind an <c>if</c> or a loop is refused by the build
+    /// (SM0035), and the condition belongs inside the value. Maps customized here are still ordinary maps any
+    /// service can run through <c>Mapper</c>; a <c>CreateMap</c> for the same pair in a mapper class replaces the
+    /// automatic map, this configuration included (SM0047, then SM0052 if the configuration is left behind).
+    /// Two repositories configuring one pair is a build error (SM0050).
+    /// </summary>
+    public void Mapping(Action<ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>> configure)
+    {
+        if (configure is null)
+            throw new ArgumentNullException(nameof(configure));
+
+        this.MappingConfiguration = this.MappingConfiguration is { } existing
+            ? surface => { existing(surface); configure(surface); }
+            : configure;
+    }
+
+    /// <summary>
     /// Declares the entity's v2 data-level access dimensions (see <see cref="DataLevelAccessBuilder{TEntity}"/>:
     /// <c>On(action).Key/Keys/Match</c>, <c>OnOwner(claim)</c>, <c>Unscoped()</c>; dimensions AND-compose, a
     /// dimension's key columns are OR-internal) and compiles them into <see cref="DataLevelAccessPolicy"/>.

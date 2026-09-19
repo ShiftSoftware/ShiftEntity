@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
 using System;
 using System.Collections.Generic;
@@ -35,15 +36,34 @@ public static class ShiftEntityMapperValidation
 
         var problems = new List<string>();
 
+        // ShiftMapper's answer for the triples nothing else covers. Built from the registrations alone — the
+        // generated mappers are parameterless and the question is type-level (CanMap), so no provider is booted
+        // — and only when a triple asks: the registry lookup above it answers first.
+        IMapper? shiftMapper = null;
+        bool shiftMapperBuilt = false;
+
+        IMapper? ShiftMapper()
+        {
+            if (!shiftMapperBuilt)
+            {
+                shiftMapperBuilt = true;
+                shiftMapper = BuildShiftMapper(services);
+            }
+
+            return shiftMapper;
+        }
+
         // ── uncovered triples ─────────────────────────────────────────────────────────────────────────────
         foreach (var (triple, repository) in DiscoverTriples(assemblies))
         {
-            if (ResolvesAMapper(services, triple, repository)) continue;
+            if (ResolvesAMapper(services, triple, repository, ShiftMapper)) continue;
 
             problems.Add(
                 $"  ({triple.Entity.Name}, {triple.ListDto.Name}, {triple.ViewDto.Name}) — no mapper. " +
-                "Add a [ShiftEntityMapper] partial class, call UseMapper/UseGeneratedMapper in the " +
-                "repository, or override the mapping methods.");
+                "Check that the assembly declaring the repository (or the [ShiftEntityEndpoint] entity) is " +
+                "passed to RegisterShiftRepositories or that the host calls AddShiftMapper(), so its generated " +
+                "ShiftMapper maps are registered; or add a [ShiftEntityMapper] partial class, call " +
+                "UseMapper/UseGeneratedMapper in the repository, or override the mapping methods.");
         }
 
         // ── registry conflicts ────────────────────────────────────────────────────────────────────────────
@@ -75,9 +95,10 @@ public static class ShiftEntityMapperValidation
 
     /// <summary>
     /// A triple counts as covered by ANY of: an explicit DI registration, a source-generated mapper in the
-    /// registry, or a repository that overrides the mapping methods itself.
+    /// registry, the host's ShiftMapper declaring all four of its maps, or a repository that overrides the
+    /// mapping methods itself.
     /// </summary>
-    private static bool ResolvesAMapper(IServiceCollection services, MapperTriple triple, Type? repository)
+    private static bool ResolvesAMapper(IServiceCollection services, MapperTriple triple, Type? repository, Func<IMapper?> shiftMapper)
     {
         var mapperInterface = typeof(IShiftEntityMapper<,,>)
             .MakeGenericType(triple.Entity, triple.ListDto, triple.ViewDto);
@@ -88,10 +109,37 @@ public static class ShiftEntityMapperValidation
         if (ShiftEntityMapperRegistry.Find(triple.Entity, triple.ListDto, triple.ViewDto) is not null)
             return true;
 
+        if (shiftMapper() is { } mapper
+            && mapper.CanMap(triple.Entity, triple.ViewDto)
+            && mapper.CanMap(triple.ViewDto, triple.Entity)
+            && mapper.CanMap(triple.Entity, triple.ListDto)
+            && mapper.CanMap(triple.Entity, triple.Entity))
+        {
+            return true;
+        }
+
         // The override test must be DeclaringType-based. Asking "does this type have a MapToView?" is true for
         // every repository, since ShiftRepository declares all four — so a naive check passes everything and
         // validates nothing.
         return repository is not null && OverridesAMappingMethod(repository);
+    }
+
+    /// <summary>
+    /// A <see cref="Mapper"/> over the generated mappers the collection registers — the same ones the host's
+    /// <c>IMapper</c> dispatches over, built without the host: each generated mapper is constructed
+    /// parameterless, which is enough to answer <c>CanMap</c>. Null when nothing is registered.
+    /// </summary>
+    private static IMapper? BuildShiftMapper(IServiceCollection services)
+    {
+        var generated = services
+            .Select(d => d.ServiceType)
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(ShiftMapperBase).IsAssignableFrom(t)
+                        && Mapper.GeneratedIn(t.Assembly) == t)
+            .Select(t => t.Assembly)
+            .Distinct()
+            .ToArray();
+
+        return generated.Length == 0 ? null : Mapper.Create(generated);
     }
 
     private static readonly string[] MappingMethods = { "MapToView", "MapToEntity", "MapToList", "CopyEntity" };

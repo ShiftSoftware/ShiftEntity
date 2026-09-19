@@ -1,3 +1,5 @@
+using ShiftMapper;
+using ShiftSoftware.ShiftEntity.Core.Mapping;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using System;
 
@@ -77,7 +79,19 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
 /// <summary>
 /// Anonymous CRUD endpoints over the framework's built-in repository (source-generated mapping).
 /// </summary>
+/// <remarks>
+/// The <c>ShiftMapperDeclaresMap</c> markers declare the endpoint's maps in the ENTITY's own build: the
+/// ShiftMapper generator compiling the data project reads them off this attribute, substitutes the entity the
+/// attribute is applied to for <c>this</c> and the type arguments for <c>TViewDTO</c>/<c>TListDTO</c>, and
+/// generates entity ↔ view, entity → list and entity → entity into that project's mapper, with the framework's
+/// rules pack and nested children ten levels deep. Nothing for the programmer to write; a <c>CreateMap</c> for
+/// the same pair anywhere in the project replaces the map. Not on the <c>WithMapper</c> variants, whose
+/// mapping is the hand-written mapper, nor on the custom-repository ones, whose repository declares its own.
+/// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, nameof(TViewDTO), Reverse = true, Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, nameof(TListDTO), Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, ShiftMapperDeclaresMapAttribute.This, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
 public sealed class ShiftEntityEndpointAttribute<TListDTO, TViewDTO> : ShiftEntityEndpointAttributeBase
     where TListDTO : ShiftEntityDTOBase
     where TViewDTO : ShiftEntityViewAndUpsertDTO
@@ -131,9 +145,13 @@ public sealed class ShiftEntityEndpointWithMapperAttribute<TListDTO, TViewDTO, T
 /// <summary>
 /// Secure CRUD endpoints (RequireAuthorization + per-verb TypeAuth using the
 /// <paramref name="actionName"/> node on <typeparamref name="TActionTree"/>) over the built-in
-/// repository (source-generated mapping).
+/// repository (source-generated mapping). Declares its maps through the same markers as
+/// <see cref="ShiftEntityEndpointAttribute{TListDTO, TViewDTO}"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, nameof(TViewDTO), Reverse = true, Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, nameof(TListDTO), Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
+[ShiftMapperDeclaresMap(ShiftMapperDeclaresMapAttribute.This, ShiftMapperDeclaresMapAttribute.This, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
 public sealed class ShiftEntitySecureEndpointAttribute<TListDTO, TViewDTO, TActionTree> : ShiftEntityEndpointAttributeBase
     where TListDTO : ShiftEntityDTOBase
     where TViewDTO : ShiftEntityViewAndUpsertDTO

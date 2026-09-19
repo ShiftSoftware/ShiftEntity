@@ -30,13 +30,22 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+		<!-- 10.0.11, not 10.0.10: ShiftMapper pins 10.0.11, and a direct reference below a transitive one is NU1605. -->
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
 		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.1" />
 		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.10" />
 		<PackageReference Include="Microsoft.OData.Core" Version="8.4.3" />
 		<PackageReference Include="Microsoft.OData.Edm" Version="8.4.3" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.Core" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj')" />
+		<!-- ShiftMapper carries the repository mapping rules (Mapping/ShiftEntityConversions.cs) and the markers on
+		     the endpoint attributes (Endpoints/ShiftEntityEndpointAttributes.cs) that declare each endpoint's maps in
+		     the consumer's build. Its generator MUST run on this assembly: a consumer's generator sees this package as
+		     metadata, so the pack's rules reach it only as the declaration attributes this project's own build writes
+		     (SM0028 otherwise). Referenced the way every sibling is — the project when the ShiftMapper repo is cloned
+		     beside this one, the package at $(ShiftMapperVersion) (ShiftFrameworkGlobalSettings.props) otherwise; the
+		     package ships the generator as an analyzer, dev mode wires it as a project below. -->
+		<PackageReference Include="ShiftSoftware.ShiftMapper" Version="$(ShiftMapperVersion)" Condition="!Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
 		<None Include="Images\icon.png" Pack="true" PackagePath="\" />
 		<Folder Include="Images\" />
 	</ItemGroup>
@@ -44,11 +53,15 @@
 	<ItemGroup>
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.EFCore" />
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
+		<!-- The rules pack's converters (Mapping/ShiftEntityConversions.cs) are pinned by ShiftEntity.Tests. -->
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 		<ProjectReference Include="..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj" Condition="Exists('..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj')" />
+		<ProjectReference Include="..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj" Condition="Exists('..\..\ShiftMapper\ShiftMapper\ShiftMapper.csproj')" />
+		<ProjectReference Include="..\..\ShiftMapper\ShiftMapper.Generator\ShiftMapper.Generator.csproj" Condition="Exists('..\..\ShiftMapper\ShiftMapper.Generator\ShiftMapper.Generator.csproj')" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 
 	<!-- The mapping source generator ships inside this package as an analyzer, so consumers get it
