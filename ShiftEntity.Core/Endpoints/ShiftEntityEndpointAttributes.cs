@@ -59,13 +59,13 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
     public virtual Type? MapperType => null;
 
     /// <summary>
-    /// When true, discovery resolves the SOURCE-GENERATED mapper for this endpoint's (entity, list, view)
-    /// triple up front and hands it to the built-in repository, failing at startup when the registry holds
-    /// none. The built-in repository already falls back to the generated mapper on its own, so this is the
-    /// explicit, fail-loud form of the same choice rather than a switch away from some other default.
-    /// Not valid on the <c>WithMapper</c> variants (the mapper is already explicit) or the
-    /// custom-repository variants (a custom repository does its own mapping).
+    /// <b>Obsolete — the OLD generated mapping.</b> When true, discovery resolves the mapper
+    /// <c>ShiftEntity.SourceGenerator</c> wrote for this endpoint's (entity, list, view) triple and hands it to
+    /// the built-in repository, ahead of the ShiftMapper maps the attribute itself declares. Kept for one release
+    /// so a project migrates at its own pace: remove the property — the endpoint's maps are ShiftMapper's now,
+    /// with nothing to opt into.
     /// </summary>
+    [Obsolete("The endpoint's maps are declared by ShiftMapper now; remove this property. Removed in the next release.")]
     public bool UseGeneratedMapper { get; set; }
 
     protected ShiftEntityEndpointAttributeBase(string route)

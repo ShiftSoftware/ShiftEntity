@@ -17,8 +17,8 @@ namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 
 /// <summary>
 /// The repository's door onto ShiftMapper — Stage 2 of <c>docs/plans/repository-mapping-on-shiftmapper</c>
-/// (ShiftTemplates): resolved BEHIND the registry when the host's <see cref="IMapper"/> declares all four maps of
-/// the triple, the <c>Mapping(...)</c> configuration handed to it on construction, the action published around a
+/// (ShiftTemplates): resolved AHEAD of the old registry when the host's <see cref="IMapper"/> declares all four maps
+/// of the triple (Stage 3 flipped the order), the <c>Mapping(...)</c> configuration handed to it on construction, the action published around a
 /// write, and a value ShiftMapper cannot convert answered as a 400 naming the field rather than a 500.
 /// <para>
 /// Over a hand-written <see cref="IMapper"/> double: what is under test is the repository's resolution and the
@@ -134,20 +134,34 @@ public class ShiftMapperResolutionTests
         Assert.Null(Repo(scope).ShiftRepositoryOptions.Mapper);
     }
 
-    /// <summary>Stage 2 order: the old generated mapper still wins; Stage 3 flips it.</summary>
+    /// <summary>
+    /// Stage 3 order: ShiftMapper is the default and the old generated mapper is the fallback — a triple the
+    /// registry covers still resolves the registry's mapper when ShiftMapper declares nothing for it (a project
+    /// mid-migration), and ShiftMapper's when it does.
+    /// </summary>
     [Fact]
-    public void TheRegistryMapper_StillWinsOverShiftMapper()
+    public void ShiftMapper_WinsOverTheRegistry_WhichStaysTheFallback()
     {
         ShiftEntityMapperRegistry.Register(
             typeof(OrderEntity), typeof(RegistryOrderDTO), typeof(RegistryOrderDTO), typeof(RegistryOnlyMapper));
 
-        using var provider = Host(new FakeMapper(AllFour<RegistryOrderDTO>()));
-        using var scope = provider.CreateScope();
+        using (var provider = Host(new FakeMapper(AllFour<RegistryOrderDTO>())))
+        using (var scope = provider.CreateScope())
+        {
+            var repo = new ShiftRepository<OrderingDbContext, OrderEntity, RegistryOrderDTO, RegistryOrderDTO>(
+                scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
 
-        var repo = new ShiftRepository<OrderingDbContext, OrderEntity, RegistryOrderDTO, RegistryOrderDTO>(
-            scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
+            Assert.IsType<ShiftMapperEntityMapper<OrderEntity, RegistryOrderDTO, RegistryOrderDTO>>(repo.ShiftRepositoryOptions.Mapper);
+        }
 
-        Assert.IsType<RegistryOnlyMapper>(repo.ShiftRepositoryOptions.Mapper);
+        using (var provider = Host(new FakeMapper()))
+        using (var scope = provider.CreateScope())
+        {
+            var repo = new ShiftRepository<OrderingDbContext, OrderEntity, RegistryOrderDTO, RegistryOrderDTO>(
+                scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
+
+            Assert.IsType<RegistryOnlyMapper>(repo.ShiftRepositoryOptions.Mapper);
+        }
     }
 
     /// <summary>

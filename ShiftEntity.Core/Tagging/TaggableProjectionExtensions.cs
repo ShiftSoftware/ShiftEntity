@@ -25,6 +25,13 @@ public static class TaggableProjectionExtensions
     /// </para>
     /// </summary>
     /// <param name="projection">A member-initializer projection: <c>e =&gt; new TListDTO { … }</c>.</param>
+    /// <remarks>
+    /// <b>Obsolete.</b> A list map declared by ShiftMapper projects <c>Tags</c> on its own through the framework's
+    /// <c>Tag → TagDTO</c> map; a hand-written <c>MapToList</c> writes the binding itself —
+    /// <c>Tags = e.Tags.Select(t =&gt; new TagDTO { … }).ToList()</c> — or maps through <c>IMapper</c>. Behaviour
+    /// unchanged for one release.
+    /// </remarks>
+    [Obsolete("A ShiftMapper list map projects Tags on its own; a hand-written MapToList writes `Tags = e.Tags.Select(t => new TagDTO { ... }).ToList()` itself. Removed in the next release.")]
     public static IQueryable<TListDTO> SelectWithTags<TEntity, TListDTO>(
         this IQueryable<TEntity> source,
         Expression<Func<TEntity, TListDTO>> projection)

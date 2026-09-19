@@ -100,7 +100,9 @@ public static class ShiftEntityEndpointDiscovery
 
         var mapper = attr.MapperType;
 
+#pragma warning disable CS0618 // the old door, honoured for one release
         if (attr.UseGeneratedMapper)
+#pragma warning restore CS0618
         {
             if (mapper is not null)
                 throw new InvalidOperationException(

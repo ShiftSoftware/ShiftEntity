@@ -54,7 +54,9 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     /// <see cref="UseGeneratedMapper"/>, the repository resolves one itself, in this order:
     /// <list type="number">
     ///   <item>an <c>IShiftEntityMapper&lt;EntityType, ListDTO, ViewAndUpsertDTO&gt;</c> registered in DI;</item>
-    ///   <item>the SOURCE-GENERATED mapper for the triple, from <see cref="ShiftEntityMapperRegistry"/>.</item>
+    ///   <item>the host's ShiftMapper, whose generated mapper declares this triple's four maps automatically
+    ///   (customized with <see cref="Mapping"/>) — the default;</item>
+    ///   <item>for one release, the OLD source-generated mapper from <see cref="ShiftEntityMapperRegistry"/>.</item>
     /// </list>
     /// There is no further fallback: when neither covers the triple this stays <see langword="null"/> and the
     /// repository's mapping methods throw unless it overrides them. That case is caught at startup by
@@ -81,11 +83,12 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
-    /// Uses the SOURCE-GENERATED mapper for this repository's (entity, list, view) triple, explicitly and
-    /// ahead of any <c>IShiftEntityMapper</c> registered in DI for the same triple. Mappers are generated
-    /// automatically for every triple the source generator discovers (repository declarations and endpoint
-    /// attributes) and registered in <see cref="ShiftEntityMapperRegistry"/> at module load — no mapper class
-    /// is declared by hand.
+    /// <b>Obsolete — the OLD generated mapping.</b> Uses the mapper <c>ShiftEntity.SourceGenerator</c> wrote for
+    /// this repository's (entity, list, view) triple, from <see cref="ShiftEntityMapperRegistry"/>, ahead of the
+    /// ShiftMapper maps the repository resolves by default. Kept for one release so a project migrates at its
+    /// own pace: delete the call (the automatic maps are ShiftMapper's now) and move what the lambda configured
+    /// into <see cref="Mapping"/> — the migration guide in ShiftTemplates
+    /// (<c>docs/plans/repository-mapping-on-shiftmapper/04-migration-guide.md</c>) has the line-for-line table.
     /// </summary>
     /// <param name="configure">
     /// Optional per-property customization (<c>ForView</c>/<c>ForList</c>/<c>ForEntity</c>/<c>ForCopy</c>).
@@ -94,6 +97,7 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     /// convention for it. For triple-wide customization, declare a <c>[ShiftEntityMapper]</c> partial
     /// class and implement <c>Configure</c> there instead.
     /// </param>
+    [Obsolete("The repository's maps are declared by ShiftMapper now. Delete this call; move the lambda's lines into Mapping(m => ...) — see docs/plans/repository-mapping-on-shiftmapper/04-migration-guide.md in ShiftTemplates. Removed in the next release.")]
     public void UseGeneratedMapper(Action<ShiftMapperBuilder<EntityType, ListDTO, ViewAndUpsertDTO>>? configure = null)
     {
         var mapperType = ShiftEntityMapperRegistry.Find(typeof(EntityType), typeof(ListDTO), typeof(ViewAndUpsertDTO))
