@@ -61,6 +61,10 @@ public sealed class ShiftRepositoryConfigurationContext<TEntity, TListDTO, TView
         Options = options;
     }
 
-    /// <summary>The repository options to configure — includes, mapping (<c>Mapping(...)</c>/<c>UseMapper</c>), filters, data-level access, ….</summary>
+    /// <summary>
+    /// The repository options to configure — includes, the mapper (<c>UseMapper</c>) or how deep the automatic
+    /// maps nest (<c>Mapping(m =&gt; m.Nested(n))</c>), filters, data-level access, …. What a member maps from is
+    /// not configured here: that is a <c>CreateMap</c> in a mapper class.
+    /// </summary>
     public ShiftRepositoryOptions<TEntity, TListDTO, TViewDTO> Options { get; }
 }

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection.Extensions;
+﻿using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
@@ -235,11 +235,9 @@ public static class IServiceCollectionExtensions
         foreach (var assembly in assemblies ?? [Assembly.GetEntryAssembly()!])
             services.AddShiftMapper(assembly);
 
-        // What a ShiftMapper map runs under (Insert/Update during a write), and how ShiftMapper reaches a
-        // repository's Mapping(...) configuration when a customized map is used before that repository ran.
+        // What a ShiftMapper map runs under (Insert/Update during a write), for a mapper class that needs to know.
         services.TryAddScoped<ShiftEntityMappingContext>();
         services.TryAddScoped<IShiftEntityMappingContext>(sp => sp.GetRequiredService<ShiftEntityMappingContext>());
-        services.TryAddSingleton<IShiftMapperConfiguratorResolver, ShiftEntityConfiguratorResolver>();
 
         // Validate the mapping layer once, at startup, with the complete picture — instead of discovering each
         // gap as a 500 on whichever endpoint a user opens first. Deferred behind a startup filter because the

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -18,9 +18,10 @@ namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 /// <summary>
 /// The repository's door onto ShiftMapper — <c>docs/plans/repository-mapping-on-shiftmapper</c> (ShiftTemplates):
 /// resolved when the host's <see cref="IMapper"/> declares all four maps of the triple (behind a DI-registered
-/// <c>IShiftEntityMapper</c>, ahead of nothing — there is no other fallback), the <c>Mapping(...)</c> configuration
-/// handed to it on construction, the action published around a write, and a value ShiftMapper cannot convert
-/// answered as a 400 naming the field rather than a 500.
+/// <c>IShiftEntityMapper</c>, ahead of nothing — there is no other fallback), the <c>Mapping(...)</c> call recording
+/// the nesting depth and handing the mapper NOTHING (a member customization is a mapper class's, not the
+/// repository's), the action published around a write, and a value ShiftMapper cannot convert answered as a 400
+/// naming the field rather than a 500.
 /// <para>
 /// Over a hand-written <see cref="IMapper"/> double: what is under test is the repository's resolution and the
 /// adapter, not ShiftMapper's generated code, which the sample's end-to-end suites exercise.
@@ -149,12 +150,27 @@ public class ShiftMapperResolutionTests
     }
 
     /// <summary>
-    /// The <c>Mapping(...)</c> lambda is run into a surface and handed to the mapper when the repository is
-    /// constructed — whichever mapper ends up serving the repository — so a customized member's value is in the
-    /// store before any service maps the pair.
+    /// <c>Mapping(...)</c> is the repository's ONE word about its maps — how deep they nest — and the generator
+    /// reads that at build time. At run time the call records the depth on the options and hands the mapper
+    /// nothing: there is no per-repository configuration to apply, because what a member maps from is written
+    /// in a mapper class, never in the repository.
     /// </summary>
     [Fact]
-    public void TheMappingConfiguration_ReachesTheMapperOnConstruction()
+    public void Mapping_RecordsTheNestedDepth_AndHandsTheMapperNothing()
+    {
+        var mapper = new FakeMapper(AllFour<AutoOrderDTO>());
+
+        using var provider = Host(mapper);
+        using var scope = provider.CreateScope();
+
+        var repo = Repo(scope, o => o.Mapping(m => m.Nested(2)));
+
+        Assert.Equal(2, repo.ShiftRepositoryOptions.NestedMappingDepth);
+        Assert.Empty(mapper.Configured);
+    }
+
+    [Fact]
+    public void Mapping_WithoutNested_LeavesTheDefaultDepth()
     {
         var mapper = new FakeMapper(AllFour<AutoOrderDTO>());
         var ran = false;
@@ -162,14 +178,14 @@ public class ShiftMapperResolutionTests
         using var provider = Host(mapper);
         using var scope = provider.CreateScope();
 
-        Repo(scope, o => o.Mapping(m => { ran = true; _ = m.List; }));
+        var repo = Repo(scope, o => o.Mapping(_ => ran = true));
 
         Assert.True(ran);
-        Assert.IsType<ShiftEntityMapping<OrderEntity, AutoOrderDTO, AutoOrderDTO>>(Assert.Single(mapper.Configured));
+        Assert.Null(repo.ShiftRepositoryOptions.NestedMappingDepth);
     }
 
     [Fact]
-    public void TwoMappingCalls_BothRun_InOrder()
+    public void TwoMappingCalls_BothRun_TheLastDepthWins()
     {
         var mapper = new FakeMapper(AllFour<AutoOrderDTO>());
         var order = new List<string>();
@@ -177,14 +193,14 @@ public class ShiftMapperResolutionTests
         using var provider = Host(mapper);
         using var scope = provider.CreateScope();
 
-        Repo(scope, o =>
+        var repo = Repo(scope, o =>
         {
-            o.Mapping(_ => order.Add("first"));
-            o.Mapping(_ => order.Add("second"));
+            o.Mapping(m => { order.Add("first"); m.Nested(3); });
+            o.Mapping(m => { order.Add("second"); m.Nested(1); });
         });
 
         Assert.Equal(new[] { "first", "second" }, order);
-        Assert.Single(mapper.Configured);
+        Assert.Equal(1, repo.ShiftRepositoryOptions.NestedMappingDepth);
     }
 
     /// <summary>

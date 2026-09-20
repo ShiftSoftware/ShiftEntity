@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -29,9 +29,11 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 /// it — <c>InvoiceRepository : ShiftRepository&lt;DB, Invoice, InvoiceListDTO, InvoiceDTO&gt;</c> — substitutes the
 /// type arguments, and generates entity ↔ view, entity → list and entity → entity into that project's mapper,
 /// with the framework's rules pack (<c>ShiftEntityConversions</c>) and nested children ten levels deep. Nothing
-/// for the programmer to write; <c>o.Mapping(m =&gt; …)</c> customizes them, and a <c>CreateMap</c> for the same
-/// pair in a mapper class replaces one. The copy map nests nothing: <c>CopyEntity</c> refreshes a tracked row's
-/// scalars and navigation REFERENCES from a fresh load, as the shallow copy it replaces did.
+/// for the programmer to write. The repository says only how DEEP they nest (<c>o.Mapping(m =&gt; m.Nested(n))</c>);
+/// what a member maps from is a mapper class's business — a <c>CreateMap</c> for the same pair in an ordinary
+/// <c>ShiftMapperBase</c> class replaces the automatic map for that pair. The copy map nests nothing:
+/// <c>CopyEntity</c> refreshes a tracked row's scalars and navigation REFERENCES from a fresh load, as the
+/// shallow copy it replaces did.
 /// </remarks>
 [ShiftMapperDeclaresMap(nameof(EntityType), nameof(ViewAndUpsertDTO), Reverse = true, Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
 [ShiftMapperDeclaresMap(nameof(EntityType), nameof(ListDTO), Nested = 10, Flattening = DeclaredOption.False, Rules = typeof(ShiftEntityConversions))]
@@ -157,26 +159,15 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         //      absent — no exception on the common no-mapper path).
         //   2. The host's ShiftMapper, when its generated mapper declares all four maps of the triple — the
         //      maps the markers on this class and on the endpoint attributes declare in the data project's
-        //      build, customized by Mapping(...) or replaced by a CreateMap in a mapper class. THE DEFAULT
-        //      (docs/plans/repository-mapping-on-shiftmapper in ShiftTemplates).
+        //      build, each replaceable by a CreateMap in a mapper class. THE DEFAULT
+        //      (docs/plans/repository-mapping-on-shiftmapper in ShiftTemplates). Nothing of the repository's
+        //      reaches those maps at run time: Mapping(...) only caps the nesting depth, and the generator read
+        //      that at build time.
         //   3. Nothing — the mapping methods then throw "No mapper configured" unless overridden. There is no
         //      fallback behind this: a triple nothing covers is a startup error (ShiftEntityMapperValidation),
         //      not a request-time surprise.
         // A ShiftRepository also implements IShiftEntityMapper<…>, so any repository resolution is ignored
         // to avoid a repository being used as its own (recursive) mapper.
-        // The repository's Mapping(...) configuration reaches ShiftMapper HERE, whichever mapper ends up serving
-        // the repository: the maps it customizes are ordinary maps in the host's generated mapper, usable from
-        // any service, and a customized member's value has to be in the mapper's store before anything runs
-        // them. Constructing the repository is also how ShiftMapper pulls a configuration it meets before any
-        // repository ran (ShiftEntityConfiguratorResolver), so this must not depend on which mapper wins below.
-        if (this.ShiftRepositoryOptions.MappingConfiguration is { } configureMapping
-            && MapperServiceProvider.GetService<IMapper>() is { } configuredMapper)
-        {
-            var surface = new ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>();
-            configureMapping(surface);
-            configuredMapper.Configure(surface);
-        }
-
         if (!this.ShiftRepositoryOptions.MapperConfigured)
         {
             var diMapper = MapperServiceProvider.GetService<IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>>();

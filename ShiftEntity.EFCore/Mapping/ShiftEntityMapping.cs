@@ -1,40 +1,42 @@
 using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Model.Dtos;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
 /// <summary>
-/// Where a repository customizes its automatic maps — the argument of
-/// <see cref="ShiftRepositoryOptions{EntityType, ListDTO, ViewAndUpsertDTO}.Mapping"/>.
+/// The argument of <see cref="ShiftRepositoryOptions{EntityType, ListDTO, ViewAndUpsertDTO}.Mapping"/>: what a
+/// repository says about the automatic maps ShiftMapper declares for its triple. That is ONE thing — how deep
+/// the child maps below them are declared:
 ///
 /// <code>
-/// o.Mapping(m =&gt; m.List.ForMember(d =&gt; d.Total, opt =&gt; opt.MapFrom(i =&gt; i.Lines.Sum(l =&gt; l.Amount))));
-/// o.Mapping(m =&gt; m.View.ForMember(d =&gt; d.Secret, opt =&gt; opt.Ignore()));
+/// o.Mapping(m =&gt; m.Nested(2));   // the lines and their product; nothing below that
 /// </code>
 ///
-/// <para>Four handles, one per map the repository declares, each the same <see cref="MapExpression{TSource, TDestination}"/>
-/// a <c>CreateMap</c> returns — <c>ForMember</c>, <c>MapFrom</c>, <c>Ignore</c>, <c>AfterMap</c>, the ShiftMapper
-/// vocabulary. The generator reads the lambda for its SHAPE and bakes it into the repository's implicit maps at
-/// build time; the value delegates stay at run time in this surface, which the repository hands to the mapper
-/// (<see cref="IMapper.Configure"/>) when it is constructed — and which the mapper pulls in by constructing the
-/// repository from DI when a customized map is used before any repository ran.</para>
+/// <para>Nothing else is configured here, on purpose. WHAT a member maps from is not the repository's
+/// business: a member customization is an ordinary <c>CreateMap</c> in a <see cref="ShiftMapperBase"/> class,
+/// which replaces the automatic map for that pair (SM0047, informational) and is the map any service uses for
+/// the pair as well. The repository decides how far the automatic declaration reaches; a mapper class decides
+/// what a map does.</para>
 ///
-/// <para><see cref="ShiftMapperConfigurationSurface.Nested"/> caps how deep the child maps below these go
-/// (default 10).</para>
+/// <para><see cref="Nested"/> is read at BUILD time by the ShiftMapper generator — so the depth is a constant
+/// and the call a plain statement of the lambda (SM0035 otherwise) — and baked into the maps the closing type
+/// declares; the framework's default is 10. At run time the surface only records what was asked, on
+/// <see cref="ShiftRepositoryOptions{EntityType, ListDTO, ViewAndUpsertDTO}.NestedMappingDepth"/>.</para>
 /// </summary>
 public sealed class ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO> : ShiftMapperConfigurationSurface
     where EntityType : ShiftEntity<EntityType>
 {
-    /// <summary>Entity → view DTO: what <c>MapToView</c> runs.</summary>
-    public MapExpression<EntityType, ViewAndUpsertDTO> View => Map<EntityType, ViewAndUpsertDTO>();
+    /// <summary>The depth <see cref="Nested"/> was given, or <see langword="null"/> when the lambda did not call it.</summary>
+    public int? Depth { get; private set; }
 
-    /// <summary>View DTO → entity: what <c>MapToEntity</c> runs, onto the existing (or new) entity.</summary>
-    public MapExpression<ViewAndUpsertDTO, EntityType> Entity => Map<ViewAndUpsertDTO, EntityType>();
-
-    /// <summary>Entity → list DTO, as a projection the database runs: what <c>MapToList</c> runs.</summary>
-    public MapExpression<EntityType, ListDTO> List => Map<EntityType, ListDTO>();
-
-    /// <summary>Entity → entity: what <c>CopyEntity</c> runs to refresh a tracked row after a save.</summary>
-    public MapExpression<EntityType, EntityType> Copy => Map<EntityType, EntityType>();
+    /// <summary>
+    /// Caps how many levels of class-typed members below the repository's maps get an automatic map of their own
+    /// (root = 0; the framework's default is 10; 0 nests nothing). A constant, because the generator bakes it.
+    /// </summary>
+    public new ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO> Nested(int depth)
+    {
+        base.Nested(depth);
+        Depth = depth;
+        return this;
+    }
 }

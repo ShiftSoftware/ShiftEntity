@@ -55,7 +55,8 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     /// <list type="number">
     ///   <item>an <c>IShiftEntityMapper&lt;EntityType, ListDTO, ViewAndUpsertDTO&gt;</c> registered in DI;</item>
     ///   <item>the host's ShiftMapper, whose generated mapper declares this triple's four maps automatically
-    ///   (customized with <see cref="Mapping"/>) — the default.</item>
+    ///   (replaced per pair by a <c>CreateMap</c> in a mapper class; nested as deep as <see cref="Mapping"/>
+    ///   says) — the default.</item>
     /// </list>
     /// There is no further fallback: when neither covers the triple this stays <see langword="null"/> and the
     /// repository's mapping methods throw unless it overrides them. That case is caught at startup by
@@ -81,35 +82,37 @@ public class ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> where
     }
 
     /// <summary>
-    /// What <see cref="Mapping"/> was given, run by the repository into a <see cref="ShiftEntityMapping{EntityType, ListDTO, ViewAndUpsertDTO}"/>
-    /// and handed to the host's <c>IMapper</c> when the repository is constructed. Null when nothing was configured.
+    /// The depth <see cref="Mapping"/> asked for with <c>m.Nested(n)</c>, or <see langword="null"/> when the
+    /// repository left the framework's default (10). Recorded for inspection only: the depth itself is read at
+    /// build time and baked into the maps.
     /// </summary>
-    internal Action<ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>>? MappingConfiguration { get; private set; }
+    public int? NestedMappingDepth { get; private set; }
 
     /// <summary>
-    /// Customizes the repository's AUTOMATIC maps — the four ShiftMapper declares for this triple from the
-    /// repository's type arguments (entity ↔ view, entity → list, entity → entity) — member by member, in the
-    /// ShiftMapper vocabulary:
+    /// Says how far the repository's AUTOMATIC maps reach. The four ShiftMapper declares for this triple from
+    /// the repository's type arguments (entity ↔ view, entity → list, entity → entity) nest the class-typed
+    /// members below them, ten levels deep by default; this caps it:
     /// <code>
-    /// o.Mapping(m =&gt; m.List.ForMember(d =&gt; d.Total, opt =&gt; opt.MapFrom(i =&gt; i.Lines.Sum(l =&gt; l.Amount))));
-    /// o.Mapping(m =&gt; m.View.ForMember(d =&gt; d.Secret, opt =&gt; opt.Ignore()));
+    /// o.Mapping(m =&gt; m.Nested(2));
     /// </code>
-    /// The lambda is read at BUILD time by the ShiftMapper generator for its shape — which members are customized
-    /// — and baked into the maps; its value delegates stay at run time and reach the mapper through this
-    /// repository. Write it as plain statements: a call behind an <c>if</c> or a loop is refused by the build
-    /// (SM0035), and the condition belongs inside the value. Maps customized here are still ordinary maps any
-    /// service can run through <c>Mapper</c>; a <c>CreateMap</c> for the same pair in a mapper class replaces the
-    /// automatic map, this configuration included (SM0047, then SM0052 if the configuration is left behind).
-    /// Two repositories configuring one pair is a build error (SM0050).
+    /// The lambda is read at BUILD time by the ShiftMapper generator and the depth baked into the maps, so it is
+    /// a constant and the call a plain statement of the lambda (SM0035 otherwise).
+    /// <para>It is the only thing a repository says about its maps: WHAT a member maps from is not the
+    /// repository's concern. To customize a member, write an ordinary <c>CreateMap</c> for the pair in a
+    /// <c>ShiftMapperBase</c> class — it replaces the automatic map for that pair (SM0047, informational), the
+    /// other pairs of the triple stay automatic, and the customized map is the one every service maps the pair
+    /// through as well.</para>
     /// </summary>
     public void Mapping(Action<ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>> configure)
     {
         if (configure is null)
             throw new ArgumentNullException(nameof(configure));
 
-        this.MappingConfiguration = this.MappingConfiguration is { } existing
-            ? surface => { existing(surface); configure(surface); }
-            : configure;
+        var surface = new ShiftEntityMapping<EntityType, ListDTO, ViewAndUpsertDTO>();
+        configure(surface);
+
+        if (surface.Depth is { } depth)
+            this.NestedMappingDepth = depth;
     }
 
     /// <summary>
