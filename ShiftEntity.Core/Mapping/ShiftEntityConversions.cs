@@ -80,8 +80,8 @@ public class ShiftEntityConversions : ShiftMapperConversions
         // ── Files stored as JSON. ────────────────────────────────────────────────────────────────────────
         //
         // No query form on purpose: a database cannot parse JSON into objects, so a LIST DTO carrying files
-        // loses its projection and the build says so (SM0030) — the same member the old generator reported as
-        // unmapped in the list (SHENGEN007). Blank JSON reads as an empty list; a null list writes null.
+        // loses its projection and the build says so (SM0030). Blank JSON reads as an empty list; a null list
+        // writes null.
         CreateConversion<string?, List<ShiftFileDTO>?>(memory: MappingHelpers.ToShiftFiles);
         CreateConversion<List<ShiftFileDTO>?, string?>(memory: MappingHelpers.ToJsonString);
 

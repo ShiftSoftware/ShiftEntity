@@ -25,7 +25,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Tagging;
 public sealed class ShiftTagMapper : IShiftEntityMapper<Tag, TagListDTO, TagDTO>
 {
     /// <summary>
-    /// Reuses <see cref="TagProjection"/> — the same expression spliced into taggable list queries — so the tag
+    /// Reuses <see cref="TagProjection"/> — the same expression the repository's view read uses — so the tag
     /// shape has exactly one definition, then chains <c>MapBaseFields</c> for the audit columns and
     /// <c>IsDeleted</c>, which the projection deliberately omits because it exists to fill a tag chip where they
     /// would be noise. (<c>ID</c> is set by both; the second assignment is the same value.)

@@ -50,10 +50,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public override object? GetDbContext() => db;
 
     // The mapper that this repository's own (virtual) mapping methods delegate to. Resolved in InitCommon:
-    // UseMapper/UseGeneratedMapper on the options first, then an IShiftEntityMapper<E, L, V> registered in DI,
-    // then the host's ShiftMapper (IMapper) when it covers the triple, then — for one release — the old
-    // source-generated mapper from ShiftEntityMapperRegistry. Null only when nothing covers the triple — the
-    // mapping methods then throw unless the repository overrides them (startup validation flags it first).
+    // UseMapper on the options first, then an IShiftEntityMapper<E, L, V> registered in DI, then the host's
+    // ShiftMapper (IMapper) when it covers the triple. Null only when nothing covers the triple — the mapping
+    // methods then throw unless the repository overrides them (startup validation flags it first).
     protected IShiftEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>? innerMapper { get; private set; }
     public ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO> ShiftRepositoryOptions { get; set; } = default!;
     public IDefaultDataLevelAccess? defaultDataLevelAccess { get; private set; }
@@ -137,7 +136,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         // The two are alternatives rather than layers because ShiftRepositoryOptions doesn't compose cleanly
         // (includes replace, filters accumulate, DataLevelAccess throws on a second declaration), so merging them
         // would be guesswork. The analyzer fails the build on the ambiguous case (entity declares config AND the
-        // repository passes a builder) — SHENGEN006 — since this silently drops the entity's half.
+        // repository passes a builder) — SHENT001 — since this silently drops the entity's half.
         else if (typeof(IConfiguresShiftRepository<EntityType, ListDTO, ViewAndUpsertDTO>).IsAssignableFrom(typeof(EntityType)))
         {
             // Filters / data-level-access in the config need these providers; the null-builder path skipped
@@ -158,14 +157,11 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         //      absent — no exception on the common no-mapper path).
         //   2. The host's ShiftMapper, when its generated mapper declares all four maps of the triple — the
         //      maps the markers on this class and on the endpoint attributes declare in the data project's
-        //      build, customized by Mapping(...) or replaced by a CreateMap in a mapper class. THE DEFAULT since
-        //      Stage 3 of docs/plans/repository-mapping-on-shiftmapper (ShiftTemplates).
-        //   3. The OLD source-generated mapper from ShiftEntityMapperRegistry — for one release (Q7 of the
-        //      plan), so a project still carrying a [ShiftEntityMapper] partial keeps working while it migrates.
-        //      Deleted in Stage 4 with the generator.
-        //   4. Nothing — the mapping methods then throw "No mapper configured" unless overridden. There is no
-        //      convention-mapping fallback behind this any more: a triple nothing covers is a startup error
-        //      (ShiftEntityMapperValidation), not a request-time surprise.
+        //      build, customized by Mapping(...) or replaced by a CreateMap in a mapper class. THE DEFAULT
+        //      (docs/plans/repository-mapping-on-shiftmapper in ShiftTemplates).
+        //   3. Nothing — the mapping methods then throw "No mapper configured" unless overridden. There is no
+        //      fallback behind this: a triple nothing covers is a startup error (ShiftEntityMapperValidation),
+        //      not a request-time surprise.
         // A ShiftRepository also implements IShiftEntityMapper<…>, so any repository resolution is ignored
         // to avoid a repository being used as its own (recursive) mapper.
         // The repository's Mapping(...) configuration reaches ShiftMapper HERE, whichever mapper ends up serving
@@ -193,10 +189,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             {
                 this.ShiftRepositoryOptions.Mapper = new ShiftMapperEntityMapper<EntityType, ListDTO, ViewAndUpsertDTO>(
                     shiftMapper, MapperServiceProvider.GetService<ShiftEntityMappingContext>());
-            }
-            else if (GeneratedMapperFactory.Create<EntityType, ListDTO, ViewAndUpsertDTO>() is { } generated)
-            {
-                this.ShiftRepositoryOptions.Mapper = generated;
             }
         }
 

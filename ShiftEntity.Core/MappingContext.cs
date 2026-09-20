@@ -3,8 +3,8 @@ using System;
 namespace ShiftSoftware.ShiftEntity.Core;
 
 /// <summary>
-/// The ambient information handed to the mapping methods (<see cref="IShiftEntityMapper{TEntity, TListDTO, TViewDTO}"/>
-/// and <see cref="IShiftObjectMapper{TEntity, TDto}"/>). A <c>readonly struct</c> (allocation-free on the hot
+/// The ambient information handed to the mapping methods (<see cref="IShiftEntityMapper{TEntity, TListDTO, TViewDTO}"/>).
+/// A <c>readonly struct</c> (allocation-free on the hot
 /// mapping path) so more can be added later — e.g. the acting user — WITHOUT changing every mapper signature.
 /// A bare service provider is wrapped with <c>new MappingContext(services)</c>.
 /// </summary>

@@ -58,16 +58,6 @@ public abstract class ShiftEntityEndpointAttributeBase : Attribute
     /// <summary>The custom mapper type for the <c>…EndpointWithMapper&lt;…, TMapper&gt;</c> variants, else null.</summary>
     public virtual Type? MapperType => null;
 
-    /// <summary>
-    /// <b>Obsolete — the OLD generated mapping.</b> When true, discovery resolves the mapper
-    /// <c>ShiftEntity.SourceGenerator</c> wrote for this endpoint's (entity, list, view) triple and hands it to
-    /// the built-in repository, ahead of the ShiftMapper maps the attribute itself declares. Kept for one release
-    /// so a project migrates at its own pace: remove the property — the endpoint's maps are ShiftMapper's now,
-    /// with nothing to opt into.
-    /// </summary>
-    [Obsolete("The endpoint's maps are declared by ShiftMapper now; remove this property. Removed in the next release.")]
-    public bool UseGeneratedMapper { get; set; }
-
     protected ShiftEntityEndpointAttributeBase(string route)
     {
         Route = route;

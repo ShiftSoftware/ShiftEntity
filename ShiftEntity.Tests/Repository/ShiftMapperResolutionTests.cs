@@ -16,13 +16,14 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 
 /// <summary>
-/// The repository's door onto ShiftMapper — Stage 2 of <c>docs/plans/repository-mapping-on-shiftmapper</c>
-/// (ShiftTemplates): resolved AHEAD of the old registry when the host's <see cref="IMapper"/> declares all four maps
-/// of the triple (Stage 3 flipped the order), the <c>Mapping(...)</c> configuration handed to it on construction, the action published around a
-/// write, and a value ShiftMapper cannot convert answered as a 400 naming the field rather than a 500.
+/// The repository's door onto ShiftMapper — <c>docs/plans/repository-mapping-on-shiftmapper</c> (ShiftTemplates):
+/// resolved when the host's <see cref="IMapper"/> declares all four maps of the triple (behind a DI-registered
+/// <c>IShiftEntityMapper</c>, ahead of nothing — there is no other fallback), the <c>Mapping(...)</c> configuration
+/// handed to it on construction, the action published around a write, and a value ShiftMapper cannot convert
+/// answered as a 400 naming the field rather than a 500.
 /// <para>
 /// Over a hand-written <see cref="IMapper"/> double: what is under test is the repository's resolution and the
-/// adapter, not ShiftMapper's generated code, which the sample's parity harness diffs against the goldens.
+/// adapter, not ShiftMapper's generated code, which the sample's end-to-end suites exercise.
 /// </para>
 /// </summary>
 public class ShiftMapperResolutionTests
@@ -52,21 +53,11 @@ public class ShiftMapperResolutionTests
         public IQueryable<TDestination> ProjectTo<TSource, TDestination>(IQueryable<TSource> source) => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// The DTO of the triple these tests resolve. ITS OWN: <see cref="ShiftEntityMapperRegistry"/> is process-wide
-    /// static state, and a registration another test class makes for the shared <c>OrderListDTO</c> triple would
-    /// answer here ahead of ShiftMapper.
-    /// </summary>
+    /// <summary>The DTO of the triple these tests resolve — its own, so no other test class's host reaches it.</summary>
     public sealed class AutoOrderDTO : ShiftEntityDTOBase
     {
         public override string? ID { get; set; }
         public string Number { get; set; } = "";
-    }
-
-    /// <summary>The triple the registry test registers for — separate, so the registration reaches no other test.</summary>
-    public sealed class RegistryOrderDTO : ShiftEntityDTOBase
-    {
-        public override string? ID { get; set; }
     }
 
     private static (Type, Type)[] AllFour<TDto>() =>
@@ -125,43 +116,36 @@ public class ShiftMapperResolutionTests
         Assert.Null(Repo(scope).ShiftRepositoryOptions.Mapper);
     }
 
+    /// <summary>
+    /// A triple nothing covers resolves NO mapper, and the mapping methods throw rather than mapping by
+    /// convention — the case startup validation exists to catch before any request reaches it.
+    /// </summary>
     [Fact]
-    public void NoMapperRegistered_ResolvesNothing()
+    public void NoMapperRegistered_ResolvesNothing_AndThrowsOnUse()
     {
         using var provider = Host(mapper: null);
         using var scope = provider.CreateScope();
 
-        Assert.Null(Repo(scope).ShiftRepositoryOptions.Mapper);
+        var repo = Repo(scope);
+        Assert.Null(repo.ShiftRepositoryOptions.Mapper);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => repo.MapToView(new OrderEntity()));
+        Assert.Contains("No mapper configured", ex.Message);
     }
 
-    /// <summary>
-    /// Stage 3 order: ShiftMapper is the default and the old generated mapper is the fallback — a triple the
-    /// registry covers still resolves the registry's mapper when ShiftMapper declares nothing for it (a project
-    /// mid-migration), and ShiftMapper's when it does.
-    /// </summary>
+    /// <summary>An explicitly configured mapper still wins — ShiftMapper only supplies the DEFAULT.</summary>
     [Fact]
-    public void ShiftMapper_WinsOverTheRegistry_WhichStaysTheFallback()
+    public void AnExplicitMapper_StillBeatsShiftMapper()
     {
-        ShiftEntityMapperRegistry.Register(
-            typeof(OrderEntity), typeof(RegistryOrderDTO), typeof(RegistryOrderDTO), typeof(RegistryOnlyMapper));
+        var mapper = new FakeMapper(AllFour<AutoOrderDTO>());
 
-        using (var provider = Host(new FakeMapper(AllFour<RegistryOrderDTO>())))
-        using (var scope = provider.CreateScope())
-        {
-            var repo = new ShiftRepository<OrderingDbContext, OrderEntity, RegistryOrderDTO, RegistryOrderDTO>(
-                scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
+        using var provider = Host(mapper);
+        using var scope = provider.CreateScope();
 
-            Assert.IsType<ShiftMapperEntityMapper<OrderEntity, RegistryOrderDTO, RegistryOrderDTO>>(repo.ShiftRepositoryOptions.Mapper);
-        }
+        var explicitMapper = new ExplicitOrderMapper();
+        var repo = Repo(scope, o => o.UseMapper(explicitMapper));
 
-        using (var provider = Host(new FakeMapper()))
-        using (var scope = provider.CreateScope())
-        {
-            var repo = new ShiftRepository<OrderingDbContext, OrderEntity, RegistryOrderDTO, RegistryOrderDTO>(
-                scope.ServiceProvider.GetRequiredService<OrderingDbContext>());
-
-            Assert.IsType<RegistryOnlyMapper>(repo.ShiftRepositoryOptions.Mapper);
-        }
+        Assert.Same(explicitMapper, repo.ShiftRepositoryOptions.Mapper);
     }
 
     /// <summary>
@@ -298,11 +282,12 @@ public class ShiftMapperResolutionTests
         throw new InvalidOperationException("expected a throw");
     }
 
-    private sealed class RegistryOnlyMapper : IShiftEntityMapper<OrderEntity, RegistryOrderDTO, RegistryOrderDTO>
+    /// <summary>A mapper plugged in with <c>UseMapper</c>: unmistakable, and never what ShiftMapper would resolve.</summary>
+    private sealed class ExplicitOrderMapper : IShiftEntityMapper<OrderEntity, AutoOrderDTO, AutoOrderDTO>
     {
-        public OrderEntity MapToEntity(RegistryOrderDTO dto, OrderEntity existing, MappingContext context = default) => existing;
-        public RegistryOrderDTO MapToView(OrderEntity entity, MappingContext context = default) => throw new NotSupportedException();
-        public IQueryable<RegistryOrderDTO> MapToList(IQueryable<OrderEntity> query, MappingContext context = default) => throw new NotSupportedException();
+        public OrderEntity MapToEntity(AutoOrderDTO dto, OrderEntity existing, MappingContext context = default) => existing;
+        public AutoOrderDTO MapToView(OrderEntity entity, MappingContext context = default) => throw new NotSupportedException();
+        public IQueryable<AutoOrderDTO> MapToList(IQueryable<OrderEntity> query, MappingContext context = default) => throw new NotSupportedException();
         public void CopyEntity(OrderEntity source, OrderEntity target, MappingContext context = default) => throw new NotSupportedException();
     }
 }

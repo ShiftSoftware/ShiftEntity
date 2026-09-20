@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace ShiftSoftware.ShiftEntity.EFCore;
@@ -24,21 +23,19 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 public static class ShiftEntityMapperValidation
 {
     /// <summary>
-    /// Validates that each discovered triple resolves a mapper, and reports registry conflicts and codegen ABI
-    /// skew. An uncovered triple is always fatal: there is no convention mapper behind it any more, so the
-    /// alternative is a repository that throws on the first request that touches it.
+    /// Validates that each discovered triple resolves a mapper. An uncovered triple is always fatal: there is no
+    /// convention mapper behind it, so the alternative is a repository that throws on the first request that
+    /// touches it.
     /// </summary>
     /// <param name="services">The built provider is not needed — validation is type-level, so this runs without booting the app.</param>
     /// <param name="assemblies">The same assemblies <c>RegisterShiftRepositories</c> scanned.</param>
     public static void Validate(IServiceCollection services, IReadOnlyList<Assembly> assemblies)
     {
-        EnsureRegistryPopulated(assemblies);
-
         var problems = new List<string>();
 
-        // ShiftMapper's answer for the triples nothing else covers. Built from the registrations alone — the
-        // generated mappers are parameterless and the question is type-level (CanMap), so no provider is booted
-        // — and only when a triple asks: the registry lookup above it answers first.
+        // ShiftMapper's answer for the triples a DI registration does not cover. Built from the registrations
+        // alone — the generated mappers are parameterless and the question is type-level (CanMap), so no
+        // provider is booted — and only when a triple asks.
         IMapper? shiftMapper = null;
         bool shiftMapperBuilt = false;
 
@@ -62,25 +59,9 @@ public static class ShiftEntityMapperValidation
                 $"  ({triple.Entity.Name}, {triple.ListDto.Name}, {triple.ViewDto.Name}) — no mapper. " +
                 "Check that the assembly declaring the repository (or the [ShiftEntityEndpoint] entity) is " +
                 "passed to RegisterShiftRepositories or that the host calls AddShiftMapper(), so its generated " +
-                "ShiftMapper maps are registered; or add a [ShiftEntityMapper] partial class, call " +
-                "UseMapper/UseGeneratedMapper in the repository, or override the mapping methods.");
+                "ShiftMapper maps are registered; or register an IShiftEntityMapper for the triple, call " +
+                "UseMapper in the repository, or override the mapping methods.");
         }
-
-        // ── registry conflicts ────────────────────────────────────────────────────────────────────────────
-        // Recorded rather than thrown at Register time, because that runs in a module initializer where an
-        // exception becomes an unreadable TypeInitializationException. This is where they become readable.
-        foreach (var conflict in ShiftEntityMapperRegistry.Conflicts)
-            problems.Add($"  {conflict}");
-
-        // ── version skew, detected rather than declared ────────────────────────────────────────────────────
-        // JIT-preparing each mapper method resolves its call targets, so a member the mapper was compiled
-        // against and that no longer exists throws HERE instead of on whichever endpoint a user opens first.
-        // Nothing is versioned and nothing has to be remembered.
-        foreach (var (mapperType, error) in ShiftEntityMapperRegistry.VerifyBindings())
-            problems.Add(
-                $"  {mapperType.FullName} cannot bind to this version of ShiftEntity: {error} " +
-                $"Rebuild and republish '{mapperType.Assembly.GetName().Name}'. A generated mapper is code " +
-                "frozen at its own build day, so it does not pick up framework changes until rebuilt.");
 
         if (problems.Count == 0) return;
 
@@ -94,9 +75,8 @@ public static class ShiftEntityMapperValidation
     }
 
     /// <summary>
-    /// A triple counts as covered by ANY of: an explicit DI registration, a source-generated mapper in the
-    /// registry, the host's ShiftMapper declaring all four of its maps, or a repository that overrides the
-    /// mapping methods itself.
+    /// A triple counts as covered by ANY of: an explicit DI registration, the host's ShiftMapper declaring all
+    /// four of its maps, or a repository that overrides the mapping methods itself.
     /// </summary>
     private static bool ResolvesAMapper(IServiceCollection services, MapperTriple triple, Type? repository, Func<IMapper?> shiftMapper)
     {
@@ -104,9 +84,6 @@ public static class ShiftEntityMapperValidation
             .MakeGenericType(triple.Entity, triple.ListDto, triple.ViewDto);
 
         if (services.Any(d => d.ServiceType == mapperInterface))
-            return true;
-
-        if (ShiftEntityMapperRegistry.Find(triple.Entity, triple.ListDto, triple.ViewDto) is not null)
             return true;
 
         if (shiftMapper() is { } mapper
@@ -184,20 +161,6 @@ public static class ShiftEntityMapperValidation
                 if (seen.Add(triple)) yield return (triple, type);
                 break;
             }
-        }
-    }
-
-    /// <summary>
-    /// Reflection scans do not run module initializers, and the registry is populated by one the generator
-    /// emits — so without this the registry can look empty and every triple would be reported as uncovered.
-    /// Each assembly is wrapped: one bad consumer assembly must not take down startup for everyone else.
-    /// </summary>
-    private static void EnsureRegistryPopulated(IReadOnlyList<Assembly> assemblies)
-    {
-        foreach (var assembly in assemblies)
-        {
-            try { RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle); }
-            catch { /* reported by the coverage check below if it actually mattered */ }
         }
     }
 

@@ -179,7 +179,7 @@ public static class IServiceCollectionExtensions
         // Attribute-driven endpoints: an entity decorated with [ShiftEntityEndpoint<…>] /
         // [ShiftEntitySecureEndpoint<…>] needs the built-in repository (registered just below), a DTO-map entry,
         // and — only when the attribute names one explicitly — a mapper registration; otherwise the repository
-        // picks up its source-generated mapper from ShiftEntityMapperRegistry on its own. Wire that here off the
+        // maps through the ShiftMapper maps the attribute declares (registered below). Wire that here off the
         // same assemblies — so the programmer makes no extra service call — and map the routes in the pipeline
         // with app.MapShiftEntityEndpoints<DB>().
         var endpointSpecs = ShiftEntityEndpointDiscovery.Discover(assemblies ?? [Assembly.GetEntryAssembly()!]);
@@ -213,9 +213,9 @@ public static class IServiceCollectionExtensions
                 {
                     // A [ShiftEntityEndpoint<…, TMapper>] entity keeps the built-in repository but supplies a
                     // custom mapper. Register it as IShiftEntityMapper<Entity, ListDto, ViewDto> so the built-in
-                    // repository resolves it ahead of the generated one (see ShiftRepository.InitCommon).
-                    // An endpoint WITHOUT a mapper needs nothing registered here: the repository finds the
-                    // source-generated mapper in the registry, and if there is none, startup validation says so.
+                    // repository resolves it ahead of ShiftMapper (see ShiftRepository.InitCommon). An endpoint
+                    // WITHOUT a mapper needs nothing registered here: the repository finds the attribute's maps
+                    // in the host's IMapper, and if it declares none, startup validation says so.
                     var mapperInterface = typeof(IShiftEntityMapper<,,>).MakeGenericType(spec.Entity, spec.ListDto, spec.ViewDto);
                     services.TryAddScoped(mapperInterface, spec.Mapper);
                 }

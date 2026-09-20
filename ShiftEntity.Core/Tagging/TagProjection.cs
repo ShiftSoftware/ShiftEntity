@@ -9,12 +9,10 @@ namespace ShiftSoftware.ShiftEntity.Core.Tagging;
 /// <summary>
 /// The single, canonical <see cref="Tag"/> → <see cref="TagDTO"/> projection. Tag IDs are plain
 /// integers (no HashId) and the DTO shape is framework-owned, so this is a simple hand projection —
-/// no AutoMapper / IMapper needed. It is the one source of truth used by both:
-/// <list type="bullet">
-///   <item>the read-side view auto-mapping (<see cref="ToDtoList"/>, materialized), and</item>
-///   <item>list projections, where <see cref="TaggableProjectionExtensions.SelectWithTags{TEntity,TListDTO}"/>
-///   splices <see cref="ToDto"/> inline so EF Core translates it like a hand-written projection.</item>
-/// </list>
+/// no mapper needed. It is the one source of truth for the read-side view auto-mapping (<see cref="ToDtoList"/>,
+/// materialized) and for the tag endpoints' own <c>ShiftTagMapper</c>; a taggable entity's LIST projection
+/// carries its tags through the framework's <c>Tag → TagDTO</c> ShiftMapper map instead, and a hand-written
+/// <c>MapToList</c> writes the <c>Tags</c> binding itself.
 /// </summary>
 public static class TagProjection
 {

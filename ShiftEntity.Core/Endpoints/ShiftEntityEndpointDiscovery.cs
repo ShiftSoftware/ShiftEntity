@@ -98,33 +98,9 @@ public static class ShiftEntityEndpointDiscovery
         var listDto = attr.ListDtoType;
         var viewDto = attr.ViewDtoType;
 
+        // An endpoint without a mapper of its own maps through the ShiftMapper maps the attribute declares
+        // (nothing to resolve here; the built-in repository finds the host's IMapper).
         var mapper = attr.MapperType;
-
-#pragma warning disable CS0618 // the old door, honoured for one release
-        if (attr.UseGeneratedMapper)
-#pragma warning restore CS0618
-        {
-            if (mapper is not null)
-                throw new InvalidOperationException(
-                    $"Endpoint '{attr.Route}' on '{entityType.FullName}' sets UseGeneratedMapper = true on a WithMapper attribute — " +
-                    "the mapper is already explicit; remove one of the two.");
-
-            if (attr.RepositoryType is not null)
-                throw new InvalidOperationException(
-                    $"Endpoint '{attr.Route}' on '{entityType.FullName}' sets UseGeneratedMapper = true together with a custom repository — " +
-                    "a custom repository does its own mapping (use options.UseGeneratedMapper() inside the repository instead).");
-
-            // The generated registrations are module initializers in the entity's assembly; a pure
-            // reflection scan does not trigger them, so force the module constructor before the lookup.
-            System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor(entityType.Module.ModuleHandle);
-
-            mapper = ShiftEntityMapperRegistry.Find(entityType, listDto, viewDto)
-                ?? throw new InvalidOperationException(
-                    $"Endpoint '{attr.Route}' on '{entityType.FullName}' sets UseGeneratedMapper = true, but no source-generated mapper is " +
-                    $"registered for ({entityType.Name}, {listDto.Name}, {viewDto.Name}). Ensure the ShiftEntity source generator runs on " +
-                    "the assembly declaring the entity (endpoint triples are discovered automatically), or declare a [ShiftEntityMapper] " +
-                    "partial class for this exact triple.");
-        }
 
         if (mapper is not null)
             ValidateMapper(mapper, entityType, listDto, viewDto, attr.Route);

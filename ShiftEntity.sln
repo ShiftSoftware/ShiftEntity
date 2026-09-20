@@ -19,7 +19,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ShiftEntity.Functions", "Sh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.Tests", "ShiftEntity.Tests\ShiftEntity.Tests.csproj", "{97AF6DD8-FCE4-4B89-9256-079DFB8EC3C2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.SourceGenerator", "ShiftEntity.SourceGenerator\ShiftEntity.SourceGenerator.csproj", "{B0AAE734-4A5A-493B-9C23-B9EF11BA70A5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShiftEntity.Analyzers", "ShiftEntity.Analyzers\ShiftEntity.Analyzers.csproj", "{B0AAE734-4A5A-493B-9C23-B9EF11BA70A5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

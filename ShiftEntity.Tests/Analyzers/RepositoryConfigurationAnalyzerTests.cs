@@ -1,25 +1,27 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
+using ShiftSoftware.ShiftEntity.Analyzers;
 using System.Collections.Immutable;
 using Xunit;
 
-namespace ShiftSoftware.ShiftEntity.Tests.Mapping;
+namespace ShiftSoftware.ShiftEntity.Tests.Analyzers;
 
 /// <summary>
-/// Drives <see cref="SourceGenerator.ShiftEntityMapperGenerator"/> over a hand-built compilation and pins the
-/// diagnostics it reports. The generator is referenced as a plain library here (never as this project's analyzer),
-/// so these tests read its output directly rather than inferring it from a build.
+/// Drives <see cref="RepositoryConfigurationAnalyzer"/> over a hand-built compilation and pins what it reports.
+/// The analyzer is referenced as a plain library here (never as this project's analyzer), so these tests read
+/// its diagnostics directly rather than inferring them from a build.
 /// <para>
-/// Currently covers SHENGEN006 — an entity declaring <c>IConfiguresShiftRepository&lt;E, L, V&gt;</c> while a
-/// repository for the SAME triple passes an options builder to its base constructor. The builder means the
-/// repository configures itself and takes over, so the entity's <c>ConfigureRepository</c> never runs; nothing
-/// fails at runtime, which is why this is a build ERROR. Because it breaks the build it must only fire on a
-/// certainty — the "silent" cases below are as much the contract as the firing one.
+/// SHENT001 — an entity declaring <c>IConfiguresShiftRepository&lt;E, L, V&gt;</c> while a repository for the SAME
+/// triple passes an options builder to its base constructor. The builder means the repository configures itself
+/// and takes over, so the entity's <c>ConfigureRepository</c> never runs; nothing fails at runtime, which is why
+/// this is a build ERROR. Because it breaks the build it must only fire on a certainty — the "silent" cases below
+/// are as much the contract as the firing one.
 /// </para>
 /// </summary>
-public class GeneratorDiagnosticTests
+public class RepositoryConfigurationAnalyzerTests
 {
-    private const string EntityConfigSuppressed = "SHENGEN006";
+    private const string EntityConfigSuppressed = RepositoryConfigurationAnalyzer.EntityConfigurationSuppressedId;
 
     /// <summary>
     /// The fixed half of every case: an entity configuring the (Widget, WidgetDTO, WidgetDTO) triple, plus a
@@ -99,7 +101,7 @@ public class GeneratorDiagnosticTests
         """);
 
     /// <summary>
-    /// The CountryRepository demo's shape: a self-configuring repository on its OWN DTO triple. Mappers and the
+    /// The CountryRepository demo's shape: a self-configuring repository on its OWN DTO triple. Maps and the
     /// entity hooks are keyed by the triple, so nothing of the entity's is suppressed.
     /// </summary>
     [Fact]
@@ -151,7 +153,7 @@ public class GeneratorDiagnosticTests
     }
 
     /// <summary>
-    /// Through an intermediate base class the builder is a runtime value the generator can't read, so it stays
+    /// Through an intermediate base class the builder is a runtime value the analyzer can't read, so it stays
     /// silent rather than guessing — a false error here would be unsuppressible.
     /// </summary>
     [Fact]
@@ -179,13 +181,13 @@ public class GeneratorDiagnosticTests
         var source = Scaffold.Replace("{{REPO}}", repository);
 
         var compilation = CSharpCompilation.Create(
-            "ShiftEntity.GeneratorDiagnosticTests.Sample",
+            "ShiftEntity.AnalyzerTests.Sample",
             [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest))],
             References,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
 
-        // A scaffold that doesn't compile resolves no Shift types, so the generator would stay silent and every
+        // A scaffold that doesn't compile resolves no Shift types, so the analyzer would stay silent and every
         // AssertSilent above would pass for the wrong reason. Fail loudly instead of quietly proving nothing.
         var errors = compilation.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -194,11 +196,11 @@ public class GeneratorDiagnosticTests
         Assert.True(errors.Count == 0,
             "Test scaffold does not compile:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
 
-        CSharpGeneratorDriver
-            .Create(new SourceGenerator.ShiftEntityMapperGenerator().AsSourceGenerator())
-            .RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
-
-        return diagnostics;
+        return compilation
+            .WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new RepositoryConfigurationAnalyzer()))
+            .GetAnalyzerDiagnosticsAsync()
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <summary>

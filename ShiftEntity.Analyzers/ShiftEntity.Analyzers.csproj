@@ -4,14 +4,14 @@
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<Nullable>enable</Nullable>
-		<RootNamespace>ShiftSoftware.ShiftEntity.SourceGenerator</RootNamespace>
-		<AssemblyName>ShiftSoftware.ShiftEntity.SourceGenerator</AssemblyName>
+		<RootNamespace>ShiftSoftware.ShiftEntity.Analyzers</RootNamespace>
+		<AssemblyName>ShiftSoftware.ShiftEntity.Analyzers</AssemblyName>
 		<!-- Analyzer assembly: never packed on its own, never referenced at runtime.
 		     It ships inside the ShiftSoftware.ShiftEntity (Core) package under analyzers/dotnet/cs. -->
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<IsRoslynComponent>true</IsRoslynComponent>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-		<!-- RS2008 = "enable analyzer release tracking"; not needed for a generator shipped inside a product package. -->
+		<!-- RS2008 = "enable analyzer release tracking"; not needed for an analyzer shipped inside a product package. -->
 		<NoWarn>$(NoWarn);RS2008</NoWarn>
 	</PropertyGroup>
 
