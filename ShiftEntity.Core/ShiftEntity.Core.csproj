@@ -31,12 +31,12 @@
 
 	<ItemGroup>
 		<!-- 10.0.11, not 10.0.10: ShiftMapper pins 10.0.11, and a direct reference below a transitive one is NU1605. -->
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
-		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.1" />
-		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.10" />
-		<PackageReference Include="Microsoft.OData.Core" Version="8.4.3" />
-		<PackageReference Include="Microsoft.OData.Edm" Version="8.4.3" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
+		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.12" />
+		<PackageReference Include="Microsoft.OData.Core" Version="8.4.4" />
+		<PackageReference Include="Microsoft.OData.Edm" Version="8.4.4" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.Core" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj')" />
 		<!-- ShiftMapper carries the repository mapping rules (Mapping/ShiftEntityConversions.cs) and the markers on
 		     the endpoint attributes (Endpoints/ShiftEntityEndpointAttributes.cs) that declare each endpoint's maps in

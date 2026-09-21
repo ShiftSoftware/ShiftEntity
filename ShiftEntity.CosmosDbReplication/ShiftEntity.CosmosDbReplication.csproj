@@ -30,9 +30,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.0" />
+		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.1" />
 		<!-- 10.0.11, not 10.0.10: ShiftMapper pins 10.0.11, and a direct reference below a transitive one is NU1605. -->
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<!-- ShiftMapper is the fallback both pipelines map through when a Replicate / UpdateReference /
 		     UpdatePropertyReference call passes no mapping delegate (see ReplicationMapper.cs). Runtime library only:
