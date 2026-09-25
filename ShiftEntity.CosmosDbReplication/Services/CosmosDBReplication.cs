@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
@@ -126,6 +127,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     //document under the OLD id + key before upserting the new one.
     Dictionary<long, string> pendingStamps = new();
 
+    //Why each failed row failed, for the run's report: one entry per row and container that failed.
+    ConcurrentQueue<CosmosDbReplicationFailure> failures = new();
+
     public CosmosDbReferenceOperation(
         string cosmosDbConnectionString,
         string cosmosDbDatabaseId,
@@ -215,8 +219,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
                     cosmosTasks.Add(UpsertWithPartitionKeyChangeHandlingAsync(container, newItem, entityId, deleteId, oldPartitionKey));
                 }
-                catch
+                catch (Exception ex)
                 {
+                    this.RecordFailure(entity.ID, containerId, ex);
                     this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(false),
                         (key, oldValue) => oldValue.Set(false));
                 }
@@ -238,9 +243,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     {
                         //already gone; treat as success and proceed to upsert
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         success = false;
+                        this.RecordFailure(id, containerId, ex);
                     }
                 }
 
@@ -250,9 +256,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     {
                         await c.UpsertItemAsync<CosmosDBItem>(item);
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         success = false;
+                        this.RecordFailure(id, containerId, ex);
                     }
                 }
 
@@ -309,6 +316,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                             new[] { PatchOperation.Replace($"/{propertyPath}", propertyItem) })
                             .ContinueWith(x =>
                             {
+                                if (!x.IsCompletedSuccessfully)
+                                    this.RecordFailure(entityId, containerId, x.Exception);
+
                                 this.cosmosUpsertSuccesses.AddOrUpdate(entityId, SuccessResponse.Create(x.IsCompletedSuccessfully),
                                                                         (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
                             }));
@@ -413,8 +423,13 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     .ContinueWith(x =>
                     {
                         foreach (var entity in contributors)
+                        {
+                            if (!x.IsCompletedSuccessfully)
+                                this.RecordFailure(entity.ID, containerId, x.Exception);
+
                             this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(x.IsCompletedSuccessfully),
                                                                         (key, oldValue) => oldValue.Set(x.IsCompletedSuccessfully));
+                        }
                     }));
             }
 
@@ -443,7 +458,19 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return items;
     }
 
-    public async Task RunAsync(bool updateAll = false)
+    /// <summary>
+    /// Replicates the selected rows. A row that fails stays dirty for the next run and does not stop the others, and
+    /// failures are logged as a warning. <see cref="RunAndReportAsync"/> returns them as well.
+    /// </summary>
+    public async Task RunAsync(bool updateAll = false) => await this.RunAndReportAsync(updateAll);
+
+    /// <summary>
+    /// Replicates the selected rows and reports the run: the rows it selected, the rows it recorded as replicated, and
+    /// every row that failed, with the container and the reason. A row that fails stays dirty for the next run and does
+    /// not stop the others. Failures are also logged as a warning; <see cref="CosmosDbReplicationResult.ThrowIfFailed"/>
+    /// fails the caller too.
+    /// </summary>
+    public async Task<CosmosDbReplicationResult> RunAndReportAsync(bool updateAll = false)
     {
         Utility.GuardAgainstShadowedId(typeof(Entity));
 
@@ -451,18 +478,17 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         var queryable = this.dbSet.AsQueryable();
 
         if (!updateAll)
-            //Dirty = the replicated-version watermark is behind the row's save date (or absent: never replicated).
-            //LastReplicationDate is that watermark — the save date of the replicated version, not a run timestamp.
-            queryable = queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
+            queryable = await this.WhereDirtyAsync(queryable);
 
         if (this.query is not null)
             queryable = this.query(queryable);
 
-        this.entities = await queryable.ToArrayAsync();
+        var selected = await queryable.ToArrayAsync();
+        this.entities = selected;
 
         //If there is no entities to replicate, terminate the process
-        if (this.entities is null || this.entities?.Count() == 0)
-            return;
+        if (selected.Length == 0)
+            return new CosmosDbReplicationResult(typeof(Entity).Name, 0, 0, []);
 
         if(this.client is null)
         {
@@ -487,7 +513,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await action.Invoke();
         }
 
-        ApplyReplicationBookkeeping();
+        var replicated = ApplyReplicationBookkeeping();
 
         //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
         //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
@@ -495,19 +521,82 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         using (this.db.SuppressAuditStamping())
             await this.db.SaveChangesWithoutTriggersAsync();
 
+        var result = new CosmosDbReplicationResult(typeof(Entity).Name, selected.Length, replicated,
+            this.failures.OrderBy(x => x.EntityId).ThenBy(x => x.ContainerId, StringComparer.Ordinal).ToList());
+
         this.Dispose();
+
+        if (!result.Succeeded)
+            this.services.GetService<ILogger<CosmosDBReplication>>()?.LogWarning(
+                "Cosmos DB replication of {Entity}: {Failed} of {Selected} rows failed and stay dirty for the next run. {Failures}",
+                result.Entity, result.Failed, result.Selected, result.DescribeFailures());
+
+        return result;
     }
 
-    private void ApplyReplicationBookkeeping()
+    //Dirty = the replicated-version watermark is behind the row's save date (or absent: never replicated).
+    //LastReplicationDate is that watermark — the save date of the replicated version, not a run timestamp.
+    private async Task<IQueryable<Entity>> WhereDirtyAsync(IQueryable<Entity> queryable)
+    {
+        //SQLite keeps DateTimeOffset as text and cannot compare it in SQL, so there the dirty rows are picked in memory
+        //from the two watermark columns and then selected by key. The pick ignores query filters; the query that loads
+        //the rows still applies them, as it does with the comparison below.
+        if (this.db.Database.ProviderName == SqliteProviderName)
+        {
+            var watermarks = await this.dbSet.IgnoreQueryFilters().AsNoTracking()
+                .Select(x => new { x.ID, x.LastSaveDate, x.LastReplicationDate })
+                .ToListAsync();
+
+            var dirty = watermarks
+                .Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue)
+                .Select(x => x.ID)
+                .ToList();
+
+            return queryable.Where(x => dirty.Contains(x.ID));
+        }
+
+        return queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
+    }
+
+    private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
+
+    private int ApplyReplicationBookkeeping()
     {
         //Success implies a pending stamp exists: the upsert action records it before queueing the Cosmos call,
         //and rows whose mapping or stamp computation threw are marked unsuccessful. The TryGetValue keeps the
         //unreachable missing-stamp case on the safe side — the row stays dirty and is retried, rather than being
         //marked clean with stale coordinates.
+        var replicated = 0;
+
         foreach (var entity in this.entities)
             if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get() &&
                 this.pendingStamps.TryGetValue(entity.ID, out var stamp))
+            {
                 entity.MarkReplicated(stamp);
+                replicated++;
+            }
+
+        return replicated;
+    }
+
+    private void RecordFailure(long entityId, string containerId, Exception? exception) =>
+        this.failures.Enqueue(new CosmosDbReplicationFailure(entityId, containerId, Describe(exception)));
+
+    //At most 500 characters, since a Cosmos DB error carries the service's response body.
+    private static string Describe(Exception? exception)
+    {
+        if (exception is AggregateException aggregate)
+            exception = aggregate.Flatten().InnerExceptions.FirstOrDefault();
+
+        var text = exception switch
+        {
+            null => "The Cosmos DB call was cancelled.",
+            CosmosException cosmos =>
+                $"Cosmos DB answered {(int)cosmos.StatusCode} {cosmos.StatusCode} (substatus {cosmos.SubStatusCode}): {cosmos.ResponseBody}",
+            _ => $"{exception.GetType().Name}: {exception.Message}",
+        };
+
+        return text.Length <= 500 ? text : text[..500] + "…";
     }
 
     private void ResetUpsertSuccess()
@@ -524,6 +613,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         this.cosmosUpsertSuccesses = null!;
 
         this.pendingStamps = null!;
+        this.failures = null!;
 
         this.cosmosDatabase = null!;
     }

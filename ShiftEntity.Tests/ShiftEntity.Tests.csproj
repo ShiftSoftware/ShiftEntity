@@ -19,11 +19,14 @@
 		<!-- FastReport brings VisualBasic transitively; keep its shared Roslyn assembly aligned with the analyzer tests. -->
 		<PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="5.9.0" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
-		<!-- ReplicationBookkeepingTests: the bookkeeping write is an ExecuteUpdate, which the in-memory provider cannot run. -->
+		<!-- Replication tests: the bookkeeping write is an ExecuteUpdate, which the in-memory provider cannot run, and the
+		     catch-up's dirty-only selection must work on SQLite hosts. -->
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+		<!-- CatchUpReportTests: stands in for Cosmos DB (abstract Container and Database) so one document can be refused. -->
+		<PackageReference Include="NSubstitute" Version="6.0.0" />
 		<PackageReference Include="xunit.v3.mtp-off" Version="4.0.1" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
