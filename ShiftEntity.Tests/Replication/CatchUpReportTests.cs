@@ -125,12 +125,11 @@ public class CatchUpReportTests : IDisposable
         //The stamp a sync of this row records: its id, which is also the partition key.
         var clean = items[3];
         var id = clean.ID.ToString();
-        clean.MarkReplicated(new LastReplicationStamp
+        await db.SaveReplicationBookkeepingAsync<CatchUpItem>(clean.ID, clean.LastSaveDate, new LastReplicationStamp
         {
             Id = id,
             Level1 = new PartitionKeyLevelStamp { Value = id, Type = PartitionKeyTypes.String }
-        }.Serialize());
-        await db.SaveReplicationBookkeepingAsync(clean, ct);
+        }.Serialize(), ct);
 
         return items.ToDictionary(x => x.Name, x => x.ID);
     }

@@ -12,6 +12,7 @@ using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Linq.Expressions;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 
@@ -150,6 +151,15 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private Func<Entity, IServiceProvider, Database, Task<bool>>? replicateDeleteAction;
     private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
 
+    //The stamp this process last wrote for each instance it synced. A later sync of the same instance uses it instead
+    //of the instance's own column, which RunAsync does not change: the instance is often the caller's, still tracked
+    //by the caller's context, and a changed column would make the caller's next save write the row again. An entry is
+    //kept only as long as its instance is alive.
+    private static readonly ConditionalWeakTable<Entity, string> writtenStamps = new();
+
+    private static string? LastWrittenStamp(Entity entity) =>
+        writtenStamps.TryGetValue(entity, out var stamp) ? stamp : entity.LastReplicationStamp;
+
     internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
@@ -201,17 +211,18 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
             //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
-            //id or PK, so a naive upsert would orphan the old doc). The OLD coordinates come from the entity's
-            //persisted LastReplicationStamp — what was actually written to Cosmos last time — never from
-            //re-mapping the pre-save entity snapshot: a mapping that leaves a partition-key component unset (or
-            //derives values from navigations) reconstructs coordinates that don't match the stored document, so
-            //such a delete silently misses (404) and the old document is orphaned.
+            //id or PK, so a naive upsert would orphan the old doc). The OLD coordinates come from the stamp of the
+            //last write (LastWrittenStamp: this process's record for the instance, else its persisted
+            //LastReplicationStamp) — what was actually written to Cosmos last time — never from re-mapping the
+            //pre-save entity snapshot: a mapping that leaves a partition-key component unset (or derives values
+            //from navigations) reconstructs coordinates that don't match the stored document, so such a delete
+            //silently misses (404) and the old document is orphaned.
             string? staleId = null;
             PartitionKey? stalePartitionKey = null;
 
             var containerResponse = await container.ReadContainerAsync();
             var newStamp = Utility.BuildStamp(containerResponse, item!);
-            var oldStamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+            var oldStamp = LastReplicationStamp.Deserialize(LastWrittenStamp(entity));
 
             if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
             {
@@ -245,16 +256,18 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     response.StatusCode == System.Net.HttpStatusCode.Created ||
                     response.StatusCode == System.Net.HttpStatusCode.NoContent;
 
-            //On success, RunAsync persists the new stamp (the id + partition key this row now lives under in
-            //Cosmos) on the entity, so the NEXT sync — trigger or catch-up — can detect the next change.
+            //On success, RunAsync writes the new stamp (the id + partition key this row now lives under in
+            //Cosmos) to the row and keeps it for this instance, so the NEXT sync — trigger or catch-up — can
+            //detect the next change.
             return (success, success ? stamp : null);
         };
 
         this.replicateDeleteAction = async (entity, services, db) =>
         {
-            //Locate the entity's Cosmos document by its persisted stamp (the id + partition key it was last written
-            //under) and remove it. No stamp ⇒ it was never replicated ⇒ nothing to delete.
-            var stamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
+            //Locate the entity's Cosmos document by the stamp of its last write (the id + partition key it was last
+            //written under, see LastWrittenStamp) and remove it. No stamp ⇒ it was never replicated ⇒ nothing to
+            //delete.
+            var stamp = LastReplicationStamp.Deserialize(LastWrittenStamp(entity));
             var partitionKey = stamp?.BuildPartitionKey();
             if (stamp is null || !partitionKey.HasValue)
                 return true;
@@ -439,6 +452,12 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         if (setupMapping is not null)
             entity = await setupMapping(new EntityWrapper<Entity>(entity, serviceProvider));
 
+        //The row and the version this sync replicates, read before anything maps the entity. The watermark is this
+        //version's save date and never a later one: a save that moves LastSaveDate while this sync runs keeps the row
+        //due for the next sync.
+        var id = entity.ID;
+        var replicatedVersion = entity.LastSaveDate;
+
         //Prepare the lists of the container that used, to the connection
         if(this.client is null)
         {
@@ -455,8 +474,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
         var db = client.GetDatabase(this.cosmosDataBaseId);
 
-        //Hard delete → remove the entity's own document from Cosmos and stop. No bookkeeping save afterwards: the SQL
-        //row is already deleted, and re-attaching it for the stamp write would resurrect it.
+        //Hard delete → remove the entity's own document from Cosmos and stop. No bookkeeping write afterwards: the SQL
+        //row is already deleted.
         if (changeType == ChangeType.Deleted)
         {
             if (replicateDeleteAction is not null)
@@ -465,7 +484,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         }
 
         //If the change type is added or modified, then do the upsert action
-        //(it removes the stale document first when the persisted stamp shows the id/partition key changed)
+        //(it removes the stale document first when the last written stamp shows the id/partition key changed)
         if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
         {
             //Reset the isSucceeded flag
@@ -494,12 +513,17 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         if (!isSucceeded.GetValueOrDefault(false))
             return;
 
-        entity.MarkReplicated(replicationStamp);
+        //Kept for this instance before the write below: the document is at these coordinates now, whether or not the
+        //write succeeds.
+        if (replicationStamp is not null)
+            writtenStamps.AddOrUpdate(entity, replicationStamp);
 
-        //Written by key, never by attaching: the entity is the caller's instance, still tracked by the caller's
-        //context and possibly linked to rows the caller has added since the save that triggered this sync.
+        //Written by key, from the values read at the start, and never through the entity. The entity is the caller's
+        //instance, still tracked by the caller's context and possibly linked to rows the caller has added since the
+        //save that triggered this sync. Attaching it would insert those rows a second time. Setting the two columns on
+        //it would make the caller's next save write the row again and replicate it once more.
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
-        await dbContext.SaveReplicationBookkeepingAsync(entity);
+        await dbContext.SaveReplicationBookkeepingAsync<Entity>(id, replicatedVersion, replicationStamp);
     }
 
 }

@@ -45,8 +45,8 @@ internal class ReplicateToCosmosDbAfterSaveTrigger<EntityType> : IAfterSaveTrigg
             return;
 
         //Soft delete is an update (Modified) and mirrors as an upsert. A HARD delete (raw EF Remove — e.g. the M:N
-        //join rows) is mirrored too: RunAsync removes the entity's Cosmos document by its persisted stamp. This is
-        //trigger-only — there is no delete-row log or catch-up/function delete path.
+        //join rows) is mirrored too: RunAsync removes the entity's Cosmos document by the stamp of its last write.
+        //This is trigger-only — there is no delete-row log or catch-up/function delete path.
 
         using var internalService = this.options.internalServices.BuildServiceProvider();
         var operations = internalService.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();

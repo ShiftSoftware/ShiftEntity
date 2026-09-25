@@ -72,8 +72,8 @@ public class ReplicationBookkeepingTests : IDisposable
 
         using (var sync = NewContext())
         {
-            branch.MarkReplicated("""{"ID":"1"}""");
-            Assert.Equal(1, await sync.SaveReplicationBookkeepingAsync(branch, ct));
+            Assert.Equal(1, await sync.SaveReplicationBookkeepingAsync<BookkeepingBranch>(
+                branch.ID, branch.LastSaveDate, """{"ID":"1"}""", ct));
             Assert.Empty(sync.ChangeTracker.Entries());
         }
 
@@ -105,9 +105,9 @@ public class ReplicationBookkeepingTests : IDisposable
         }
 
         target.Name = "Unsaved caller edit";
-        target.MarkReplicated("""{"ID":"2"}""");
         using (var sync = NewContext())
-            Assert.Equal(1, await sync.SaveReplicationBookkeepingAsync(target, ct));
+            Assert.Equal(1, await sync.SaveReplicationBookkeepingAsync<BookkeepingBranch>(
+                target.ID, target.LastSaveDate, """{"ID":"2"}""", ct));
 
         using var check = NewContext();
         var rows = await check.Branches.IgnoreQueryFilters().AsNoTracking().ToDictionaryAsync(x => x.ID, ct);
