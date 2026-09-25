@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using ShiftSoftware.ShiftEntity.Core;
+using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 
 namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
@@ -22,5 +24,27 @@ public static class ShiftEntityReplicationExtensions
     {
         entity.LastReplicationDate = entity.LastSaveDate;
         entity.LastReplicationStamp = stamp;
+    }
+
+    /// <summary>
+    /// Writes the pair <see cref="MarkReplicated"/> set on <paramref name="entity"/> to its row, and nothing else: one
+    /// UPDATE of the two replication columns, by key, that neither tracks the instance nor runs triggers or the audit
+    /// backfill. The after-save trigger records its sync with this because the instance it holds is the caller's: the
+    /// caller's context still tracks it and may have linked new rows to it since. Attaching it to another context
+    /// would walk that graph and insert those rows a second time.
+    /// </summary>
+    internal static Task<int> SaveReplicationBookkeepingAsync<TEntity>(this ShiftDbContext db, TEntity entity,
+        CancellationToken cancellationToken = default)
+        where TEntity : ShiftEntity<TEntity>, IShiftEntityReplication
+    {
+        var id = entity.ID;
+        var date = entity.LastReplicationDate;
+        var stamp = entity.LastReplicationStamp;
+
+        return db.Set<TEntity>().IgnoreQueryFilters()
+            .Where(x => x.ID == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.LastReplicationDate, date)
+                .SetProperty(x => x.LastReplicationStamp, stamp), cancellationToken);
     }
 }

@@ -1,5 +1,4 @@
 ﻿using EntityFrameworkCore.Triggered;
-using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -491,25 +490,16 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             }
         }
 
+        //A failed step records nothing: the row stays dirty and the catch-up sync retries it.
+        if (!isSucceeded.GetValueOrDefault(false))
+            return;
+
+        entity.MarkReplicated(replicationStamp);
+
+        //Written by key, never by attaching: the entity is the caller's instance, still tracked by the caller's
+        //context and possibly linked to rows the caller has added since the save that triggered this sync.
         var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
-
-        if (isSucceeded.GetValueOrDefault(false))
-            ApplyReplicationBookkeeping(dbContext, entity, replicationStamp);
-
-        //A replication-bookkeeping save: only the replication columns marked modified above may be written. No
-        //triggers, and no audit backfill — explicit suppression rather than relying on the attached entity's
-        //in-memory AuditFieldsAreSet flag happening to be set from the user's original save.
-        using (dbContext.SuppressAuditStamping())
-            await dbContext.SaveChangesWithoutTriggersAsync();
-    }
-
-    private void ApplyReplicationBookkeeping(ShiftDbContext dbContext, Entity entity, string? stamp)
-    {
-        entity.MarkReplicated(stamp);
-
-        dbContext.Attach(entity);
-        dbContext.Entry(entity).Property(nameof(IShiftEntityReplication.LastReplicationDate)).IsModified = true;
-        dbContext.Entry(entity).Property(nameof(IShiftEntityReplication.LastReplicationStamp)).IsModified = true;
+        await dbContext.SaveReplicationBookkeepingAsync(entity);
     }
 
 }

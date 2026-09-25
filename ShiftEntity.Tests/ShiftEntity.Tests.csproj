@@ -19,6 +19,8 @@
 		<!-- FastReport brings VisualBasic transitively; keep its shared Roslyn assembly aligned with the analyzer tests. -->
 		<PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="5.9.0" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
+		<!-- ReplicationBookkeepingTests: the bookkeeping write is an ExecuteUpdate, which the in-memory provider cannot run. -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
