@@ -13,7 +13,9 @@ public class TokenService
         if (string.IsNullOrWhiteSpace(uniqueTokenDescriptor))
             throw new ArgumentNullException(nameof(uniqueTokenDescriptor));
 
-        var expires = expirationTime.ToString(ExpireDateTimeFormat);
+        // Use the invariant culture, so the text and the token do not depend on the thread's culture. Under th-TH, the
+        // current culture's calendar would write 2026 as 2569, and the check reads the text as a Gregorian date.
+        var expires = expirationTime.ToString(ExpireDateTimeFormat, System.Globalization.CultureInfo.InvariantCulture);
 
         var data = $"{uniqueTokenDescriptor}-{id}-{expires}";
 
@@ -21,7 +23,7 @@ public class TokenService
         {
             var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
 
-            var token = BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
+            var token = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
 
             return (token, expires);
         }
