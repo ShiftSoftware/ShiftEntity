@@ -64,10 +64,14 @@ public class CatchUpReportTests : IDisposable
     private readonly SqliteConnection connection = new("DataSource=:memory:");
     private readonly List<string> warnings = new();
     private readonly ServiceProvider provider;
-    private readonly CosmosClient cosmos = RefusingCosmos();
+
+    //The names of the documents Cosmos DB refuses. A test can change it between runs.
+    private readonly HashSet<string> refused = ["Refused"];
+    private readonly CosmosClient cosmos;
 
     public CatchUpReportTests()
     {
+        cosmos = RefusingCosmos(refused);
         connection.Open();
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(new WarningLog(warnings)));
@@ -82,8 +86,8 @@ public class CatchUpReportTests : IDisposable
         connection.Dispose();
     }
 
-    //Accepts every document except the one named "Refused", which it answers with 429.
-    private static CosmosClient RefusingCosmos()
+    //Accepts every document except the ones named in refused, which it answers with 429.
+    private static CosmosClient RefusingCosmos(HashSet<string> refused)
     {
         var properties = Substitute.For<ContainerResponse>();
         properties.Resource.Returns(new ContainerProperties(Container, "/id"));
@@ -92,7 +96,7 @@ public class CatchUpReportTests : IDisposable
         container.ReadContainerAsync(Arg.Any<ContainerRequestOptions>(), Arg.Any<CancellationToken>()).Returns(properties);
         container.UpsertItemAsync(Arg.Any<CatchUpDocument>(), Arg.Any<PartitionKey?>(), Arg.Any<ItemRequestOptions>(),
                 Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<CatchUpDocument>()?.Name == "Refused"
+            .Returns(call => refused.Contains(call.Arg<CatchUpDocument>()?.Name ?? "")
                 ? Task.FromException<ItemResponse<CatchUpDocument>>(
                     new CosmosException("Request rate is large.", HttpStatusCode.TooManyRequests, 3200, "activity", 0))
                 : Task.FromResult(Substitute.For<ItemResponse<CatchUpDocument>>()));
@@ -196,5 +200,42 @@ public class CatchUpReportTests : IDisposable
         Assert.Same(full, exception.Result);
         Assert.StartsWith("CatchUpItem: 2 of 4 rows failed", exception.Message);
         Assert.DoesNotContain(full.Failures, x => x.EntityId == ids["Good"] || x.EntityId == ids["Clean"]);
+    }
+
+    [Fact]
+    public async Task A_replicated_row_that_fails_in_a_forced_run_is_retried_by_the_next_plain_run()
+    {
+        var ids = await SeedAsync();
+        var stamp = (await RowsAsync())["Clean"].LastReplicationStamp;
+
+        //Cosmos DB now refuses the clean row too, as a busy container does when the SDK has used up its retries. A
+        //forced run selects the row with all the others.
+        refused.Add("Clean");
+
+        CosmosDbReplicationResult forced;
+        using (var scope = provider.CreateScope())
+            forced = await Operation(scope).RunAndReportAsync(updateAll: true);
+
+        Assert.Equal((4, 1, 3), (forced.Selected, forced.Replicated, forced.Failed));
+        Assert.Contains(forced.Failures, x => x.EntityId == ids["Clean"]);
+
+        //The row is dirty now. Its stamp stays: it still gives the coordinates of the document of its last successful
+        //sync.
+        var clean = (await RowsAsync())["Clean"];
+        Assert.Null(clean.LastReplicationDate);
+        Assert.Equal(stamp, clean.LastReplicationStamp);
+
+        //Cosmos DB accepts the row again. A plain run selects only dirty rows, and it selects and replicates this one.
+        refused.Remove("Clean");
+
+        CosmosDbReplicationResult plain;
+        using (var scope = provider.CreateScope())
+            plain = await Operation(scope).RunAndReportAsync();
+
+        Assert.Equal((3, 1), (plain.Selected, plain.Replicated));
+        Assert.DoesNotContain(plain.Failures, x => x.EntityId == ids["Clean"]);
+
+        clean = (await RowsAsync())["Clean"];
+        Assert.Equal(clean.LastSaveDate, clean.LastReplicationDate);
     }
 }

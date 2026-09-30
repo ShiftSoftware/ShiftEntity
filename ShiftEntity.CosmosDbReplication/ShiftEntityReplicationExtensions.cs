@@ -8,7 +8,7 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 /// <summary>
 /// Write-side of the replication bookkeeping pair. Both <see cref="IShiftEntityReplication"/> columns are stamped
 /// here and nowhere else, so the watermark and the stamp cannot drift apart: a successful sync records them
-/// together.
+/// together, and a failed catch-up row has its watermark cleared here.
 /// </summary>
 public static class ShiftEntityReplicationExtensions
 {
@@ -28,6 +28,22 @@ public static class ShiftEntityReplicationExtensions
     {
         entity.LastReplicationDate = entity.LastSaveDate;
         entity.LastReplicationStamp = stamp;
+    }
+
+    /// <summary>
+    /// Marks a row that failed in a catch-up run as not replicated: clears
+    /// <see cref="IShiftEntityReplication.LastReplicationDate"/>, so the next run selects the row and retries it.
+    /// </summary>
+    /// <remarks>
+    /// A forced run (<c>updateAll</c>) also selects rows whose watermark says they are in sync. When such a row fails,
+    /// it is not known what Cosmos DB holds for it, so the row must not keep that watermark: the next run selects only
+    /// dirty rows and would never retry it. The stamp stays as it is. It still gives the coordinates of the document
+    /// that the last successful sync wrote, so the next sync can remove that document if the row has moved.
+    /// </remarks>
+    internal static void MarkReplicationFailed<TEntity>(this TEntity entity)
+        where TEntity : class, IShiftEntityReplication
+    {
+        entity.LastReplicationDate = null;
     }
 
     /// <summary>

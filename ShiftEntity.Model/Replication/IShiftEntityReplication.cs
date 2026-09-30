@@ -15,8 +15,9 @@ public interface IShiftEntityReplication
     /// The replication <b>watermark</b>, not a timestamp — despite the name, this does not record when replication
     /// ran. It holds the <c>LastSaveDate</c> of the row version that was last replicated to Cosmos: exact
     /// equality with <c>LastSaveDate</c> means "in sync", a later save moves <c>LastSaveDate</c> past the
-    /// watermark and the row becomes due for replication again, and <see langword="null"/> means never
-    /// replicated. (The two columns therefore always show identical values for in-sync rows.)
+    /// watermark and the row becomes due for replication again, and <see langword="null"/> means not replicated:
+    /// never replicated, or the row failed in the last catch-up run that selected it. (The two columns therefore
+    /// always show identical values for in-sync rows.)
     /// </summary>
     /// <remarks>
     /// Deliberately NOT the wall-clock time replication ran (it briefly was, at the feature's birth — fixed in

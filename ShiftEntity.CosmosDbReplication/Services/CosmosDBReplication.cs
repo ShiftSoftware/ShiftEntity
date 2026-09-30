@@ -470,6 +470,11 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// not stop the others. Failures are also logged as a warning; <see cref="CosmosDbReplicationResult.ThrowIfFailed"/>
     /// fails the caller too.
     /// </summary>
+    /// <param name="updateAll">
+    /// false selects only the dirty rows. true selects every row, also the rows that look replicated. A row that fails
+    /// is marked as not replicated (its <see cref="IShiftEntityReplication.LastReplicationDate"/> is cleared) in both
+    /// cases, so the next run retries it.
+    /// </param>
     public async Task<CosmosDbReplicationResult> RunAndReportAsync(bool updateAll = false)
     {
         Utility.GuardAgainstShadowedId(typeof(Entity));
@@ -566,15 +571,26 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //and rows whose mapping or stamp computation threw are marked unsuccessful. The TryGetValue keeps the
         //unreachable missing-stamp case on the safe side — the row stays dirty and is retried, rather than being
         //marked clean with stale coordinates.
+        //
+        //A row with a failure is marked as not replicated. A forced run (updateAll) also selects rows that look
+        //replicated, and such a row used to keep its clean watermark when it failed. The next run, which selects only
+        //dirty rows, then never retried it, although the report said that it stays dirty.
+        var failed = this.failures.Select(x => x.EntityId).ToHashSet();
         var replicated = 0;
 
         foreach (var entity in this.entities)
-            if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get() &&
+        {
+            if (failed.Contains(entity.ID))
+            {
+                entity.MarkReplicationFailed();
+            }
+            else if (this.cosmosUpsertSuccesses.GetOrAdd(entity.ID, new SuccessResponse()).Get() &&
                 this.pendingStamps.TryGetValue(entity.ID, out var stamp))
             {
                 entity.MarkReplicated(stamp);
                 replicated++;
             }
+        }
 
         return replicated;
     }
