@@ -58,6 +58,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- The request localization (culture resolution and result wrappers) is pinned by ShiftEntity.Tests. -->
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 	  <ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 	</ItemGroup>

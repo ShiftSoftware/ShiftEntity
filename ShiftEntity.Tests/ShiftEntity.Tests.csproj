@@ -38,6 +38,8 @@
 		<ProjectReference Include="..\ShiftEntity.Core\ShiftEntity.Core.csproj" />
 		<ProjectReference Include="..\ShiftEntity.CosmosDbReplication\ShiftEntity.CosmosDbReplication.csproj" />
 		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" />
+		<!-- Localization tests: run the request localization middleware against a hand-built FunctionContext. -->
+		<ProjectReference Include="..\ShiftEntity.Functions\ShiftEntity.Functions.csproj" />
 		<ProjectReference Include="..\ShiftEntity.Model\ShiftEntity.Model.csproj" />
 		<!-- A PLAIN reference, deliberately not OutputItemType="Analyzer": RepositoryConfigurationAnalyzerTests
 		     instantiates the analyzer directly and drives it over a hand-built compilation. -->

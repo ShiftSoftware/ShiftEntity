@@ -75,6 +75,17 @@ public static class IFunctionsWorkerApplicationBuilderExtension
         return builder;
     }
 
+    /// <summary>
+    /// Applies the language of each HTTP request (its Accept-Language header) to the function and to the writing of
+    /// its response: the current culture, the current UI culture and the language of
+    /// <see cref="ShiftSoftware.ShiftEntity.Model.LocalizedTextJsonConverter"/>. See
+    /// <see cref="RequestLocalizationMiddleware"/>.
+    /// </summary>
+    /// <remarks>
+    /// Middleware runs in the order it is registered, and only the middleware registered after this call sees the
+    /// language. Register this call first when other middleware should see it, for example the validation messages
+    /// of <see cref="RequireValidModels"/>. A response that an earlier middleware writes itself is not localized.
+    /// </remarks>
     public static IFunctionsWorkerApplicationBuilder UseRequestLocalization(this IFunctionsWorkerApplicationBuilder builder)
     {
 
