@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
+using System.Linq;
 using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.Web.Pii;
@@ -20,6 +21,7 @@ internal sealed class PiiSavePolicy
     public static PiiSavePolicy Prepare(object dto, object entity, IServiceProvider services, bool isCreate)
     {
         var policy = new PiiSavePolicy();
+        var validationMessages = new List<Message>();
         var dtoType = dto.GetType();
         var entityType = entity.GetType();
         var typeAuth = services.GetRequiredService<ITypeAuthService>();
@@ -49,15 +51,19 @@ internal sealed class PiiSavePolicy
                 throw new ShiftEntityException(new Message("Forbidden", "Protected field change is not permitted."),
                     (int)HttpStatusCode.Forbidden);
 
-            if ((intent == "replace" || isCreate) && IsRequired(member, target) && string.IsNullOrWhiteSpace(raw))
-                throw Invalid("A required protected field cannot be empty.");
-
-            if (intent == "replace")
+            if (intent == "replace" || isCreate)
             {
                 var results = new List<ValidationResult>();
-                var context = new ValidationContext(entity) { MemberName = target.Name };
-                if (!Validator.TryValidateProperty(raw, context, results))
-                    throw Invalid(results[0].ErrorMessage ?? "The protected field value is invalid.");
+                ValidateRawValue(member, dto, raw, results);
+                ValidateRawValue(target, entity, raw, results);
+                if (results.Count > 0)
+                    validationMessages.Add(new Message
+                    {
+                        For = member.Name,
+                        Title = member.Name,
+                        SubMessages = results.Select(x => x.ErrorMessage ?? "The protected field value is invalid.")
+                            .Distinct().Select(x => new Message { Title = x }).ToList()
+                    });
             }
 
             // Mapping conventions read Value. Discard client Display and any Value submitted with keep.
@@ -65,6 +71,12 @@ internal sealed class PiiSavePolicy
             policy.values.Add(target, raw);
         }
 
+        if (validationMessages.Count > 0)
+            throw new ShiftEntityException(new Message
+            {
+                Title = "Model Validation Error",
+                SubMessages = validationMessages
+            }, (int)HttpStatusCode.BadRequest);
         return policy;
     }
 
@@ -75,8 +87,10 @@ internal sealed class PiiSavePolicy
                 throw new InvalidOperationException("The entity mapper did not preserve a protected field's resolved value.");
     }
 
-    private static bool IsRequired(PropertyInfo dto, PropertyInfo entity)
-        => dto.IsDefined(typeof(RequiredAttribute), true) || entity.IsDefined(typeof(RequiredAttribute), true);
+    // Applies the validation attributes declared on a DTO or entity member to the resolved raw value.
+    private static void ValidateRawValue(PropertyInfo member, object owner, string? raw, List<ValidationResult> results)
+        => Validator.TryValidateValue(raw, new ValidationContext(owner) { MemberName = member.Name }, results,
+            member.GetCustomAttributes<ValidationAttribute>(true));
 
     private static ShiftEntityException Invalid(string message)
         => new(new Message("Invalid protected field", message), (int)HttpStatusCode.BadRequest);

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Model.Validation;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -29,7 +30,8 @@ public sealed class ShiftEntityValidationEndpointFilter : IEndpointFilter
             var validationContext = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
-            if (Validator.TryValidateObject(dto, validationContext, results, validateAllProperties: true))
+            // Like the MVC pipeline, members such as PII fields are checked against their wrapped value.
+            if (WrappedValueValidator.TryValidateObject(dto, validationContext, results))
                 continue;
 
             // Group by member name, matching the shape MVC's ModelState produces.

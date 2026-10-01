@@ -1,14 +1,25 @@
+using ShiftSoftware.ShiftEntity.Model.Validation;
+
 namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 
 /// <summary>
 /// A protected field in an ordinary response or an existing form save.
 /// The server supplies Display. Value is null in ordinary responses.
 /// </summary>
-public sealed class PiiFieldDTO
+public sealed class PiiFieldDTO : IValidationValueWrapper
 {
     public string? Display { get; set; }
     public string? Value { get; set; }
     public string? Write { get; set; }
+
+    // Validation attributes on a protected member describe the raw value.
+    // Only "replace" sends a new raw value, so only "replace" is checked.
+    // "keep" leaves the stored value as it is, and the mask is never validated.
+    bool IValidationValueWrapper.TryGetValidationValue(out object? value)
+    {
+        value = Value;
+        return Write == "replace";
+    }
 }
 
 public enum PiiKind

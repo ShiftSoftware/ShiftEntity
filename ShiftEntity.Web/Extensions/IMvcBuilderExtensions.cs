@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model;
+using ShiftSoftware.ShiftEntity.Web;
 using System;
 using System.Linq;
 
@@ -43,6 +44,15 @@ public static class IMvcBuilderExtensions
         // model construction is application-specific.
 
         builder.Services.AddShiftEntityWebSharedCore();
+
+        // Members such as PII fields wrap the value their validation attributes describe.
+        // PostConfigure: this provider changes the validators that the DataAnnotations provider creates,
+        // so it must be added after that provider.
+        builder.Services.PostConfigure<MvcOptions>(options =>
+        {
+            if (!options.ModelValidatorProviders.OfType<WrappedValueModelValidatorProvider>().Any())
+                options.ModelValidatorProviders.Add(new WrappedValueModelValidatorProvider());
+        });
 
         // MVC-only: wraps [ApiController] model-state 400 responses in ShiftEntityResponse.
         // Functions Worker doesn't run through this pipeline, so this stays out of the shared
