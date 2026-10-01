@@ -132,13 +132,8 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
     public async Task<CrudResult> RevealPiiAsync(HttpContext httpContext, string key, string field)
     {
-        var dtoMember = typeof(ViewAndUpsertDTO).GetProperty(field, BindingFlags.Instance | BindingFlags.Public);
-        if (dtoMember?.PropertyType != typeof(PiiFieldDTO) ||
-            PiiFieldProtection.FindDeclaration(dtoMember) is not { Revealable: true })
-            return CrudResult.NotFound(null);
-
-        var entityMember = typeof(Entity).GetProperty(dtoMember.Name, BindingFlags.Instance | BindingFlags.Public);
-        if (entityMember?.PropertyType != typeof(string) || !entityMember.CanRead)
+        var memberPath = PiiMemberPath.Parse(typeof(ViewAndUpsertDTO), typeof(Entity), field);
+        if (memberPath is null)
             return CrudResult.NotFound(null);
 
         var action = httpContext.RequestServices.GetRequiredService<IOptions<PiiOptions>>().Value.Action;
@@ -161,8 +156,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         if (item is null)
             return CrudResult.NotFound(null);
 
+        if (!memberPath.TryRead(item, hashIdService, out var value))
+            return CrudResult.NotFound(null);
         httpContext.Response.Headers.CacheControl = "no-store";
-        return CrudResult.Ok(new PiiRevealDTO { Value = (string?)entityMember.GetValue(item) });
+        return CrudResult.Ok(new PiiRevealDTO { Value = value });
     }
 
     public async Task<(CrudResult Result, Entity? Entity)> PostAsync(

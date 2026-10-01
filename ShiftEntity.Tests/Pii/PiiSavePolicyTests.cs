@@ -85,7 +85,7 @@ public class PiiSavePolicyTests
     }
 
     [Fact]
-    public void Nested_protected_updates_fail_closed()
+    public void Nested_protected_updates_without_a_matching_entity_member_are_rejected()
     {
         using var allowed = Services(grant: true);
         var dto = new NestedContactDTO

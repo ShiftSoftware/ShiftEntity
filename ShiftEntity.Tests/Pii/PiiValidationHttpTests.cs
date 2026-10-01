@@ -163,13 +163,23 @@ public class PiiValidationHttpTests
                 entity.Label = dto.Label;
                 entity.Phone = dto.Phone?.Value;
                 entity.Email = dto.Email?.Value;
+                entity.Phones = dto.Phones.Select(x => new PiiNestedSavePolicyTests.Phone
+                {
+                    ID = long.TryParse(x.ID, out var id) ? id : 0, Number = x.Number?.Value
+                }).ToList();
                 Current = entity;
                 return ValueTask.FromResult(entity);
             });
-            repository.SaveChangesAsync().Returns(_ => Task.FromResult(++Saves));
+            repository.SaveChangesAsync().Returns(_ =>
+            {
+                foreach (var phone in Current.Phones.Where(x => x.ID == 0)) phone.ID = 100 + Saves;
+                return Task.FromResult(++Saves);
+            });
             repository.ViewAsync(Arg.Any<Contact>()).Returns(call => ValueTask.FromResult(new ContactDTO
             {
                 ID = "7", Label = call.Arg<Contact>().Label,
+                Phones = call.Arg<Contact>().Phones.Select(x => new PiiNestedSavePolicyTests.PhoneDTO
+                { ID = x.ID.ToString(), Number = new() { Value = x.Number } }).ToList(),
                 Phone = new() { Value = call.Arg<Contact>().Phone },
                 Email = new() { Value = call.Arg<Contact>().Email }
             }));
@@ -200,6 +210,7 @@ public class PiiValidationHttpTests
         public string? Label { get; set; }
         public string? Phone { get; set; }
         public string? Email { get; set; }
+        public List<PiiNestedSavePolicyTests.Phone> Phones { get; set; } = [];
     }
 
     public class ContactListDTO : ShiftEntityListDTO
@@ -216,7 +227,10 @@ public class PiiValidationHttpTests
         [Pii(PiiKind.Email), EmailAddress] public PiiFieldDTO? Email { get; set; }
     }
 
-    public class ContactDTO : ContactFieldsDTO;
+    public class ContactDTO : ContactFieldsDTO
+    {
+        public List<PiiNestedSavePolicyTests.PhoneDTO> Phones { get; set; } = [];
+    }
 }
 
 // Like the CRUD controllers in host apps, this is not an [ApiController]. Model state errors reach the shared
