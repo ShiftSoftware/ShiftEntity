@@ -388,6 +388,18 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     /// </summary>
     public async Task<CrudResult> PrintTokenAsync(HttpContext httpContext, string key, string urlDescriptor)
     {
+        // Print services can be registered by hosts that do not use printing. Validate the key on use.
+        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
+        if (string.IsNullOrWhiteSpace(options.SASTokenKey))
+            return CrudResult.Status(500, new ShiftEntityResponse
+            {
+                Message = new Message
+                {
+                    Title = "Print configuration error",
+                    Body = "ShiftEntityPrintOptions.SASTokenKey is required"
+                }
+            });
+
         var repository = httpContext.RequestServices.GetRequiredService<Repository>();
         var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
@@ -403,8 +415,6 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 },
                 Additional = repository.AdditionalResponseData
             });
-
-        var options = httpContext.RequestServices.GetRequiredService<ShiftEntityPrintOptions>();
 
         var (token, expires) = TokenService.GenerateSASToken(
             urlDescriptor,
