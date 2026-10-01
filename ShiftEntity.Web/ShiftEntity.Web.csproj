@@ -28,6 +28,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<Compile Remove="Triggers\**" />
 		<EmbeddedResource Remove="Triggers\**" />
 		<None Remove="Triggers\**" />

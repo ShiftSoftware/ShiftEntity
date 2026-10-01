@@ -85,6 +85,15 @@ public class ShiftEntityConversions : ShiftMapperConversions
         CreateConversion<string?, List<ShiftFileDTO>?>(memory: MappingHelpers.ToShiftFiles);
         CreateConversion<List<ShiftFileDTO>?, string?>(memory: MappingHelpers.ToJsonString);
 
+        // PII wrappers carry the raw value only inside the server's mapping pipeline. The repository
+        // replaces them with server-masked wrappers before any ordinary response is returned.
+        // A query form lets list projections remain SQL-translatable; never serialize its result
+        // before the repository's PII protection step has run.
+        CreateConversion<string?, PiiFieldDTO?>(
+            memory: raw => new PiiFieldDTO { Value = raw },
+            query: raw => new PiiFieldDTO { Value = raw });
+        CreateConversion<PiiFieldDTO?, string?>(memory: field => field == null ? null : field.Value);
+
         // ── Text that must be a number. ──────────────────────────────────────────────────────────────────
         //
         // ShiftMapper's own parser turns blank text into 0 on a required long, which for a foreign key is a

@@ -10,6 +10,7 @@ using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.AspNetCore.EndpointFilters;
 using ShiftSoftware.TypeAuth.Core;
@@ -144,9 +145,16 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
 
         Func<HttpContext, Task<IResult>> defaultGetList = async (HttpContext ctx) =>
         {
-            var opts = BuildODataQueryOptions<ListDTO>(ctx.Request);
-            var data = await handler.GetListAsync(ctx, opts);
-            return Results.Ok(data);
+            try
+            {
+                var opts = BuildODataQueryOptions<ListDTO>(ctx.Request);
+                var data = await handler.GetListAsync(ctx, opts);
+                return Results.Ok(data);
+            }
+            catch (ShiftEntityException ex)
+            {
+                return ToMinimalApiResult(ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDTO>.HandleException(ex));
+            }
         };
 
         Func<HttpContext, string, DateTimeOffset?, Task<IResult>> defaultGetSingle = async (HttpContext ctx, string key, DateTimeOffset? asOf) =>
@@ -228,6 +236,13 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
                 ? await config._getSingleOverride(defaultGetSingle, ctx, key, asOf)
                 : await defaultGetSingle(ctx, key, asOf));
 
+        RouteHandlerBuilder? revealRoute = null;
+        if (secure)
+        {
+            revealRoute = group.MapPost("/{key}/pii/{field}/reveal", async (HttpContext ctx, string key, string field) =>
+                ToMinimalApiResult(await handler.RevealPiiAsync(ctx, key, field)));
+        }
+
         // GET /{key}/revisions
         var getRevisionsRoute = group.MapGet("/{key}/revisions", async (HttpContext ctx, string key) =>
             config?._getRevisionsOverride is not null
@@ -305,6 +320,7 @@ public static class ShiftEntityEndpointRouteBuilderExtensions
 
                 getList.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getSingleRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
+                revealRoute!.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 getRevisionsRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 printTokenRoute!.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Read));
                 postRoute.AddEndpointFilter(new TypeAuthEndpointFilter(action, Access.Write));

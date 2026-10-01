@@ -8,6 +8,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.ShiftEntity.Web.Pii;
 using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Threading.Tasks;
@@ -25,6 +26,7 @@ public static class IQueryableExtensions
         Func<IQueryable<T>, ValueTask<IQueryable<T>>>? applyPostODataProcessing = null
     ) where T : ShiftEntityDTOBase
     {
+        PiiODataGuard.Check(oDataQueryOptions);
         var options = httpRequest.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
 
         var typeAuth = httpRequest.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();

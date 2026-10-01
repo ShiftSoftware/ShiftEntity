@@ -7,6 +7,7 @@ using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Mapping;
+using ShiftSoftware.ShiftEntity.Core.Pii;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.Tagging;
@@ -258,6 +259,9 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         {
             taggableDto.Tags = TagProjection.ToDtoList(taggableEntity.Tags);
         }
+
+        if (PiiDtoProtector.HasProtectedMembers(typeof(ViewAndUpsertDTO)))
+            MapperServiceProvider.GetRequiredService<PiiDtoProtector>().Protect(dto);
 
         return new ValueTask<ViewAndUpsertDTO>(dto);
     }

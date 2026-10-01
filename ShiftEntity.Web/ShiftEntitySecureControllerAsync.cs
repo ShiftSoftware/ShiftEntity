@@ -409,6 +409,17 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         return result.ActionResult;
     }
 
+    [Authorize]
+    [HttpPost("{key}/pii/{field}/reveal")]
+    public virtual async Task<ActionResult> RevealPii(string key, string field)
+    {
+        var typeAuthService = HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (action is not null && !typeAuthService.CanRead(action))
+            return Forbid();
+
+        return ToActionResult(await _handler.RevealPiiAsync(HttpContext, key, field));
+    }
+
 
     [HttpGet("print-token/{key}")]
     public virtual async Task<ActionResult> PrintToken(string key)

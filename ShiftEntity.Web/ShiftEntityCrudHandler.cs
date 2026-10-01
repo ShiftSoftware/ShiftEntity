@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
 using ShiftSoftware.ShiftEntity.Core;
@@ -10,6 +11,7 @@ using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Core.Services;
+using ShiftSoftware.ShiftEntity.Core.Pii;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
@@ -18,6 +20,8 @@ using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.HashIds;
 using ShiftSoftware.ShiftEntity.Print;
 using ShiftSoftware.ShiftEntity.Web.Services;
+using ShiftSoftware.ShiftEntity.Web.Pii;
+using ShiftSoftware.TypeAuth.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -60,7 +64,14 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         var data = await repository.OdataList(queryable);
 
-        return await data.ToOdataDTO(oDataQueryOptions, httpContext.Request, applyPostODataProcessing: repository.ApplyPostODataProcessing);
+        var result = await data.ToOdataDTO(oDataQueryOptions, httpContext.Request, applyPostODataProcessing: repository.ApplyPostODataProcessing);
+        if (PiiDtoProtector.HasProtectedMembers(typeof(ListDTO)))
+        {
+            var protector = httpContext.RequestServices.GetRequiredService<PiiDtoProtector>();
+            foreach (var item in result.Value)
+                protector.Protect(item);
+        }
+        return result;
     }
 
     public async Task<ODataDTO<RevisionDTO>> GetRevisionsAsync(
@@ -110,13 +121,48 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
         var isTemporal = item.GetType().GetCustomAttributes(typeof(TemporalShiftEntity)).Any();
 
-        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item))
+        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await ProtectedViewAsync(httpContext, repository, item))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
         };
 
         return (CrudResult.Ok(body, isTemporal), item);
+    }
+
+    public async Task<CrudResult> RevealPiiAsync(HttpContext httpContext, string key, string field)
+    {
+        var dtoMember = typeof(ViewAndUpsertDTO).GetProperty(field, BindingFlags.Instance | BindingFlags.Public);
+        if (dtoMember?.PropertyType != typeof(PiiFieldDTO) ||
+            PiiFieldProtection.FindDeclaration(dtoMember) is not { Revealable: true })
+            return CrudResult.NotFound(null);
+
+        var entityMember = typeof(Entity).GetProperty(dtoMember.Name, BindingFlags.Instance | BindingFlags.Public);
+        if (entityMember?.PropertyType != typeof(string) || !entityMember.CanRead)
+            return CrudResult.NotFound(null);
+
+        var action = httpContext.RequestServices.GetRequiredService<IOptions<PiiOptions>>().Value.Action;
+        var typeAuth = httpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+        if (!typeAuth.CanAccess(action))
+            return CrudResult.Status((int)HttpStatusCode.Forbidden, null);
+
+        var repository = httpContext.RequestServices.GetRequiredService<Repository>();
+        var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
+        Entity? item;
+        try
+        {
+            item = await repository.FindAsync(hashIdService.Decode<ViewAndUpsertDTO>(key));
+        }
+        catch (ShiftEntityException ex)
+        {
+            return HandleException(ex);
+        }
+
+        if (item is null)
+            return CrudResult.NotFound(null);
+
+        httpContext.Response.Headers.CacheControl = "no-store";
+        return CrudResult.Ok(new PiiRevealDTO { Value = (string?)entityMember.GetValue(item) });
     }
 
     public async Task<(CrudResult Result, Entity? Entity)> PostAsync(
@@ -143,7 +189,11 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                     idempotencyKey = Guid.Parse(header);
             }
 
-            newItem = await repository.UpsertAsync(new Entity(), dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey);
+            var fresh = new Entity();
+            var piiSave = PiiDtoProtector.HasProtectedMembers(typeof(ViewAndUpsertDTO))
+                ? PiiSavePolicy.Prepare(dto, fresh, httpContext.RequestServices, isCreate: true) : null;
+            newItem = await repository.UpsertAsync(fresh, dto, ActionTypes.Insert, httpContext.GetUserID(), idempotencyKey);
+            piiSave?.ValidateMapped(newItem);
         }
         catch (ShiftEntityException ex)
         {
@@ -160,7 +210,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         {
             var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
 
-            var existingDto = await repository.ViewAsync(existingItem!);
+            var existingDto = await ProtectedViewAsync(httpContext, repository, existingItem!);
 
             var existingBody = new ShiftEntityResponse<ViewAndUpsertDTO>(existingDto)
             {
@@ -175,7 +225,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             return (HandleException(ex), null);
         }
 
-        var createdDto = await repository.ViewAsync(newItem);
+        var createdDto = await ProtectedViewAsync(httpContext, repository, newItem);
 
         var createdBody = new ShiftEntityResponse<ViewAndUpsertDTO>(createdDto)
         {
@@ -235,7 +285,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 );
             }
 
-            await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID());
+            var piiSave = PiiDtoProtector.HasProtectedMembers(typeof(ViewAndUpsertDTO))
+                ? PiiSavePolicy.Prepare(dto, item, httpContext.RequestServices, isCreate: false) : null;
+            var updated = await repository.UpsertAsync(item, dto, ActionTypes.Update, httpContext.GetUserID());
+            piiSave?.ValidateMapped(updated);
         }
         catch (ShiftEntityException ex)
         {
@@ -251,7 +304,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             return (HandleException(ex), null);
         }
 
-        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item))
+        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await ProtectedViewAsync(httpContext, repository, item))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData,
@@ -301,7 +354,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         if (item.ReloadAfterSave)
             item = await repository.FindAsync(item.ID);
 
-        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await repository.ViewAsync(item!))
+        var body = new ShiftEntityResponse<ViewAndUpsertDTO>(await ProtectedViewAsync(httpContext, repository, item!))
         {
             Message = repository.ResponseMessage,
             Additional = repository.AdditionalResponseData
@@ -517,7 +570,14 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             if (selectedIds is not null)
                 odataList = odataList.Where(x => selectedIds.Contains(x.ID));
 
-            return await odataList.ToListAsync();
+            var selected = await odataList.ToListAsync();
+            if (PiiDtoProtector.HasProtectedMembers(typeof(ListDTO)))
+            {
+                var protector = httpContext.RequestServices.GetRequiredService<PiiDtoProtector>();
+                foreach (var item in selected)
+                    protector.Protect(item);
+            }
+            return selected;
         }
 
         return new List<ListDTO>();
@@ -529,6 +589,7 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         bool disableDefaultDataLevelAccess = false,
         bool disableGlobalFilters = false)
     {
+        PiiODataGuard.Check(oDataQueryOptions);
         if (oDataQueryOptions?.Filter is not null)
         {
             var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
@@ -568,7 +629,14 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
                 odataList = rebuiltOptions.Filter.ApplyTo(odataList, new ODataQuerySettings()) as IQueryable<ListDTO>;
 
-                return await odataList!.ToListAsync();
+                var selected = await odataList!.ToListAsync();
+                if (PiiDtoProtector.HasProtectedMembers(typeof(ListDTO)))
+                {
+                    var protector = httpContext.RequestServices.GetRequiredService<PiiDtoProtector>();
+                    foreach (var item in selected)
+                        protector.Protect(item);
+                }
+                return selected;
             }
             finally
             {
@@ -667,6 +735,15 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
     }
 
     // ---- Helpers ----
+
+    private static async Task<ViewAndUpsertDTO> ProtectedViewAsync(
+        HttpContext httpContext, Repository repository, Entity item)
+    {
+        var dto = await repository.ViewAsync(item);
+        if (PiiDtoProtector.HasProtectedMembers(typeof(ViewAndUpsertDTO)))
+            httpContext.RequestServices.GetRequiredService<PiiDtoProtector>().Protect(dto);
+        return dto;
+    }
 
     internal static CrudResult HandleException(ShiftEntityException ex)
     {
