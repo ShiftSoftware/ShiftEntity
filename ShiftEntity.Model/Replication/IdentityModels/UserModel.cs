@@ -14,6 +14,9 @@ public class UserModel :
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public string? IntegrationId { get; set; }
+    /// <summary>Null identifies an older document that does not carry authorization state.</summary>
+    public bool? IsActive { get; set; }
+    public string? AccessTree { get; set; }
     public bool IsProtected { get; set; }
     public long? CompanyID { get; set; }
     public long? CompanyBranchID { get; set; }
