@@ -7,4 +7,5 @@ namespace ShiftSoftware.ShiftEntity.Core;
 public class PiiActionTree
 {
     public readonly static BooleanAction Reveal = new("Reveal or change protected information");
+    public readonly static BooleanAction PartialSearch = new("Search protected information using partial values");
 }

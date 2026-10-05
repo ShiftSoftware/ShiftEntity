@@ -27,7 +27,7 @@ public sealed class ShiftEntityValidationEndpointFilter : IEndpointFilter
             if (arg is not ShiftEntityViewAndUpsertDTO dto)
                 continue;
 
-            var validationContext = new ValidationContext(dto);
+            var validationContext = new ValidationContext(dto, context.HttpContext.RequestServices, null);
             var results = new List<ValidationResult>();
 
             // Like the MVC pipeline, members such as PII fields are checked against their wrapped value.

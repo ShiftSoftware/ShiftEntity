@@ -80,6 +80,8 @@ public static class IServiceCollectionExtensions
     /// </summary>
     internal static IServiceCollection AddShiftEntityWebSharedCore(this IServiceCollection services)
     {
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<ShiftSoftware.ShiftEntity.Web.IODataQueryPolicy,
+            ShiftSoftware.ShiftEntity.Web.Pii.PiiODataGuard>());
         services
             .AddHttpContextAccessor()
             .AddLocalization();

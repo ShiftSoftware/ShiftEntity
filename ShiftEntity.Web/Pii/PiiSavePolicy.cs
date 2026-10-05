@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core.Pii;
+using ShiftSoftware.ShiftEntity.Core.Phones;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.TypeAuth.Core;
@@ -25,7 +26,7 @@ internal sealed class PiiSavePolicy
         var errors = new List<Message>();
         var action = services.GetRequiredService<IOptions<PiiOptions>>().Value.Action;
         var allowed = services.GetRequiredService<ITypeAuthService>().CanAccess(action);
-        var policy = PrepareNode(dto, entity, allowed, isCreate, "", errors,
+        var policy = PrepareNode(dto, entity, services, allowed, isCreate, "", errors,
             new HashSet<object>(ReferenceEqualityComparer.Instance), 0);
         if (errors.Count > 0)
             throw new ShiftEntityException(new Message
@@ -35,7 +36,7 @@ internal sealed class PiiSavePolicy
         return policy;
     }
 
-    private static PiiSavePolicy PrepareNode(object dto, object entity, bool allowed, bool isCreate,
+    private static PiiSavePolicy PrepareNode(object dto, object entity, IServiceProvider services, bool allowed, bool isCreate,
         string path, List<Message> errors, HashSet<object> visiting, int depth)
     {
         if (depth > 32 || !visiting.Add(dto))
@@ -66,8 +67,16 @@ internal sealed class PiiSavePolicy
                     if (intent == "replace" || isCreate)
                     {
                         var results = new List<ValidationResult>();
-                        ValidateRawValue(member, dto, raw, results);
-                        ValidateRawValue(target, entity, raw, results);
+                        ValidateRawValue(member, dto, raw, results, services);
+                        if (results.Count == 0 && raw is not null && PiiFieldProtection.FindDeclaration(member)?.Kind == PiiKind.Phone
+                            && services.GetService<IPhoneNumberService>() is { } phones)
+                        {
+                            if (phones.TryNormalize(raw, out var normalized, out var error))
+                                raw = normalized;
+                            else
+                                results.Add(new ValidationResult(error));
+                        }
+                        ValidateRawValue(target, entity, raw, results, services);
                         if (results.Count > 0)
                             errors.Add(new Message
                             {
@@ -113,7 +122,7 @@ internal sealed class PiiSavePolicy
                         if (id is { } childId && !stored.TryGetValue(childId, out original) && !isCreate)
                             throw Invalid("A protected child ID does not belong to the loaded record.");
                         var fresh = original ?? NewEntity(entityElement);
-                        policy.children.Add(new Child(target, i, id, PrepareNode(item, fresh, allowed,
+                        policy.children.Add(new Child(target, i, id, PrepareNode(item, fresh, services, allowed,
                             isCreate || original is null, fieldPath + "[" + i + "].", errors, visiting, depth + 1)));
                     }
                 }
@@ -124,7 +133,7 @@ internal sealed class PiiSavePolicy
                     if (!isCreate && id is not null && id != PiiGraphIdentity.EntityId(original))
                         throw Invalid("A protected child ID does not belong to the loaded record.");
                     policy.children.Add(new Child(target, null, id, PrepareNode(submittedChild,
-                        original ?? NewEntity(target.PropertyType), allowed, isCreate || original is null,
+                        original ?? NewEntity(target.PropertyType), services, allowed, isCreate || original is null,
                         fieldPath + ".", errors, visiting, depth + 1)));
                 }
             }
@@ -160,8 +169,8 @@ internal sealed class PiiSavePolicy
     }
 
     // Applies the validation attributes declared on a DTO or entity member to the resolved raw value.
-    private static void ValidateRawValue(PropertyInfo member, object owner, string? raw, List<ValidationResult> results)
-        => Validator.TryValidateValue(raw, new ValidationContext(owner) { MemberName = member.Name }, results,
+    private static void ValidateRawValue(PropertyInfo member, object owner, string? raw, List<ValidationResult> results, IServiceProvider services)
+        => Validator.TryValidateValue(raw, new ValidationContext(owner, services, null) { MemberName = member.Name }, results,
             member.GetCustomAttributes<ValidationAttribute>(true));
 
     private static object NewEntity(Type type)

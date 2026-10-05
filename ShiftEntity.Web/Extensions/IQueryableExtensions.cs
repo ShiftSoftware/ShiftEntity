@@ -8,7 +8,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.HashIds;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
-using ShiftSoftware.ShiftEntity.Web.Pii;
+using ShiftSoftware.ShiftEntity.Web;
 using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Threading.Tasks;
@@ -26,7 +26,7 @@ public static class IQueryableExtensions
         Func<IQueryable<T>, ValueTask<IQueryable<T>>>? applyPostODataProcessing = null
     ) where T : ShiftEntityDTOBase
     {
-        PiiODataGuard.Check(oDataQueryOptions);
+        var policyFilter = oDataQueryOptions.ApplyPolicies(httpRequest.HttpContext.RequestServices);
         var options = httpRequest.HttpContext.RequestServices.GetRequiredService<ShiftEntityOptions>();
 
         var typeAuth = httpRequest.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
@@ -48,7 +48,7 @@ public static class IQueryableExtensions
 
             var hashIdService = httpRequest.HttpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-            var modifiedFilterNode = filterClause.Expression.Accept(new HashIdQueryNodeVisitor<T>(hashIdService));
+            var modifiedFilterNode = policyFilter!.Accept(new HashIdQueryNodeVisitor<T>(hashIdService));
 
             FilterClause modifiedFilterClause = new FilterClause(modifiedFilterNode, filterClause.RangeVariable);
 

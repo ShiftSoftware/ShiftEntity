@@ -38,6 +38,7 @@ public class PiiContractTests
 
         Assert.Same(appAction, services.GetRequiredService<IOptions<PiiOptions>>().Value.Action);
         Assert.NotSame(PiiActionTree.Reveal, appAction);
+        Assert.Same(PiiActionTree.PartialSearch, services.GetRequiredService<IOptions<PiiOptions>>().Value.PartialSearchAction);
         Assert.Equal("•••• 88", services.GetRequiredService<IPiiMasker>().Mask(PiiKind.Phone, "+964 750 000 0088"));
     }
 

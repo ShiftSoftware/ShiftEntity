@@ -596,12 +596,12 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         bool disableDefaultDataLevelAccess = false,
         bool disableGlobalFilters = false)
     {
-        PiiODataGuard.Check(oDataQueryOptions);
+        var policyFilter = oDataQueryOptions.ApplyPolicies(httpContext.RequestServices);
         if (oDataQueryOptions?.Filter is not null)
         {
             var hashIdService = httpContext.RequestServices.GetRequiredService<IHashIdService>();
 
-            var modifiedFilterNode = oDataQueryOptions.Filter.FilterClause.Expression
+            var modifiedFilterNode = policyFilter!
                 .Accept(new HashIdQueryNodeVisitor<ListDTO>(hashIdService));
 
             // Build a throwaway ODataQueryOptions carrying the rewritten filter,
