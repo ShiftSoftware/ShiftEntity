@@ -48,6 +48,9 @@
 		<!-- Phase 4 (standard-profile parity): the profile + the real legacy DefaultDataLevelAccess live in Web;
 		     ShiftIdentity.Core (the actions + DTO type-keys) flows transitively. Leaf ref only — nothing ships it. -->
 		<ProjectReference Include="..\ShiftEntity.Web\ShiftEntity.Web.csproj" />
+		<!-- Entities and a repository whose maps ShiftMapper's generator wrote, as in a host's data project. This project
+		     does not run the generator itself; the referenced project's file says why. -->
+		<ProjectReference Include="..\ShiftEntity.Tests.DataProject\ShiftEntity.Tests.DataProject.csproj" />
 	</ItemGroup>
 
 </Project>
