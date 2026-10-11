@@ -13,4 +13,10 @@ public class CheckReCaptchaAttribute : Attribute
     }
 
     public double? MinScore { get; }
+
+    /// <summary>
+    /// When true, the outcome of each verification (score, min score, action, hostname, error codes) is logged.
+    /// Disabled by default.
+    /// </summary>
+    public bool LogResult { get; set; }
 }

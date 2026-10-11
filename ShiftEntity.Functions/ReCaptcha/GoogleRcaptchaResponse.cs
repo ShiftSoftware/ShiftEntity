@@ -1,4 +1,6 @@
-﻿namespace ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
+using System.Text.Json.Serialization;
+
+namespace ShiftSoftware.ShiftEntity.Functions.ReCaptcha;
 
 public class GoogleRcaptchaResponse
 {
@@ -7,4 +9,7 @@ public class GoogleRcaptchaResponse
     public string Action { get; set; } = default!;
     public DateTime Challenge_Ts { get; set; }
     public string HostName { get; set; } = default!;
+
+    [JsonPropertyName("error-codes")]
+    public string[]? ErrorCodes { get; set; }
 }
