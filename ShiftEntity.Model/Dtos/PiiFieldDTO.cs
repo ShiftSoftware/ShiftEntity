@@ -5,7 +5,9 @@ namespace ShiftSoftware.ShiftEntity.Model.Dtos;
 /// <summary>
 /// A protected field in an ordinary response or an existing form save.
 /// The server supplies Display. Value is null in ordinary responses.
+/// A list export writes Display only, never Value.
 /// </summary>
+[ExportValueMember(nameof(Display))]
 public sealed class PiiFieldDTO : IValidationValueWrapper
 {
     public string? Display { get; set; }
