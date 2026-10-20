@@ -309,6 +309,119 @@ public class ShiftRepositoryDataLevelAccessTests
             Upsert(repository, Sample(4), Dto(Companies.DealerA, null), ActionTypes.Update));
     }
 
+    /// <summary>Read on company 4 (where #3 is stored) and Read+Write on DealerB.</summary>
+    private static TypeAuthContext ReadsIntermediaryWritesDealerB()
+        => ScopedTypeAuth.ToCompaniesAt(new Dictionary<long, Access[]>
+        {
+            [Companies.Intermediary] = new[] { Access.Read },
+            [Companies.DealerB] = new[] { Access.Read, Access.Write },
+        });
+
+    [Fact]
+    public async Task PolicyDeclared_Upsert_Update_ChecksTheStoredRecord_SoItCantLeaveAReadOnlyCompany()
+    {
+        // FE-2026-10-18-01. The caller can see #3 (stored in company 4) but not edit it. Moving it into DealerB, where
+        // the mapped values would pass, must be denied too: an Update needs Write on the record as stored as well as on
+        // the record as saved. The stored check comes first, so nothing is mapped onto the entity.
+        using var provider = RepositoryHost.Build(typeAuth: ReadsIntermediaryWritesDealerB);
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOr, new UpsertVehicleMapper());
+        var vehicle = Sample(3);
+
+        await AssertDenied("Can Not Update Item", () =>
+            Upsert(repository, vehicle, Dto(Companies.DealerB, null), ActionTypes.Update));
+
+        Assert.Equal(Companies.Intermediary, vehicle.CompanyID);
+        Assert.Equal("Intermediary owned", vehicle.Name);
+    }
+
+    [Fact]
+    public async Task PolicyDeclared_Upsert_Update_MoveBetweenTwoWritableCompanies_Saves()
+    {
+        // The other side of the stored check: with Write on both the stored company and the new one, the move saves.
+        using var provider = RepositoryHost.Build(
+            typeAuth: () => ScopedTypeAuth.ToCompanies(new[] { Companies.Intermediary, Companies.DealerB }));
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), DeclareCompanyOr, new UpsertVehicleMapper());
+
+        var moved = await Upsert(repository, Sample(3), Dto(Companies.DealerB, null), ActionTypes.Update);
+
+        Assert.Equal(Companies.DealerB, moved.CompanyID);
+    }
+
+    [Fact]
+    public async Task PolicyDeclared_Upsert_Update_ChecksTheStoredRecordBeforeTheEntityHook()
+    {
+        // An entity's upsert hook may set the scope from the DTO before calling Base() (ShiftIdentity's User takes its
+        // company from the selected branch), and Base()'s Write check then sees the new company. So the stored record
+        // is checked before the hook runs, and a denied move never reaches it.
+        using var provider = RepositoryHost.Build(typeAuth: ReadsIntermediaryWritesDealerB);
+        using var scope = provider.CreateScope();
+
+        var repository = new ShiftRepository<VehicleDbContext, RelocatingVehicleEntity, VehicleListDTO, VehicleListDTO>(
+            scope.ServiceProvider.GetRequiredService<VehicleDbContext>(),
+            o =>
+            {
+                o.UseMapper(new UpsertRelocatingVehicleMapper());
+                o.DataLevelAccess(access => access.On(VehicleDataLevel.Companies).Keys(x => x.CompanyID));
+            });
+        var vehicle = new RelocatingVehicleEntity { ID = 1, Name = "stored", CompanyID = Companies.Intermediary };
+
+        await AssertDenied("Can Not Update Item", () =>
+            repository.UpsertAsync(vehicle, Dto(Companies.DealerB, null), ActionTypes.Update, userId: null,
+                idempotencyKey: null, disableDefaultDataLevelAccess: false, disableGlobalFilters: false).AsTask());
+
+        Assert.False(vehicle.HookRan);
+        Assert.Equal(Companies.Intermediary, vehicle.CompanyID);
+    }
+
+    [Fact]
+    public async Task NoPolicy_Upsert_Update_ChecksTheStoredRecordThenTheMappedOne()
+    {
+        // Legacy parity: an Update row-checks Write twice, on the record as stored and then on the mapped values.
+        var seen = new List<(long? CompanyID, Access Access)>();
+        var legacy = new RecordingDefaultDataLevelAccess
+        {
+            RowCheck = (entity, access) =>
+            {
+                seen.Add((((VehicleEntity)entity!).CompanyID, access));
+                return true;
+            },
+        };
+        using var provider = RepositoryHost.Build(legacy: legacy);
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), configure: null, new UpsertVehicleMapper());
+
+        await Upsert(repository, Sample(3), Dto(Companies.DealerB, null), ActionTypes.Update);
+
+        Assert.Equal(new (long?, Access)[] { (Companies.Intermediary, Access.Write), (Companies.DealerB, Access.Write) }, seen);
+    }
+
+    [Fact]
+    public async Task NoPolicy_Upsert_Update_StoredRecordDenied_StopsBeforeMapping()
+    {
+        // The legacy rules may write DealerB only: moving #3 out of company 4 is denied at the stored check, and the
+        // mapped values are never checked.
+        var legacy = new RecordingDefaultDataLevelAccess
+        {
+            RowCheck = (entity, access) => access == Access.Write && ((VehicleEntity)entity!).CompanyID == Companies.DealerB,
+        };
+        using var provider = RepositoryHost.Build(legacy: legacy);
+        using var scope = provider.CreateScope();
+
+        var repository = Repository(RepositoryHost.SeededDb(scope), configure: null, new UpsertVehicleMapper());
+        var vehicle = Sample(3);
+
+        await AssertDenied("Can Not Update Item", () =>
+            Upsert(repository, vehicle, Dto(Companies.DealerB, null), ActionTypes.Update));
+
+        Assert.Equal(1, legacy.RowCheckCalls);
+        Assert.Equal(Companies.Intermediary, vehicle.CompanyID);
+    }
+
     [Fact]
     public async Task PolicyDeclared_Upsert_InsertOutOfScope_Denied403CanNotCreateItem()
     {

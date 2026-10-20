@@ -49,6 +49,18 @@ public static class ScopedTypeAuth
         => ToCompanies(new[] { companyId }, accesses);
 
     /// <summary>
+    /// Access scoped per company id, each at its own levels — for a caller who can, say, only read one company and
+    /// write another.
+    /// </summary>
+    public static TypeAuthContext ToCompaniesAt(IReadOnlyDictionary<long, Access[]> levelsByCompany)
+    {
+        var byId = new Dictionary<string, object>();
+        foreach (var (id, accesses) in levelsByCompany)
+            byId[id.ToString()] = Defaulted(accesses);
+        return BuildCompanies(byId);
+    }
+
+    /// <summary>
     /// Access scoped to the given raw accessible-id <em>strings</em> at the given levels. Unlike
     /// <see cref="ToCompanies(IEnumerable{long}, Access[])"/> (which stringifies longs) the keys are granted verbatim,
     /// so a test can grant a hashid-<em>encoded</em> id (e.g. <c>"C4"</c>) and verify the dimension decodes it.

@@ -269,7 +269,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
     /// <summary>
     /// The upsert entry point. Dispatches to the entity's <see cref="IUpsertsShiftRepository{EntityType, ListDTO, ViewAndUpsertDTO}"/>
-    /// hook when the entity declares one for this triple, otherwise runs <see cref="DefaultUpsertAsync"/>.
+    /// hook when the entity declares one for this triple, otherwise runs <see cref="DefaultUpsertAsync"/>. An update needs
+    /// data-level Write on the record as stored, checked here, and on the record as it will be saved, checked by the default.
     /// </summary>
     public virtual async ValueTask<EntityType> UpsertAsync(
         EntityType entity, ViewAndUpsertDTO dto,
@@ -280,6 +281,15 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         bool disableGlobalFilters
     )
     {
+        // Edit ⇒ Write on the record as stored, not only on the mapped values the default checks: otherwise someone
+        // who can read company A and write company B could save an A record with B's company or branch and move it out
+        // of A. Checked here, before an entity's hook runs, because a hook may set the scope from the DTO before calling
+        // Base() (ShiftIdentity's User takes its company from the selected branch). A repository that overrides this
+        // method and changes the scope before calling base gets this check on its own values.
+        if (actionType == ActionTypes.Update && !disableDefaultDataLevelAccess
+            && !HasDataLevelAccess(entity, TypeAuth.Core.Access.Write))
+            throw new ShiftEntityException(new Message("Forbidden", "Can Not Update Item"), (int)HttpStatusCode.Forbidden);
+
         // Entity-driven upsert: the entity can take this operation over by implementing
         // IUpsertsShiftRepository<Entity, List, View> — the analogue of overriding this method, with context.Base()
         // standing in for base.UpsertAsync(...). Keyed by the DTO triple, so an entity with several endpoints only
@@ -376,7 +386,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         if (!disableDefaultDataLevelAccess)
         {
             // Insert/Edit ⇒ the Write level (D6). The check runs against the MAPPED entity (and, on Insert, after
-            // the claim-default backfill above), so what gets authorized is exactly what would be saved.
+            // the claim-default backfill above), so what gets authorized is exactly what would be saved. On an Edit,
+            // UpsertAsync has already checked the record as stored.
             var canWrite = HasDataLevelAccess(entity, TypeAuth.Core.Access.Write);
 
             if (!canWrite)

@@ -24,8 +24,9 @@ namespace ShiftSoftware.ShiftEntity.EFCore;
 /// }
 /// </code>
 /// Like an override, calling <c>Base()</c> is optional: skip it and you replace the default entirely — including
-/// the mapping, audit stamping, protected-row guard and data-level checks it performs. Insert and update both
-/// arrive here; branch on <paramref name="actionType"/>.
+/// the mapping, audit stamping, protected-row guard and data-level checks it performs. The one check that runs
+/// before the hook is an update's data-level Write on the row as stored, so a hook can't skip that one. Insert and
+/// update both arrive here; branch on <paramref name="actionType"/>.
 /// <para>
 /// Keyed by the endpoint's DTO triple — implement once per triple, exactly like
 /// <see cref="IConfiguresShiftRepository{TEntity, TListDTO, TViewDTO}"/>.

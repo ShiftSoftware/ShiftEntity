@@ -14,6 +14,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess.Scenario;
 public class VehicleDbContext : ShiftDbContext
 {
     public DbSet<VehicleEntity> Vehicles { get; set; } = default!;
+    public DbSet<RelocatingVehicleEntity> RelocatingVehicles { get; set; } = default!;
 
     public VehicleDbContext(DbContextOptions<VehicleDbContext> options) : base(options) { }
 }
@@ -86,6 +87,9 @@ public sealed class RecordingDefaultDataLevelAccess : IDefaultDataLevelAccess
     /// <summary>What <see cref="HasDefaultDataLevelAccess{EntityType}"/> answers (default: permissive).</summary>
     public bool RowCheckVerdict { get; set; } = true;
 
+    /// <summary>When set, decides the verdict from the entity and level instead of <see cref="RowCheckVerdict"/>.</summary>
+    public Func<object?, Access, bool>? RowCheck { get; set; }
+
     public IQueryable<EntityType> ApplyDefaultDataLevelFilters<EntityType>(
         DefaultDataLevelAccessOptions DefaultDataLevelAccessOptions, IQueryable<EntityType> query) where EntityType : notnull
     {
@@ -102,7 +106,7 @@ public sealed class RecordingDefaultDataLevelAccess : IDefaultDataLevelAccess
         LastRowCheckOptions = defaultDataLevelAccessOptions;
         LastRowCheckEntity = entity;
         LastRowCheckAccess = access;
-        return RowCheckVerdict;
+        return RowCheck?.Invoke(entity, access) ?? RowCheckVerdict;
     }
 
     public List<long?>? GetAccessibleCountries() => throw new NotSupportedException();
