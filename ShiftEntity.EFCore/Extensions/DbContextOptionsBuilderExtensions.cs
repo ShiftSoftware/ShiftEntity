@@ -17,4 +17,13 @@ public static class DbContextOptionsBuilderExtensions
 
         return optionsBuilder;
     }
+
+    /// <summary>
+    /// Lets a <see cref="ShiftDbContext"/> hold the work its saves ask to run after the commit
+    /// (<see cref="ShiftDbContext.AfterCommit"/>) until an explicit transaction commits, and drop it when the
+    /// transaction rolls back. Without this, such work runs right after the save even inside an explicit transaction.
+    /// Calling it more than once is harmless.
+    /// </summary>
+    public static DbContextOptionsBuilder UseShiftEntityAfterCommit(this DbContextOptionsBuilder optionsBuilder) =>
+        optionsBuilder.AddInterceptors(ShiftDbContextTransactionInterceptor.Instance);
 }

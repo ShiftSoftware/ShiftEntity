@@ -2,6 +2,10 @@
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
+/// <summary>
+/// A link document of the <c>CompanyBranches</c> container, which replication no longer writes. It stays because
+/// <see cref="TeamModel.CompanyBranches"/> lists a team's branches with it.
+/// </summary>
 public class CompanyBranchSubItemModel : ReplicationModel
 {
     public string Name { get; set; } = default!;

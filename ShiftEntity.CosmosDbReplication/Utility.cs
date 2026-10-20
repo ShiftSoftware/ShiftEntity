@@ -126,6 +126,41 @@ internal static class Utility
     private static PartitionKeyLevelStamp? ToLevel((string? value, PartitionKeyTypes type)? level)
         => level.HasValue ? new PartitionKeyLevelStamp { Value = level.Value.value, Type = level.Value.type } : null;
 
+    /// <summary>
+    /// Whether the document that <paramref name="stamp"/> locates can be in the container: its partition key has as
+    /// many components as the container's partition key definition.
+    /// </summary>
+    /// <remarks>
+    /// A stamp with another number of components was written for a document in another container, as a row's stamp
+    /// still is when its replication has moved to a new container and the row has not been synced there yet. That
+    /// document is not in this container, so there is nothing of it to delete here. Cosmos DB refuses a key of the
+    /// wrong shape (the SDK throws an <see cref="ArgumentException"/>, the gateway answers 400 with substatus 1001), so
+    /// a delete by such a stamp used to fail the row on every sync, and the row never reached the new container.
+    /// </remarks>
+    internal static bool CanBeIn(this LastReplicationStamp stamp, ContainerResponse container) =>
+        new[] { stamp.Level1, stamp.Level2, stamp.Level3 }.Count(x => x is not null) ==
+        (container.Resource.PartitionKeyPaths?.Count ?? 0);
+
+    /// <summary>
+    /// Why a Cosmos DB call failed, in at most 500 characters, since a Cosmos DB error carries the service's response
+    /// body.
+    /// </summary>
+    internal static string DescribeFailure(Exception? exception)
+    {
+        if (exception is AggregateException aggregate)
+            exception = aggregate.Flatten().InnerExceptions.FirstOrDefault();
+
+        var text = exception switch
+        {
+            null => "The Cosmos DB call was cancelled.",
+            CosmosException cosmos =>
+                $"Cosmos DB answered {(int)cosmos.StatusCode} {cosmos.StatusCode} (substatus {cosmos.SubStatusCode}): {cosmos.ResponseBody}",
+            _ => $"{exception.GetType().Name}: {exception.Message}",
+        };
+
+        return text.Length <= 500 ? text : text[..500] + "…";
+    }
+
     internal static (PartitionKey? partitionKey,
         (string? value, PartitionKeyTypes type)? level1,
         (string? value, PartitionKeyTypes type)? level2,

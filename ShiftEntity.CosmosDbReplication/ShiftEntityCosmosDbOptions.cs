@@ -1,5 +1,4 @@
-﻿using EntityFrameworkCore.Triggered;
-using Microsoft.Azure.Cosmos;
+﻿using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +6,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.EFCore.Replication;
 using ShiftSoftware.ShiftEntity.Model.Enums;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Linq.Expressions;
@@ -133,6 +133,39 @@ public class CosmosDbTriggerReplicateOperation<Entity>
             partitionKeyLevel2Expression, partitionKeyLevel3Expression, mapping);
         return this.cosmosDbTriggerReferenceOperations;
     }
+
+    /// <summary>
+    /// Replicates <typeparamref name="CosmosDbItem"/>, built from the root loaded by ID with its replication tree
+    /// (<c>HasReplicationTree</c>) once the save is committed, instead of from the saving caller's instance. A save of
+    /// the root or of any row in its tree replicates it, and the row's stamp locates the document, as for
+    /// <c>Replicate</c>.
+    /// </summary>
+    /// <remarks>
+    /// The tree document is the registration's only document: a registration replicates either its own document
+    /// (<c>Replicate</c>) or its tree, and updates no references. A save of a part records the root's watermark after
+    /// rebuilding this one document, so that watermark could not stand for anything else.
+    /// </remarks>
+    /// <param name="mapping">
+    /// Builds the document from the loaded root. Optional: when omitted, the document is mapped through the host's
+    /// registered ShiftMapper mapper, which must declare <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>.
+    /// </param>
+    public CosmosDbTriggerReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+    {
+        this.cosmosDbTriggerReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
+        return this.cosmosDbTriggerReferenceOperations;
+    }
+
+    /// <inheritdoc cref="ReplicateTree{CosmosDbItem}(string, Expression{Func{CosmosDbItem, object}}, Func{EntityWrapper{Entity}, CosmosDbItem}?)"/>
+    public CosmosDbTriggerReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
+    {
+        this.cosmosDbTriggerReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, partitionKeyLevel2Expression, null, mapping);
+        return this.cosmosDbTriggerReferenceOperations;
+    }
 }
 
 public class CosmosDbTriggerReferenceOperations<Entity>
@@ -145,11 +178,21 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private CosmosClient? client;
     private List<string> cosmosContainerIds = new();
 
-    private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp)>> replicateAction;
-    //Hard-delete companion to replicateAction: removes the entity's own document from Cosmos. Trigger-only (the
-    //timer/catch-up sync never sees a hard delete). Set alongside replicateAction in Replicate().
-    private Func<Entity, IServiceProvider, Database, Task<bool>>? replicateDeleteAction;
-    private List<Func<Entity, IServiceProvider, Database, Task<bool?>>> upsertReferenceActions = new();
+    //Each step of a sync gives why it failed when it did not succeed, so that RunAsync can report the failure.
+    private Func<Entity, IServiceProvider, Database, Task<(bool success, string? stamp, string? failure)>>? replicateAction;
+    //Hard-delete companion of the registration's document, whichever builds it: removes the document the row's stamp
+    //locates. Save-time only (the timer/catch-up sync never sees a hard delete). Set by Replicate and ReplicateTree.
+    private Func<Entity, IServiceProvider, Database, Task<bool>>? deleteAction;
+    private List<Func<Entity, IServiceProvider, Database, Task<(bool success, string? failure)>>> upsertReferenceActions = new();
+
+    //The document built from the root loaded by ID with its replication tree (ReplicateTree). Null when the root cannot
+    //be loaded. A registration has this or replicateAction, never both.
+    private Func<long, IServiceProvider, Database, Task<TreeSync?>>? treeAction;
+
+    private sealed record TreeSync(bool Success, string? Stamp, DateTimeOffset Version, string? Failure = null);
+
+    /// <summary>Whether this registration builds a document from the root's replication tree.</summary>
+    internal bool HasTreeDocument => treeAction is not null;
 
     //The stamp this process last wrote for each instance it synced. A later sync of the same instance uses it instead
     //of the instance's own column, which RunAsync does not change: the instance is often the caller's, still tracked
@@ -185,6 +228,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Expression<Func<CosmosDbItem, object>>? partitionKeyLevel3Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
     {
+        if (this.treeAction is not null)
+            throw OneDocumentOnly();
+
         this.cosmosContainerIds.Add(cosmosContainerId);
 
         //The partition-key expressions document the container's key shape and are validated up front; the actual
@@ -199,7 +245,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         this.replicateAction = async (entity, services, db) =>
         {
             //No delegate → the host's ShiftMapper mapper, resolved and pair-checked BEFORE anything is written. A
-            //missing registration then throws out of the run (the trigger logs it and the row stays dirty) instead
+            //missing registration then throws out of the run (the save-time sync logs it and the row stays dirty) instead
             //of surfacing as a permanently-dirty document under a clean-looking watermark, which is what the old
             //AutoMapper fallback did when the host had forgotten to register it.
             CosmosDbItem item = mapping is not null
@@ -216,7 +262,8 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             //LastReplicationStamp) — what was actually written to Cosmos last time — never from re-mapping the
             //pre-save entity snapshot: a mapping that leaves a partition-key component unset (or derives values
             //from navigations) reconstructs coordinates that don't match the stored document, so such a delete
-            //silently misses (404) and the old document is orphaned.
+            //silently misses (404) and the old document is orphaned. A stamp written for another container
+            //locates no document in this one (see CanBeIn), so nothing is deleted for it.
             string? staleId = null;
             PartitionKey? stalePartitionKey = null;
 
@@ -224,7 +271,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
             var newStamp = Utility.BuildStamp(containerResponse, item!);
             var oldStamp = LastReplicationStamp.Deserialize(LastWrittenStamp(entity));
 
-            if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+            if (oldStamp is not null && newStamp.DiffersFrom(oldStamp) && oldStamp.CanBeIn(containerResponse))
             {
                 staleId = oldStamp.Id;
                 stalePartitionKey = oldStamp.BuildPartitionKey();
@@ -242,11 +289,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 {
                     //already gone; treat as success and proceed to upsert
                 }
-                catch
+                catch (Exception ex)
                 {
                     //Report failure WITHOUT upserting: the stamp/replication date stay untouched, the row stays
                     //dirty, and the catch-up sync retries the delete + upsert later.
-                    return (false, null);
+                    return (false, null, StaleDeleteFailed(staleId, cosmosContainerId, ex));
                 }
             }
 
@@ -257,33 +304,137 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     response.StatusCode == System.Net.HttpStatusCode.NoContent;
 
             //On success, RunAsync writes the new stamp (the id + partition key this row now lives under in
-            //Cosmos) to the row and keeps it for this instance, so the NEXT sync — trigger or catch-up — can
+            //Cosmos) to the row and keeps it for this instance, so the NEXT sync — save-time or catch-up — can
             //detect the next change.
-            return (success, success ? stamp : null);
+            return (success, success ? stamp : null, success ? null : UpsertFailed(cosmosContainerId, response.StatusCode));
         };
 
-        this.replicateDeleteAction = async (entity, services, db) =>
+        this.deleteAction = DeleteByStamp<CosmosDbItem>(cosmosContainerId);
+    }
+
+    internal void ReplicateTree<CosmosDbItem>(
+        string cosmosContainerId,
+        Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel2Expression,
+        Expression<Func<CosmosDbItem, object>>? partitionKeyLevel3Expression,
+        Func<EntityWrapper<Entity>, CosmosDbItem>? mapping)
+    {
+        if (this.replicateAction is not null)
+            throw OneDocumentOnly();
+        if (this.upsertReferenceActions.Count > 0)
+            throw NoReferencesWithTree();
+
+        this.cosmosContainerIds.Add(cosmosContainerId);
+
+        CheckPartitionKeyType(partitionKeyLevel1Expression);
+        if (partitionKeyLevel2Expression is not null)
+            CheckPartitionKeyType(partitionKeyLevel2Expression);
+        if (partitionKeyLevel3Expression is not null)
+            CheckPartitionKeyType(partitionKeyLevel3Expression);
+
+        this.treeAction = async (id, services, db) =>
         {
-            //Locate the entity's Cosmos document by the stamp of its last write (the id + partition key it was last
-            //written under, see LastWrittenStamp) and remove it. No stamp ⇒ it was never replicated ⇒ nothing to
-            //delete.
+            var map = mapping is not null
+                ? (Func<Entity, CosmosDbItem>)(root => mapping(new EntityWrapper<Entity>(root, services)))
+                : ReplicationMapper.ResolveCreate<Entity, CosmosDbItem>(services,
+                    $"ReplicateTree<{typeof(CosmosDbItem).Name}>(\"{cosmosContainerId}\")");
+
+            var context = (ShiftDbContext)services.GetRequiredService(this.dbContextType);
+            var root = await context.Set<Entity>().IgnoreQueryFilters().AsNoTracking()
+                .IncludeReplicationTree(context)
+                .SingleOrDefaultAsync(x => x.ID == id);
+
+            //Not found: deleted after the save that started this sync, whose own sync removes the document, or not
+            //visible to this connection yet. Nothing is recorded, so a row that does exist stays due for the catch-up.
+            if (root is null)
+                return null;
+
+            var item = map(root);
+            var container = db.GetContainer(cosmosContainerId);
+            var containerResponse = await container.ReadContainerAsync();
+            var newStamp = Utility.BuildStamp(containerResponse, item!);
+
+            //The document moved: remove the one the last sync wrote, as Replicate does. A stamp written for another
+            //container locates no document in this one (see CanBeIn), so nothing is deleted for it.
+            if (LastReplicationStamp.Deserialize(root.LastReplicationStamp) is { } oldStamp && newStamp.DiffersFrom(oldStamp) &&
+                oldStamp.CanBeIn(containerResponse))
+            {
+                try
+                {
+                    await container.DeleteItemAsync<CosmosDbItem>(oldStamp.Id, oldStamp.BuildPartitionKey());
+                }
+                catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                }
+                catch (Exception ex)
+                {
+                    return new TreeSync(false, null, root.LastSaveDate, StaleDeleteFailed(oldStamp.Id, cosmosContainerId, ex));
+                }
+            }
+
+            var response = await container.UpsertItemAsync(item);
+            var success = response.StatusCode is HttpStatusCode.OK or HttpStatusCode.Created or HttpStatusCode.NoContent;
+
+            //The version this sync replicates is the root's LastSaveDate as loaded, which a change of a part never
+            //moves. See RunTreeAsync for what that means for the watermark.
+            return success
+                ? new TreeSync(true, newStamp.Serialize(), root.LastSaveDate)
+                : new TreeSync(false, null, root.LastSaveDate, UpsertFailed(cosmosContainerId, response.StatusCode));
+        };
+
+        this.deleteAction = DeleteByStamp<CosmosDbItem>(cosmosContainerId);
+    }
+
+    //Locates the row's Cosmos document by the stamp of its last write (the id + partition key it was last written
+    //under, see LastWrittenStamp) and removes it. No stamp ⇒ it was never replicated ⇒ nothing to delete. A stamp
+    //written for another container (see CanBeIn) ⇒ its document is not in this one ⇒ nothing to delete either.
+    private static Func<Entity, IServiceProvider, Database, Task<bool>> DeleteByStamp<CosmosDbItem>(string cosmosContainerId) =>
+        async (entity, services, db) =>
+        {
             var stamp = LastReplicationStamp.Deserialize(LastWrittenStamp(entity));
-            var partitionKey = stamp?.BuildPartitionKey();
-            if (stamp is null || !partitionKey.HasValue)
+            if (stamp is null)
                 return true;
 
             var container = db.GetContainer(cosmosContainerId);
             try
             {
-                await container.DeleteItemAsync<CosmosDbItem>(stamp.Id, partitionKey.Value);
+                if (stamp.CanBeIn(await container.ReadContainerAsync()))
+                    await container.DeleteItemAsync<CosmosDbItem>(stamp.Id, stamp.BuildPartitionKey());
             }
             catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                //Already gone; treat as success.
+                //Already gone, or no such container; treat as success.
             }
             return true;
         };
-    }
+
+    //Why a step of a sync failed, for the sync's failure.
+    private static string StaleDeleteFailed(string? id, string containerId, Exception exception) =>
+        $"the document the last sync wrote ('{id}' in '{containerId}') could not be deleted, so the new one was not written: " +
+        Utility.DescribeFailure(exception);
+
+    private static string UpsertFailed(string containerId, HttpStatusCode status) =>
+        $"Cosmos DB answered {(int)status} {status} to the upsert into '{containerId}'";
+
+    private static string ReferenceFailed(string containerId, Exception? exception) =>
+        $"a document in '{containerId}' that refers to the row could not be updated: {Utility.DescribeFailure(exception)}";
+
+    //A sync whose step reported failure, rather than throwing, used to be logged as succeeded.
+    private static InvalidOperationException SyncFailed(long id, string? failure) => new(
+        $"The replication of '{typeof(Entity).Name}' {id} failed: {failure ?? "a step reported failure"}. Nothing was " +
+        "recorded, so the row stays due for the catch-up.");
+
+    //One document a row: the row's own stamp, watermark and hard delete all describe that one document.
+    private static ReplicationRegistrationException OneDocumentOnly() => new(
+        $"The replication of '{typeof(Entity).Name}' registers both Replicate and ReplicateTree. A registration replicates one " +
+        "document a row: either its own (Replicate) or the one built from its replication tree (ReplicateTree), not both.");
+
+    //A part's change rebuilds only the tree document and then records the root's watermark, which would also say that
+    //the root's reference updates had succeeded.
+    private static ReplicationRegistrationException NoReferencesWithTree() => new(
+        $"The replication of '{typeof(Entity).Name}' combines ReplicateTree with UpdateReference or UpdatePropertyReference. A " +
+        "registration that replicates its tree updates no references: the sync of a part's change records the root as replicated " +
+        "after rebuilding the tree document only.");
 
     private void CheckPartitionKeyType<CosmosDbItem>(Expression<Func<CosmosDbItem, object>> partitionKeyExpression)
     {
@@ -319,6 +470,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 Func<IQueryable<CosmosDbItem>, EntityWrapper<Entity>, IQueryable<CosmosDbItem>> finder,
                 Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem>? mapping = null)
     {
+        if (this.treeAction is not null)
+            throw NoReferencesWithTree();
+
         this.cosmosContainerIds.Add(cosmosContainerId);
 
         this.upsertReferenceActions.Add(async (entity, services, db) =>
@@ -331,12 +485,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 : null;
 
             bool? isSucceeded = null;
+            string? failure = null;
             var container = db.GetContainer(cosmosContainerId);
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
             if(items is null || items?.Count() == 0)
-                return true;
+                return (true, null);
 
             List<Task> cosmosTasks = new();
 
@@ -353,12 +508,14 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     .ContinueWith(x =>
                     {
                         isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        if (!x.IsCompletedSuccessfully)
+                            Interlocked.CompareExchange(ref failure, ReferenceFailed(cosmosContainerId, x.Exception), null);
                     }));
             }
 
             await Task.WhenAll(cosmosTasks);
 
-            return isSucceeded;
+            return (isSucceeded.GetValueOrDefault(false), failure);
         });
 
         return this;
@@ -374,6 +531,9 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
         Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)
     {
+        if (this.treeAction is not null)
+            throw NoReferencesWithTree();
+
         string propertyPath = Utility.GetPropertyFullPath(destinationReferencePropertyExpression);
 
         this.cosmosContainerIds.Add(cosmosContainerId);
@@ -387,12 +547,13 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                 : null;
 
             bool? isSucceeded = null;
+            string? failure = null;
             var container = db.GetContainer(cosmosContainerId);
 
             var items = await GetItemsForReferenceUpdate(container, entity, services, finder);
 
             if (items is null || items?.Count() == 0)
-                return true;
+                return (true, null);
 
             List<Task> cosmosTasks = new();
 
@@ -412,12 +573,14 @@ public class CosmosDbTriggerReferenceOperations<Entity>
                     .ContinueWith(x =>
                     {
                         isSucceeded = isSucceeded.GetValueOrDefault(true) && x.IsCompletedSuccessfully;
+                        if (!x.IsCompletedSuccessfully)
+                            Interlocked.CompareExchange(ref failure, ReferenceFailed(cosmosContainerId, x.Exception), null);
                     }));
             }
 
             await Task.WhenAll(cosmosTasks);
 
-            return isSucceeded;
+            return (isSucceeded.GetValueOrDefault(false), failure);
         });
 
         return this;
@@ -443,10 +606,11 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         return items;
     }
 
-    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ChangeType changeType)
+    internal async Task RunAsync(Entity entity, IServiceProvider serviceProvider, ReplicationChangeType changeType)
     {
         bool? isSucceeded = null;
         string? replicationStamp = null;
+        string? failure = null;
 
         //Do the mapping if not null
         if (setupMapping is not null)
@@ -458,34 +622,20 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         var id = entity.ID;
         var replicatedVersion = entity.LastSaveDate;
 
-        //Prepare the lists of the container that used, to the connection
-        if(this.client is null)
-        {
-            List<(string databaseId, string continerId)> containers = new();
-            foreach (var containerId in this.cosmosContainerIds)
-                containers.Add((this.cosmosDataBaseId, containerId));
-
-            //Connect to the cosmos selected database and containers
-            this.client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers);
-        }
-
-        //Set the client to allow bulk execution
-        client.ClientOptions.AllowBulkExecution = true;
-
-        var db = client.GetDatabase(this.cosmosDataBaseId);
+        var db = await this.DatabaseAsync();
 
         //Hard delete → remove the entity's own document from Cosmos and stop. No bookkeeping write afterwards: the SQL
         //row is already deleted.
-        if (changeType == ChangeType.Deleted)
+        if (changeType == ReplicationChangeType.Deleted)
         {
-            if (replicateDeleteAction is not null)
-                await replicateDeleteAction(entity, serviceProvider, db);
+            if (deleteAction is not null)
+                await deleteAction(entity, serviceProvider, db);
             return;
         }
 
         //If the change type is added or modified, then do the upsert action
         //(it removes the stale document first when the last written stamp shows the id/partition key changed)
-        if (changeType == ChangeType.Added || changeType == ChangeType.Modified)
+        if ((changeType == ReplicationChangeType.Added || changeType == ReplicationChangeType.Modified) && this.replicateAction is not null)
         {
             //Reset the isSucceeded flag
             isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
@@ -494,9 +644,25 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
             isSucceeded = isSucceeded.GetValueOrDefault(true) && result.success;
             replicationStamp = result.stamp;
+            failure ??= result.failure;
         }
 
-        if (changeType == ChangeType.Modified)
+        //The tree document: built from the root loaded by ID, never from the caller's instance. Its stamp is the row's,
+        //and the version it loaded is the one this sync replicates. A root it cannot load records nothing.
+        if ((changeType == ReplicationChangeType.Added || changeType == ReplicationChangeType.Modified) && this.treeAction is not null)
+        {
+            isSucceeded = isSucceeded.GetValueOrDefault(true) ? null : false;
+
+            if (await this.treeAction(id, serviceProvider, db) is not { } tree)
+                return;
+
+            isSucceeded = isSucceeded.GetValueOrDefault(true) && tree.Success;
+            replicationStamp = tree.Stamp;
+            replicatedVersion = tree.Version;
+            failure ??= tree.Failure;
+        }
+
+        if (changeType == ReplicationChangeType.Modified)
         {
             foreach (var action in this.upsertReferenceActions)
             {
@@ -505,12 +671,18 @@ public class CosmosDbTriggerReferenceOperations<Entity>
 
                 var result = await action(entity, serviceProvider, db);
 
-                isSucceeded = isSucceeded.GetValueOrDefault(true) && result.GetValueOrDefault(false);
+                isSucceeded = isSucceeded.GetValueOrDefault(true) && result.success;
+                failure ??= result.failure;
             }
         }
 
-        //A failed step records nothing: the row stays dirty and the catch-up sync retries it.
-        if (!isSucceeded.GetValueOrDefault(false))
+        //A failed step records nothing: the row stays dirty and the catch-up sync retries it. The sync then fails with
+        //the step's reason, so that it is logged as failed and not as succeeded.
+        if (isSucceeded == false)
+            throw SyncFailed(id, failure);
+
+        //No step ran.
+        if (isSucceeded is null)
             return;
 
         //Kept for this instance before the write below: the document is at these coordinates now, whether or not the
@@ -526,6 +698,48 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         await dbContext.SaveReplicationBookkeepingAsync<Entity>(id, replicatedVersion, replicationStamp);
     }
 
+    /// <summary>
+    /// Replicates the tree document of the root with key <paramref name="id"/>, which a save changed through another
+    /// row of its tree. The root is loaded by ID with its tree. On success the watermark is the loaded version and the
+    /// stamp the document's. On failure nothing is recorded, and the sync fails with the reason: the save marked the
+    /// root as not replicated, so the catch-up retries it.
+    /// </summary>
+    internal async Task RunTreeAsync(long id, IServiceProvider serviceProvider)
+    {
+        var db = await this.DatabaseAsync();
+        if (await this.treeAction!(id, serviceProvider, db) is not { } tree)
+            return;
+
+        if (!tree.Success)
+            throw SyncFailed(id, tree.Failure);
+
+        //LOUD: this watermark is the root's LastSaveDate as loaded, and a change of a part never moves LastSaveDate. So
+        //it clears any mark of the root, also one that a later change of its tree made after this sync loaded it. If
+        //the sync of that later change fails, or lands before this one, the document keeps this older tree while the
+        //root looks replicated, until its next save or a forced catch-up. Scripts and imports that edit tree parts must
+        //run a forced catch-up afterwards.
+        var dbContext = (ShiftDbContext)serviceProvider.GetRequiredService(this.dbContextType);
+        await dbContext.SaveReplicationBookkeepingAsync<Entity>(id, tree.Version, tree.Stamp);
+    }
+
+    private async Task<Database> DatabaseAsync()
+    {
+        //Prepare the lists of the container that used, to the connection
+        if (this.client is null)
+        {
+            List<(string databaseId, string continerId)> containers = new();
+            foreach (var containerId in this.cosmosContainerIds)
+                containers.Add((this.cosmosDataBaseId, containerId));
+
+            //Connect to the cosmos selected database and containers
+            this.client = await CosmosClient.CreateAndInitializeAsync(this.cosmosDbConnectionString, containers);
+        }
+
+        //Set the client to allow bulk execution
+        client.ClientOptions.AllowBulkExecution = true;
+
+        return client.GetDatabase(this.cosmosDataBaseId);
+    }
 }
 
 public class EntityWrapper<EntityType>

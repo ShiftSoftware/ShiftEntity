@@ -5,6 +5,12 @@ using ShiftSoftware.ShiftEntity.Model.Flags;
 
 namespace ShiftSoftware.ShiftEntity.Model.Replication.IdentityModels;
 
+/// <summary>
+/// A branch's own fields, as replication documents carry them. Replication no longer writes it to the
+/// <c>CompanyBranches</c> container. It stays because the documents of
+/// <see cref="IdentityDatabaseAndContainerNames.BranchContainerName"/> derive from it (<see cref="BranchModel"/>), so a
+/// reader can read them with it.
+/// </summary>
 public class CompanyBranchModel : ReplicationModel,
     IEntityHasRegion<CompanyBranchModel>,
     IEntityHasCompany<CompanyBranchModel>,

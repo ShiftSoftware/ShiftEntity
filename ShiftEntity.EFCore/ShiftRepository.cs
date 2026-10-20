@@ -17,6 +17,7 @@ using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
 using ShiftSoftware.ShiftEntity.Model.Dtos.Tagging;
 using ShiftSoftware.ShiftEntity.Model.Flags;
+using ShiftSoftware.ShiftEntity.Model.Replication;
 using ShiftSoftware.TypeAuth.Core;
 using System.Net;
 using System.Security.Claims;
@@ -701,8 +702,25 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 $"registered. Call AddShiftEntityDataLevelAccess() on the host's service collection.");
     }
 
+    /// <summary>
+    /// The row's revisions: one for each version of the row. For a replicated type (<see cref="IShiftEntityReplication"/>)
+    /// a version that changed only what replication records is left out: its <c>LastSaveDate</c> equals the one of the
+    /// version before it, and its <c>LastReplicationDate</c> or <c>LastReplicationStamp</c> does not. A sync writes such
+    /// a version when it records its watermark, and a save of a replication tree's part when it marks the tree's roots.
+    /// It belongs to the revision before it, which lasts until the next revision. Every other write is a revision, also
+    /// one that leaves <c>LastSaveDate</c> alone, as a write outside a repository does.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server shows only the last version that one transaction writes of a row, so the writes of one transaction are
+    /// one version. A save and a mark of its row in one transaction are the save's revision. A write outside a
+    /// repository that a mark of the same row follows in its transaction, such as a bare save of a replication tree's
+    /// root, which marks that root, is left out too.
+    /// </remarks>
     public virtual IQueryable<RevisionDTO> GetRevisionsAsync(long id)
     {
+        if (typeof(IShiftEntityReplication).IsAssignableFrom(typeof(EntityType)) && ReplicatedRevisionsSql() is { } sql)
+            return db.Database.SqlQueryRaw<RevisionDTO>(sql, id);
+
         return dbSet
                 .TemporalAll()
                 .AsNoTracking()
@@ -721,6 +739,74 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                     ValidTo = x.ValidTo,
                     SavedByUserID = x.SavedByUserID == null ? null : x.SavedByUserID.ToString(),
                 });
+    }
+
+    // The revisions of a replicated type, in one pass over the row's versions ordered by their start: LAG compares each
+    // version with the one before it, which must end where it starts, and LEAD gives each revision the start of the
+    // next one. LINQ can only say this with correlated subqueries, which read the row's versions again for each version.
+    // SqlQuery composes this as a subquery, so a caller still filters, sorts, pages and counts in SQL; that is also why
+    // it is derived tables, since SQL Server allows no CTE there. Null when the type is not mapped to a temporal table
+    // on SQL Server, or lacks a column the query needs; the LINQ query then says what is wrong.
+    private string? ReplicatedRevisionsSql()
+    {
+        var type = db.Model.FindEntityType(typeof(EntityType));
+        if (!db.Database.IsSqlServer() || type is null || !type.IsTemporal() || type.GetTableName() is not { } table)
+            return null;
+
+        // The period properties have the names the temporal mapping gives them, as the LINQ query has them.
+        var store = Microsoft.EntityFrameworkCore.Metadata.StoreObjectIdentifier.Table(table, type.GetSchema());
+        var columns = new[]
+            {
+                nameof(ShiftEntity<EntityType>.ID), "PeriodStart", "PeriodEnd", nameof(ShiftEntity<EntityType>.LastSaveDate),
+                nameof(ShiftEntity<EntityType>.LastSavedByUserID), nameof(IShiftEntityReplication.LastReplicationDate),
+                nameof(IShiftEntityReplication.LastReplicationStamp),
+            }
+            .Select(property => type.FindProperty(property)?.GetColumnName(store))
+            .ToArray();
+        if (columns.Any(x => x is null))
+            return null;
+
+        var helper = db.GetService<Microsoft.EntityFrameworkCore.Storage.ISqlGenerationHelper>();
+        var target = helper.DelimitIdentifier(table, type.GetSchema());
+        string Name(string name) => helper.DelimitIdentifier(name);
+        string Of(string alias, string name) => Name(alias) + "." + Name(name);
+        string Previous(string name) => $"LAG({Of("ranked", name)}) OVER (ORDER BY {Of("ranked", "Start")})";
+        string Versions(string alias) => $"FROM {target} FOR SYSTEM_TIME ALL AS {Name(alias)} WHERE {Of(alias, columns[0]!)} = {{0}}";
+
+        // Whether two values differ, NULL being equal to NULL and to nothing else.
+        string Differ(string a, string b) => $"(({a} <> {b} OR {a} IS NULL OR {b} IS NULL) AND ({a} IS NOT NULL OR {b} IS NOT NULL))";
+
+        return
+            $"SELECT CONVERT(varchar(20), {Of("revision", "RowID")}) AS {Name("ID")}, CAST(0 AS bit) AS {Name("IsDeleted")}, " +
+            $"CAST({Of("revision", "Start")} AS datetimeoffset) AS {Name("ValidFrom")}, " +
+            $"CAST(COALESCE(LEAD({Of("revision", "Start")}) OVER (ORDER BY {Of("revision", "Start")}), " +
+                $"(SELECT MAX({Of("last", columns[2]!)}) {Versions("last")})) AS datetimeoffset) AS {Name("ValidTo")}, " +
+            $"CONVERT(varchar(20), {Of("revision", "SavedBy")}) AS {Name("SavedByUserID")} " +
+            $"FROM (" +
+                $"SELECT {Of("version", "RowID")}, {Of("version", "Start")}, {Of("version", "SavedBy")} " +
+                $"FROM (" +
+                    $"SELECT {Of("ranked", "RowID")}, {Of("ranked", "Start")}, {Of("ranked", "SaveDate")}, {Of("ranked", "SavedBy")}, " +
+                    $"{Of("ranked", "ReplicationDate")}, {Of("ranked", "StampRank")}, " +
+                    $"{Previous("End")} AS {Name("PreviousEnd")}, {Previous("SaveDate")} AS {Name("PreviousSaveDate")}, " +
+                    $"{Previous("ReplicationDate")} AS {Name("PreviousReplicationDate")}, {Previous("StampRank")} AS {Name("PreviousStampRank")} " +
+                    $"FROM (" +
+                        $"SELECT {Of("stored", columns[0]!)} AS {Name("RowID")}, {Of("stored", columns[1]!)} AS {Name("Start")}, " +
+                        $"{Of("stored", columns[2]!)} AS {Name("End")}, {Of("stored", columns[3]!)} AS {Name("SaveDate")}, " +
+                        $"{Of("stored", columns[4]!)} AS {Name("SavedBy")}, {Of("stored", columns[5]!)} AS {Name("ReplicationDate")}, " +
+                        // Equal stamps get equal ranks, and NULLs a rank of their own, as the column's collation compares
+                        // them. A rank is narrow, so LAG finds the one before in memory; on the stamp itself, which has
+                        // no length limit, SQL Server spools every version to disk.
+                        $"DENSE_RANK() OVER (ORDER BY {Of("stored", columns[6]!)}) AS {Name("StampRank")} " +
+                        Versions("stored") +
+                    $") AS {Name("ranked")}" +
+                $") AS {Name("version")} " +
+                // A version replication alone wrote: it starts where the one before it ends, keeps its save date, and
+                // changed the replication date or stamp. The first version has no version before it.
+                $"WHERE NOT ({Of("version", "PreviousEnd")} IS NOT NULL AND {Of("version", "PreviousEnd")} = {Of("version", "Start")} " +
+                    $"AND {Of("version", "PreviousSaveDate")} = {Of("version", "SaveDate")} " +
+                    $"AND ({Differ(Of("version", "PreviousReplicationDate"), Of("version", "ReplicationDate"))} " +
+                        $"OR {Of("version", "PreviousStampRank")} <> {Of("version", "StampRank")}))" +
+            $") AS {Name("revision")}";
     }
 
     public virtual void Add(EntityType entity)

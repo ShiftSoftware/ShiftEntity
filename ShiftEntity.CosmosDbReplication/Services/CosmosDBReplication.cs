@@ -1,5 +1,4 @@
-﻿using EntityFrameworkCore.Triggered.Extensions;
-using Microsoft.Azure.Cosmos;
+﻿using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -10,6 +9,7 @@ using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Exceptions;
 using ShiftSoftware.ShiftEntity.EFCore;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using ShiftSoftware.ShiftEntity.EFCore.Replication;
 using ShiftSoftware.ShiftEntity.Model.Replication;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
@@ -99,6 +99,28 @@ public class CosmosDbReplicationOperation<DB, Entity>
 
         return referenceOperations.Replicate<CosmosDBItem>(containerId, mapping);
     }
+
+    /// <summary>
+    /// Replicates the selected roots' <typeparamref name="CosmosDBItem"/>, built from each root loaded with its
+    /// replication tree (<c>HasReplicationTree</c>): the catch-up counterpart of the save side's <c>ReplicateTree</c>.
+    /// The roots are loaded the way the save side loads them, with the same includes, ignoring query filters and without
+    /// tracking, so a backfilled document is the one a save writes. The tree document is the operation's only document.
+    /// </summary>
+    /// <param name="mapping">
+    /// Builds the document from the loaded root. Optional: when omitted, the document is mapped through the host's
+    /// registered ShiftMapper mapper, which must declare <c>CreateMap&lt;Entity, CosmosDBItem&gt;()</c>.
+    /// </param>
+    public CosmosDbReferenceOperation<DB, Entity> ReplicateTree<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    {
+        CosmosDbReferenceOperation<DB, Entity> referenceOperations;
+
+        if (this.client is null)
+            referenceOperations = new(this.cosmosDbConnectionString!, this.cosmosDbDatabaseId, this.services, this.query);
+        else
+            referenceOperations = new(this.client, this.cosmosDbDatabaseId, this.services, this.query);
+
+        return referenceOperations.ReplicateTree<CosmosDBItem>(containerId, mapping);
+    }
 }
 
 public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
@@ -168,7 +190,24 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>).
     /// </param>
     /// <returns></returns>
-    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    internal CosmosDbReferenceOperation<DB, Entity> Replicate<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null) =>
+        this.AddDocument(containerId, mapping, $"Replicate<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
+
+    /// <summary>
+    /// Replicates <typeparamref name="CosmosDBItem"/> built from each selected root loaded with its replication tree. It
+    /// is the row's only document, so its stamp is the row's.
+    /// </summary>
+    internal CosmosDbReferenceOperation<DB, Entity> ReplicateTree<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping = null)
+    {
+        this.fromTree = true;
+        return this.AddDocument(containerId, mapping, $"ReplicateTree<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
+    }
+
+    //Whether the roots load with their replication tree.
+    private bool fromTree;
+
+    private CosmosDbReferenceOperation<DB, Entity> AddDocument<CosmosDBItem>(string containerId, Func<Entity, CosmosDBItem>? mapping,
+        string operation)
     {
         this.cosmosContainerIds.Add(containerId);
 
@@ -180,12 +219,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             //below would put it INSIDE the per-row catch, which swallows and marks the row unsuccessful — turning
             //"the host forgot AddShiftMapper" into a sweep that reports success while leaving every row permanently
             //dirty under a clean-looking watermark. That is exactly how the old AutoMapper fallback failed.
-            var map = mapping ?? ReplicationMapper.ResolveCreate<Entity, CosmosDBItem>(this.services,
-                $"Replicate<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
+            var map = mapping ?? ReplicationMapper.ResolveCreate<Entity, CosmosDBItem>(this.services, operation);
 
-            var container = this.cosmosDatabase.GetContainer(containerId);
-            var containerResponse = await container.ReadContainerAsync();
+            if (await this.ReadContainerAsync(containerId) is not { } read)
+                return;
 
+            var (container, containerResponse) = read;
             List<Task> cosmosTasks = new();
 
             foreach (var entity in this.entities)
@@ -202,14 +241,15 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                     //Detect an id or partition-key change since the last successful sync and remove the stale Cosmos
                     //document under the OLD id + key before upserting under the new one (Cosmos can't mutate a document's
                     //id or PK, so a naive upsert would orphan the old doc). The mapping only ever runs on the fully
-                    //loaded current entity, so navigation-derived keys/fields are always populated.
+                    //loaded current entity, so navigation-derived keys/fields are always populated. A stamp written
+                    //for another container locates no document in this one (see CanBeIn), so nothing is deleted for it.
                     string? deleteId = null;
                     PartitionKey? oldPartitionKey = null;
 
                     var newStamp = Utility.BuildStamp(containerResponse, newItem!);
                     var oldStamp = LastReplicationStamp.Deserialize(entity.LastReplicationStamp);
 
-                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp))
+                    if (oldStamp is not null && newStamp.DiffersFrom(oldStamp) && oldStamp.CanBeIn(containerResponse))
                     {
                         deleteId = oldStamp.Id;
                         oldPartitionKey = oldStamp.BuildPartitionKey();
@@ -291,10 +331,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             var map = mapping ?? ReplicationMapper.ResolveCreate<Entity, CosmosDBItemReference>(this.services,
                 $"UpdatePropertyReference<{typeof(CosmosDBItemReference).Name}, {typeof(DestinationContainer).Name}>(\"{containerId}\")");
 
-            var container = this.cosmosDatabase.GetContainer(containerId);
+            if (await this.ReadContainerAsync(containerId) is not { } read)
+                return;
 
-            var containerReposne = await container.ReadContainerAsync();
-
+            var (container, containerReposne) = read;
             List<Task> cosmosTasks = new();
 
             foreach (var entity in this.entities)
@@ -358,8 +398,10 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             var merge = mapping ?? ReplicationMapper.ResolveMerge<Entity, CosmosDBItem>(this.services,
                 $"UpdateReference<{typeof(CosmosDBItem).Name}>(\"{containerId}\")");
 
-            var container = this.cosmosDatabase.GetContainer(containerId);
-            var containerResponse = await container.ReadContainerAsync();
+            if (await this.ReadContainerAsync(containerId) is not { } read)
+                return;
+
+            var (container, containerResponse) = read;
 
             //Several source entities can reference the SAME destination document (e.g. multiple tags embedded in
             //one occupation). Each item is a full read-modify-write upsert, so writing per (entity, item) pair lets
@@ -439,6 +481,29 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         return this;
     }
 
+    //The container a step writes, and its properties. A container that cannot be read (missing, or not reachable)
+    //fails the step's every row: they stay dirty and are reported, and the run goes on with its next step, as the
+    //host's next catch-up does after this one. That needs the operation set up with a CosmosClient: one set up with a
+    //connection string connects through CosmosClient.CreateAndInitializeAsync, which reads every container the run
+    //writes first and throws for a missing one, so the run throws before any step runs.
+    private async Task<(Microsoft.Azure.Cosmos.Container Container, ContainerResponse Response)?> ReadContainerAsync(string containerId)
+    {
+        try
+        {
+            var container = this.cosmosDatabase.GetContainer(containerId);
+            return (container, await container.ReadContainerAsync());
+        }
+        catch (Exception ex)
+        {
+            foreach (var entity in this.entities)
+            {
+                this.RecordFailure(entity.ID, containerId, ex);
+                this.cosmosUpsertSuccesses.AddOrUpdate(entity.ID, SuccessResponse.Create(false), (key, oldValue) => oldValue.Set(false));
+            }
+            return null;
+        }
+    }
+
     private async Task<IEnumerable<CosmosDBItem>> GetItemsForReferenceUpdate<CosmosDBItem>(Microsoft.Azure.Cosmos.Container container, Entity entity,
         Func<IQueryable<CosmosDBItem>, Entity, IQueryable<CosmosDBItem>> finder)
     {
@@ -470,6 +535,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     /// not stop the others. Failures are also logged as a warning; <see cref="CosmosDbReplicationResult.ThrowIfFailed"/>
     /// fails the caller too.
     /// </summary>
+    /// <remarks>
+    /// A container that cannot be read fails the rows of its step only, and the run goes on with the next step, when
+    /// the operation was set up with a <see cref="CosmosClient"/>. Set up with a connection string, the run connects
+    /// through <c>CosmosClient.CreateAndInitializeAsync</c>, which reads every container of the run first and throws
+    /// for a missing one, so the run throws before any step.
+    /// </remarks>
     /// <param name="updateAll">
     /// false selects only the dirty rows. true selects every row, also the rows that look replicated. A row that fails
     /// is marked as not replicated (its <see cref="IShiftEntityReplication.LastReplicationDate"/> is cleared) in both
@@ -479,8 +550,13 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     {
         Utility.GuardAgainstShadowedId(typeof(Entity));
 
-        //Return fail replicated entities
-        var queryable = this.dbSet.AsQueryable();
+        //Return fail replicated entities. A tree document is built from the root loaded the way the save side loads it:
+        //with its tree, ignoring query filters and without tracking. Loaded with tracking, in a context an earlier step
+        //of the run may have filled, a collection would start with the rows the context already tracks, out of an
+        //ordered step's order, and query filters would drop rows the save side's document has.
+        var queryable = this.fromTree
+            ? this.dbSet.IgnoreQueryFilters().AsNoTracking().IncludeReplicationTree(this.db)
+            : this.dbSet.AsQueryable();
 
         if (!updateAll)
             queryable = await this.WhereDirtyAsync(queryable);
@@ -518,13 +594,8 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
             await action.Invoke();
         }
 
-        var replicated = ApplyReplicationBookkeeping();
-
-        //A replication-bookkeeping save: it must write exactly the replication columns set above. No triggers, and
-        //no audit backfill — these entities were loaded fresh in this scope, so without the suppression the audit
-        //sweep would treat this infrastructure save as a real edit.
-        using (this.db.SuppressAuditStamping())
-            await this.db.SaveChangesWithoutTriggersAsync();
+        var (replicated, changed) = ApplyReplicationBookkeeping();
+        await this.WriteReplicationBookkeepingAsync(changed);
 
         var result = new CosmosDbReplicationResult(typeof(Entity).Name, selected.Length, replicated,
             this.failures.OrderBy(x => x.EntityId).ThenBy(x => x.ContainerId, StringComparer.Ordinal).ToList());
@@ -565,7 +636,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
 
-    private int ApplyReplicationBookkeeping()
+    //Sets the two replication columns of each selected row to what the run achieved for it, and returns the rows
+    //whose columns changed.
+    private (int Replicated, List<Entity> Changed) ApplyReplicationBookkeeping()
     {
         //Success implies a pending stamp exists: the upsert action records it before queueing the Cosmos call,
         //and rows whose mapping or stamp computation threw are marked unsuccessful. The TryGetValue keeps the
@@ -577,9 +650,12 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //dirty rows, then never retried it, although the report said that it stays dirty.
         var failed = this.failures.Select(x => x.EntityId).ToHashSet();
         var replicated = 0;
+        var changed = new List<Entity>();
 
         foreach (var entity in this.entities)
         {
+            var before = (entity.LastReplicationDate, entity.LastReplicationStamp);
+
             if (failed.Contains(entity.ID))
             {
                 entity.MarkReplicationFailed();
@@ -590,30 +666,58 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
                 entity.MarkReplicated(stamp);
                 replicated++;
             }
+
+            if (before != (entity.LastReplicationDate, entity.LastReplicationStamp))
+                changed.Add(entity);
         }
 
-        return replicated;
+        return (replicated, changed);
+    }
+
+    //Writes the two replication columns of the rows ApplyReplicationBookkeeping changed, by key and set-based, many
+    //rows a statement, in one transaction, and nothing else. It is not a save, so host triggers, the audit
+    //backfill, replication and the marking of replication trees do not run for it, as they did not run for the save
+    //without triggers that this replaced. Rows loaded with tracking stay loaded in this scope's context with the new
+    //values accepted, as that save left them.
+    private async Task WriteReplicationBookkeepingAsync(List<Entity> changed)
+    {
+        await this.db.SaveReplicationBookkeepingAsync(changed);
+
+        //Tree roots are loaded without tracking.
+        if (this.fromTree)
+            return;
+
+        var type = this.db.Model.FindEntityType(typeof(Entity))!;
+        var dateProperty = type.FindProperty(nameof(IShiftEntityReplication.LastReplicationDate))!;
+        var stampProperty = type.FindProperty(nameof(IShiftEntityReplication.LastReplicationStamp))!;
+        var tracker = this.db.ChangeTracker;
+        var autoDetect = tracker.AutoDetectChangesEnabled;
+        tracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            foreach (var entity in changed)
+            {
+                var entry = this.db.Entry(entity);
+                if (entry.State == EntityState.Detached)
+                    continue;
+
+                var date = entry.Property(dateProperty);
+                var stamp = entry.Property(stampProperty);
+
+                date.OriginalValue = date.CurrentValue;
+                date.IsModified = false;
+                stamp.OriginalValue = stamp.CurrentValue;
+                stamp.IsModified = false;
+            }
+        }
+        finally
+        {
+            tracker.AutoDetectChangesEnabled = autoDetect;
+        }
     }
 
     private void RecordFailure(long entityId, string containerId, Exception? exception) =>
-        this.failures.Enqueue(new CosmosDbReplicationFailure(entityId, containerId, Describe(exception)));
-
-    //At most 500 characters, since a Cosmos DB error carries the service's response body.
-    private static string Describe(Exception? exception)
-    {
-        if (exception is AggregateException aggregate)
-            exception = aggregate.Flatten().InnerExceptions.FirstOrDefault();
-
-        var text = exception switch
-        {
-            null => "The Cosmos DB call was cancelled.",
-            CosmosException cosmos =>
-                $"Cosmos DB answered {(int)cosmos.StatusCode} {cosmos.StatusCode} (substatus {cosmos.SubStatusCode}): {cosmos.ResponseBody}",
-            _ => $"{exception.GetType().Name}: {exception.Message}",
-        };
-
-        return text.Length <= 500 ? text : text[..500] + "…";
-    }
+        this.failures.Enqueue(new CosmosDbReplicationFailure(entityId, containerId, Utility.DescribeFailure(exception)));
 
     private void ResetUpsertSuccess()
     {
