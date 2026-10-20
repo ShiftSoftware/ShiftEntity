@@ -35,13 +35,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="FluentValidation" Version="12.1.1" />
+		<PackageReference Include="FluentValidation" Version="12.2.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.OpenApi" Version="1.6.0" />
-		<PackageReference Include="Google.Apis.Auth.AspNetCore3" Version="1.76.0" />
-		<PackageReference Include="Google.Apis.Firebaseappcheck.v1beta" Version="1.76.0.4251" />
-		<PackageReference Include="Azure.Security.KeyVault.Certificates" Version="4.9.1" />
+		<PackageReference Include="Google.Apis.Auth.AspNetCore3" Version="1.77.0" />
+		<PackageReference Include="Google.Apis.Firebaseappcheck.v1beta" Version="1.77.0.4300" />
+		<PackageReference Include="Azure.Security.KeyVault.Certificates" Version="4.9.2" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs" Version="6.8.2" />
 		<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" Version="5.5.5" />
 		<PackageReference Include="MimeTypes" Version="2.5.2">

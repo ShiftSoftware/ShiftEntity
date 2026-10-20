@@ -31,11 +31,11 @@
 
 	<ItemGroup>
 		<!-- 10.0.11, not 10.0.10: ShiftMapper pins 10.0.11, and a direct reference below a transitive one is NU1605. -->
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
-		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
-		<PackageReference Include="libphonenumber-csharp" Version="9.0.39" />
-		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
-		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.12" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.13" />
+		<PackageReference Include="libphonenumber-csharp" Version="9.0.41" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
+		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.13" />
 		<PackageReference Include="Microsoft.OData.Core" Version="8.4.4" />
 		<PackageReference Include="Microsoft.OData.Edm" Version="8.4.4" />
 		<PackageReference Include="ShiftSoftware.TypeAuth.Core" Version="$(TypeAuthVersion)" Condition="!Exists('..\..\TypeAuth\TypeAuth.Core\TypeAuth.Core.csproj')" />
