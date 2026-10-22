@@ -123,6 +123,8 @@ public static class IServiceCollectionExtensions
                 });
 
         services.AddScoped<IDefaultDataLevelAccess, DefaultDataLevelAccess>();
+        // The same evaluator for another user: a repository's CanAccessAs uses it on the legacy path.
+        services.AddScoped<IDefaultDataLevelAccessFactory, DefaultDataLevelAccessFactory>();
         services.AddScoped<IdentityClaimProvider>();
         services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 

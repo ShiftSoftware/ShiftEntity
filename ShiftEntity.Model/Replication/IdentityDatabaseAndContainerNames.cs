@@ -12,6 +12,4 @@ public class IdentityDatabaseAndContainerNames
     public const string TeamContainerName = "Teams";
     public const string UserContainerName = "Users";
     public const string AccessTreeContainerName = "AccessTrees";
-    public const string UserAccessTreeContainerName = "UserAccessTrees";
-    public const string TeamUserContainerName = "TeamUsers";
 }

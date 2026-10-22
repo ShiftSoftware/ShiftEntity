@@ -638,6 +638,66 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     }
 
     /// <summary>
+    /// Whether another user passes this repository's data-level rules for <paramref name="entity"/> at
+    /// <paramref name="access"/>. The user is the one that <paramref name="user"/> (claims) and <paramref name="typeAuth"/>
+    /// (grants) describe, not the user of the current request. It chooses its path the way
+    /// <see cref="HasDataLevelAccess"/> does, which is the check this repository runs on its own reads and writes:
+    /// <list type="bullet">
+    ///   <item>With an effective v2 policy, it authorizes the entity with a <see cref="DataLevelAccessContext"/> built for
+    ///     that user, so <c>Self</c> and <c>SelfMany</c> read that user's claims.</item>
+    ///   <item>With <c>Unscoped()</c>, it passes.</item>
+    ///   <item>Otherwise it runs the legacy rules, with this repository's <see cref="DefaultDataLevelAccessOptions"/>,
+    ///     through an evaluator that <see cref="IDefaultDataLevelAccessFactory"/> builds for that user.</item>
+    /// </list>
+    /// It checks data-level access only. The caller checks the user's screen permission itself, with
+    /// <c>typeAuth.Can(...)</c>.
+    /// <para>
+    /// It refuses with <see cref="InvalidOperationException"/> when the repository has an enabled global filter. Such a
+    /// filter reads the request's user and grants when the repository is built, so it cannot answer for another user.
+    /// Move the rule to a v2 declaration (<c>DataLevelAccess(...)</c>, with <c>Match</c> where needed). It also throws
+    /// when it needs the legacy rules and no <see cref="IDefaultDataLevelAccessFactory"/> is registered; the web and
+    /// Functions registrations of ShiftEntity add one.
+    /// </para>
+    /// <para>
+    /// Its limit: when a repository overrides <c>GetIQueryable</c> to filter rows by user, this check cannot see that
+    /// rule.
+    /// </para>
+    /// </summary>
+    public bool CanAccessAs(EntityType entity, Access access, ITypeAuthService typeAuth, ICurrentUserProvider user)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        ArgumentNullException.ThrowIfNull(typeAuth);
+        ArgumentNullException.ThrowIfNull(user);
+
+        if (this.ShiftRepositoryOptions.GlobalRepositoryFilters.Values.Any(filter => !filter.Disabled))
+            throw new InvalidOperationException(
+                $"The repository for '{typeof(EntityType).Name}' has an enabled global filter. A global filter reads the user " +
+                "and grants of the current request, so it cannot check another user's access. Move the rule to a data-level " +
+                "declaration (DataLevelAccess(...), with Match where needed) and remove the filter.");
+
+        var policy = DataLevelAccessPolicy;
+
+        if (policy is not null)
+        {
+            if (policy.IsUnscoped)
+                return true;
+
+            var context = new DataLevelAccessContext(
+                new TypeAuthAccessibleItemsSource(typeAuth), user, MapperServiceProvider.GetRequiredService<IHashIdService>());
+
+            return policy.Authorize(entity, access, context);
+        }
+
+        var factory = MapperServiceProvider.GetService<IDefaultDataLevelAccessFactory>()
+            ?? throw new InvalidOperationException(
+                $"'{typeof(EntityType).Name}' uses the legacy data-level rules, and no {nameof(IDefaultDataLevelAccessFactory)} is " +
+                "registered to build them for another user. AddShiftEntityWeb and AddShiftEntityFunctions register one.");
+
+        return factory.Create(typeAuth, user)
+            .HasDefaultDataLevelAccess(this.ShiftRepositoryOptions.DefaultDataLevelAccessOptions, entity, access);
+    }
+
+    /// <summary>
     /// The effective policy used by this repository, exposed for manual/ad-hoc queries that deliberately sit
     /// outside <see cref="GetIQueryable(DateTimeOffset?, List{string}?, bool, bool)"/>. In hosts opted into a standard
     /// profile this includes automatic marker dimensions plus explicit repository overrides. It is resolved once,

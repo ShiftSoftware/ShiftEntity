@@ -140,8 +140,9 @@ public sealed class DataLevelAccessPolicy<TEntity>
                 return false;
 
             // Escape hatch: evaluate the consumer predicate in memory against the resolved set (wildcard handled above).
+            // The predicate is compiled once per dimension, not on every row check.
             case MatchPredicate<TEntity> match:
-                return match.Match(values).Compile()(entity);
+                return match.Evaluate(entity, values);
 
             default:
                 throw new NotSupportedException($"Unsupported data-level predicate '{dimension.Predicate?.GetType().Name}'.");
