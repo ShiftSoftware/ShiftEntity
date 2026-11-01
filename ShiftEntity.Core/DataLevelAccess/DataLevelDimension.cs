@@ -11,6 +11,11 @@ namespace ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 /// related-entity / custom comparisons that Key/Keys can't express. To match the caller's <i>own</i> id, declare a
 /// separate <c>OnOwner</c> dimension (which AND-composes) — a <c>Self</c> grant is already folded into
 /// <paramref name="accessibleIds"/>, so there is no separate "self" argument here.
+/// <para>
+/// Read the ids inside the returned expression, for example <c>ids =&gt; x =&gt; ids.Contains(x.CompanyID)</c>. The row
+/// check then compiles the expression once and passes each set of ids in. A factory that computes something from the
+/// ids outside the expression still works, but its expression is compiled for every row check.
+/// </para>
 /// </summary>
 /// <typeparam name="TEntity">The queried entity type.</typeparam>
 /// <param name="accessibleIds">The decoded accessible ids for this dimension at the requested access level.</param>
@@ -52,10 +57,27 @@ public sealed class KeysPredicate<TEntity> : DataLevelPredicate<TEntity>
 /// <summary>A consumer-supplied predicate factory (the escape hatch).</summary>
 public sealed class MatchPredicate<TEntity> : DataLevelPredicate<TEntity>
 {
+    // The row path's predicate with the ids as a parameter, compiled once, on first use, for every thread that shares
+    // the policy. Null when the factory cannot be reused for other ids (see MatchCompiler).
+    private readonly Lazy<Func<TEntity, IReadOnlyCollection<long?>, bool>?> compiled;
+
     public DataLevelMatch<TEntity> Match { get; }
 
     public MatchPredicate(DataLevelMatch<TEntity> match)
-        => Match = match ?? throw new ArgumentNullException(nameof(match));
+    {
+        Match = match ?? throw new ArgumentNullException(nameof(match));
+        compiled = new(() => MatchCompiler.TryCompile(match), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>
+    /// The row path: whether <paramref name="entity"/> matches the predicate for <paramref name="accessibleIds"/>. The
+    /// answer is the same as compiling <c>Match(accessibleIds)</c> and running it, but the expression is compiled once
+    /// rather than on every call, when the factory allows that.
+    /// </summary>
+    internal bool Evaluate(TEntity entity, IReadOnlyCollection<long?> accessibleIds)
+        => compiled.Value is { } predicate
+            ? predicate(entity, accessibleIds)
+            : Match(accessibleIds).Compile()(entity);
 }
 
 /// <summary>
