@@ -1,4 +1,5 @@
 ﻿using ShiftSoftware.ShiftEntity.Model.Dtos;
+using ShiftSoftware.TypeAuth.Core;
 using System;
 using System.IO;
 using System.Linq;
@@ -43,4 +44,18 @@ public interface IShiftEntityFind<EntityType> where EntityType : ShiftEntity<Ent
 
     public IQueryable<RevisionDTO> GetRevisionsAsync(long id);
     public Task<Stream> PrintAsync(string id);
+
+    /// <summary>
+    /// Whether the user that <paramref name="user"/> and <paramref name="typeAuth"/> describe passes this
+    /// repository's data-level rules for <paramref name="entity"/> at <paramref name="access"/>: the same rules the
+    /// repository applies to its own reads and writes for the signed-in user, checked for another user. It checks
+    /// data-level access only. The caller checks the user's screen permission itself, with <c>typeAuth.Can(...)</c>.
+    /// <para>
+    /// A repository that cannot answer for another user must refuse. This default does: it throws
+    /// <see cref="NotSupportedException"/>.
+    /// </para>
+    /// </summary>
+    public bool CanAccessAs(EntityType entity, Access access, ITypeAuthService typeAuth, ICurrentUserProvider user)
+        => throw new NotSupportedException(
+            $"{GetType().Name} cannot check its data-level rules for another user. Use a repository that implements CanAccessAs.");
 }
