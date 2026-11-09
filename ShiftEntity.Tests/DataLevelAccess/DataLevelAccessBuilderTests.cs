@@ -8,7 +8,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 /// Slice 2.2 — the v2 engine's declaration model (D11). Each dimension is two independent choices: <b>where the
 /// accessible set comes from</b> (On / On+Self / OnOwner) and <b>how the entity is matched</b> against it (Key/Keys /
 /// Match). These tests inspect what the builder <i>records</i>; nothing is applied to a query or row here — that's
-/// slice 2.3/2.4. See <c>04-api-mental-model.md</c> in the plan for the full mental model.
+/// slice 2.3/2.4.
 /// </summary>
 public class DataLevelAccessBuilderTests
 {

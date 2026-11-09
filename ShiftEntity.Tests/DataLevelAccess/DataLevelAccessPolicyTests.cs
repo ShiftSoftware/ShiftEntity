@@ -11,8 +11,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.DataLevelAccess;
 /// <c>WhereIn</c>/<c>WhereAccessible</c> (1.1) actually filters a query. End-to-end over the real scoped TypeAuth
 /// context, this is the same Vehicle scenario slice 0.3 locked as <i>broken</i> (single-column) — now correct
 /// (cross-column OR). The follow-up (this file's later tests) wires the deferred dimension kinds — <c>Self</c>,
-/// <c>OnOwner</c>, and <c>HashId</c> — through the <see cref="DataLevelAccessContext"/>. See
-/// <c>04-api-mental-model.md</c> in the plan for the two-axes model (source × predicate).
+/// <c>OnOwner</c>, and <c>HashId</c> — through the <see cref="DataLevelAccessContext"/>.
 /// </summary>
 public class DataLevelAccessPolicyTests
 {

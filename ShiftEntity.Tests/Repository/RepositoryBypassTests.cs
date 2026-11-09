@@ -22,8 +22,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 /// <c>disableGlobalFilters</c>, never swapped (a swap would silently bypass the wrong mechanism).</item>
 /// </list>
 /// The bool members stay un-deprecated this slice: obsoleting them punishes overriders who have no alternative seam
-/// yet — that redesign (or a repository fork) is deferred to 4.8 with the vNext backlog (see
-/// <c>.shift/repos/shift-entity/repository-vnext.md</c>).
+/// yet — that redesign (or a repository fork) is deferred to 4.8 with the vNext backlog.
 /// </summary>
 public class RepositoryBypassTests
 {
