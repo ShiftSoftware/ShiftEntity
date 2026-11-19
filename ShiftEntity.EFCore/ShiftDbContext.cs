@@ -65,9 +65,17 @@ public abstract class ShiftDbContext : DbContext
         modelBuilder.ConfigureShiftEntity(ShiftDbContextOptions?.UseTemporal ?? false, effectiveTaggingOptions);
     }
 
+    /// <summary>
+    /// On SQLite, keeps a shared in-memory database alive between contexts and warns once about one that is not shared
+    /// (see <see cref="Sqlite.SqliteInMemory"/>). A context that overrides this and configures its provider here must
+    /// call the base method after configuring it.
+    /// </summary>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
+
+        Sqlite.SqliteInMemory.Apply(optionsBuilder.Options, _applicationServiceProvider
+            ?? optionsBuilder.Options.FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider);
     }
 
     /// <summary>
