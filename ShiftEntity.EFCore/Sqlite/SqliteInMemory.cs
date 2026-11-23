@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Data.Common;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,33 +26,27 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Sqlite;
 /// (<c>UseSqlite(connection)</c>) is left alone: that connection keeps the database alive.
 /// </para>
 /// <para>
-/// Only the provider's name and the connection string are read, so ShiftEntity.EFCore needs no SQLite package. Any
-/// other database is not touched.
+/// Any other database is not touched.
 /// </para>
 /// </remarks>
 internal static class SqliteInMemory
 {
-    // EF's provider name for SQLite: the name of the provider's assembly, which is what Database.ProviderName returns
-    // and what EF's own Database.IsSqlite() compares. Public and stable, unlike the provider's internal types.
-    private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
-
-    // The SQLite connection type (public API of Microsoft.Data.Sqlite), found by name: the consumer's UseSqlite has
-    // loaded it, and ShiftEntity.EFCore does not reference the SQLite package.
-    private const string SqliteConnectionType = "Microsoft.Data.Sqlite.SqliteConnection, Microsoft.Data.Sqlite";
+    // The SQLite provider's assembly, named by one of its public types: its options extension is in an internal
+    // namespace, so the provider is recognised by the assembly it comes from, as EF's own Database.IsSqlite() does.
+    private static readonly System.Reflection.Assembly SqliteProvider = typeof(SqliteDbContextOptionsBuilder).Assembly;
 
     private enum Kind { NotInMemory, Shared, NotShared }
 
     private static readonly ConcurrentDictionary<string, Kind> kinds = new();
     private static readonly ConcurrentDictionary<string, bool> warned = new();
-    private static readonly Dictionary<string, DbConnection> keepAlive = new();
+    private static readonly Dictionary<string, SqliteConnection> keepAlive = new();
     private static readonly object keepAliveLock = new();
 
     /// <summary>Applies the in-memory support to a context's options, when they are SQLite on a connection string.</summary>
     internal static void Apply(DbContextOptions options, IServiceProvider? applicationServices)
     {
-        // The options' database provider, named as Database.ProviderName names it.
         var sqlite = options.Extensions.FirstOrDefault(x => x.Info.IsDatabaseProvider) is RelationalOptionsExtension provider &&
-            provider.GetType().Assembly.GetName().Name == SqliteProviderName ? provider : null;
+            provider.GetType().Assembly == SqliteProvider ? provider : null;
 
         if (sqlite is null || sqlite.Connection is not null || string.IsNullOrWhiteSpace(sqlite.ConnectionString))
             return;
@@ -78,27 +72,21 @@ internal static class SqliteInMemory
     /// <summary>Whether a SQLite connection string is a file, a shared in-memory database or one that is not shared.</summary>
     private static Kind Classify(string connectionString)
     {
-        var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        var dataSource = Value(builder, "Data Source") ?? Value(builder, "DataSource") ?? Value(builder, "Filename") ?? "";
-        var mode = Value(builder, "Mode");
-        var cache = Value(builder, "Cache");
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        var dataSource = builder.DataSource;
 
         // A URI file name carries the same settings as query parameters, e.g. file:name?mode=memory&cache=shared.
         var uri = dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? dataSource : null;
-        var inMemory = dataSource == ":memory:" || string.Equals(mode, "Memory", StringComparison.OrdinalIgnoreCase) ||
+        var inMemory = dataSource == ":memory:" || builder.Mode == SqliteOpenMode.Memory ||
             uri?.Contains("mode=memory", StringComparison.OrdinalIgnoreCase) == true || uri?.StartsWith("file::memory:", StringComparison.OrdinalIgnoreCase) == true;
 
         if (!inMemory)
             return Kind.NotInMemory;
 
-        var shared = string.Equals(cache, "Shared", StringComparison.OrdinalIgnoreCase) ||
-            uri?.Contains("cache=shared", StringComparison.OrdinalIgnoreCase) == true;
+        var shared = builder.Cache == SqliteCacheMode.Shared || uri?.Contains("cache=shared", StringComparison.OrdinalIgnoreCase) == true;
 
         return shared ? Kind.Shared : Kind.NotShared;
     }
-
-    private static string? Value(DbConnectionStringBuilder builder, string key) =>
-        builder.TryGetValue(key, out var value) ? value?.ToString() : null;
 
     private static void KeepAlive(string connectionString)
     {
@@ -107,8 +95,7 @@ internal static class SqliteInMemory
             if (keepAlive.ContainsKey(connectionString))
                 return;
 
-            var type = Type.GetType(SqliteConnectionType, throwOnError: true)!;
-            var connection = (DbConnection)Activator.CreateInstance(type, connectionString)!;
+            var connection = new SqliteConnection(connectionString);
             connection.Open();
             keepAlive[connectionString] = connection;
         }
