@@ -96,7 +96,7 @@ public sealed class ThrowingAttentionConsumer : IAttentionConsumer
 /// <summary>
 /// DI host + running dispatcher for the emission tests, shaped like a real app:
 /// EF InMemory <see cref="AttentionTestDbContext"/> (fresh database per host, transactions
-/// ignored — the indexed-mode save path opens one), the scoped identity services the
+/// ignored — a repository with an after-save hook opens one), the scoped identity services the
 /// repository resolves, the shared <see cref="AttentionEventSink"/>, and whatever the test
 /// registers via <paramref name="configure"/> (consumers, evaluators — or nothing, for the
 /// not-opted-in case). Hosted services are started on build and stopped on dispose, so the
@@ -125,9 +125,9 @@ public sealed class AttentionApp : IAsyncDisposable
 
         services.AddDbContext<AttentionTestDbContext>(options => options
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            // The indexed-mode save path wraps the save in a transaction; InMemory ignores
-            // transactions, which is fine here — commit ordering is pinned by the
-            // SQL-Server-backed sample-app suites.
+            // InMemory has no transactions. The save pipeline opens none on it, and a repository
+            // that opens one for its after-save hook is ignored, which is fine here — commit
+            // ordering is pinned on SQLite (AttentionSavePipelineTests) and by the sample-app suites.
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
 
         // What AddShiftEntityWebSharedCore / AddShiftEntity contribute, minimally.

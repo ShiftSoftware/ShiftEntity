@@ -95,6 +95,27 @@ public class NotificationSubscribersJsonTests
         Assert.Empty(result.Errors);
     }
 
+    [Fact]
+    public void CommentsAndTrailingCommasInsideAnEntry_AreFine_Too()
+    {
+        // Each entry is read again from its own text, which once refused a comment and dropped the entry.
+        var result = Read("""
+            {
+              "Production": [
+                {
+                  // The finance team's shared inbox.
+                  "topic": "Sales.Invoice.Created",
+                  "where": "all",
+                  "emails": { "to": [ "finance@example.com", ], },
+                },
+              ],
+            }
+            """);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(new[] { "finance@example.com" }, Assert.Single(result.Entries).Emails!.To);
+    }
+
     [Theory]
     [InlineData("Staging")]
     [InlineData(null)]

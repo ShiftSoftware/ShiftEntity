@@ -24,10 +24,28 @@ internal sealed class NotificationRaiser : INotificationRaiser
     public Task RaiseAsync<TEntity>(NotificationTopic topic, TEntity record, IEnumerable<long>? except = null)
         where TEntity : ShiftEntity<TEntity>, new()
     {
-        // A raise runs inside the host's trigger or hook, so an exception here would fail the save.
+        Raise(db, catalog, queue, logger, topic, record, except);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The raise that a host's call and a rule's topic share. The event waits for the commit of <paramref name="db"/>'s
+    /// transaction, and a rollback drops it.
+    /// </summary>
+    /// <remarks>A raise runs inside the host's save, so it never throws: a failure is logged and the save carries on.</remarks>
+    internal static void Raise<TEntity>(
+        ShiftDbContext db,
+        NotificationTopicCatalog catalog,
+        NotificationQueue queue,
+        ILogger logger,
+        NotificationTopic topic,
+        TEntity record,
+        IEnumerable<long>? except)
+        where TEntity : ShiftEntity<TEntity>, new()
+    {
         try
         {
-            var raised = Capture(topic, record, except);
+            var raised = Capture(catalog, logger, topic, record, except);
 
             if (raised is not null)
                 db.AfterCommit(() => queue.Enqueue(raised));
@@ -37,11 +55,10 @@ internal sealed class NotificationRaiser : INotificationRaiser
             logger.LogError(exception, "Could not raise notification topic {Topic} on {EntityType}. The save isn't affected.",
                 topic?.ID, typeof(TEntity).Name);
         }
-
-        return Task.CompletedTask;
     }
 
-    private NotificationRaised<TEntity>? Capture<TEntity>(NotificationTopic topic, TEntity record, IEnumerable<long>? except)
+    private static NotificationRaised<TEntity>? Capture<TEntity>(
+        NotificationTopicCatalog catalog, ILogger logger, NotificationTopic topic, TEntity record, IEnumerable<long>? except)
         where TEntity : ShiftEntity<TEntity>, new()
     {
         if (!catalog.TryGetTopic(topic.ID, out var known))
@@ -62,14 +79,14 @@ internal sealed class NotificationRaiser : INotificationRaiser
         {
             Topic = known,
             RecordID = record.ID,
-            Watchers = ReadWatchers(known, record),
+            Watchers = ReadWatchers(logger, known, record),
             Except = except?.ToHashSet() ?? [],
             Culture = CultureInfo.CurrentCulture,
             UICulture = CultureInfo.CurrentUICulture,
         };
     }
 
-    private IReadOnlyList<NotificationWatcher> ReadWatchers<TEntity>(NotificationTopic topic, TEntity record)
+    private static IReadOnlyList<NotificationWatcher> ReadWatchers<TEntity>(ILogger logger, NotificationTopic topic, TEntity record)
         where TEntity : ShiftEntity<TEntity>, new()
     {
         if (record is not IHasNotificationWatchers withWatchers)

@@ -99,6 +99,52 @@ public static class IServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Adds a save handler: host code that runs after any save of a <see cref="ShiftDbContext"/> has written a row of
+    /// <typeparamref name="TEntity"/>, through a repository or a plain <c>SaveChanges</c>. See
+    /// <see cref="ISaveHandler{TEntity}"/> for when it runs and what it may do.
+    /// </summary>
+    /// <remarks>
+    /// The handler class is registered as a scoped service unless the host registered it already. Handlers of one row
+    /// run in the order of these calls. Registering the same class for the same type twice keeps one registration.
+    /// </remarks>
+    /// <param name="services">The host's services.</param>
+    /// <param name="withOriginal">
+    /// Whether the handler reads <see cref="SavedRow{TEntity}.Original"/>, a modified row's values from before the save.
+    /// Off by default, because it costs a copy of every modified row of the type.
+    /// </param>
+    /// <typeparam name="TEntity">The entity type, or a base class or interface, whose saved rows the handler gets.</typeparam>
+    /// <typeparam name="THandler">The handler class.</typeparam>
+    public static IServiceCollection AddSaveHandler<TEntity, THandler>(this IServiceCollection services, bool withOriginal = false)
+        where TEntity : class
+        where THandler : class, ISaveHandler<TEntity>
+    {
+        // The same class for the same type a second time (a shared registration method called from two places) keeps
+        // its place among the handlers, and reads the old values if either call asked for them.
+        var existing = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(SaveHandlerRegistration) &&
+            descriptor.ImplementationInstance is SaveHandlerRegistration registration &&
+            registration.Invoker is SaveHandlerInvoker<TEntity> invoker && invoker.HandlerType == typeof(THandler));
+
+        if (existing is not null)
+        {
+            if (!withOriginal || ((SaveHandlerRegistration)existing.ImplementationInstance!).WithOriginal)
+                return services;
+
+            services[services.IndexOf(existing)] = ServiceDescriptor.Singleton(
+                new SaveHandlerRegistration(typeof(TEntity), true, new SaveHandlerInvoker<TEntity>(typeof(THandler), true)));
+
+            return services;
+        }
+
+        services.TryAddScoped<THandler>();
+        services.AddSingleton(new SaveHandlerRegistration(typeof(TEntity), withOriginal, new SaveHandlerInvoker<TEntity>(typeof(THandler), withOriginal)));
+        services.TryAddSingleton<SaveHandlerRegistry>();
+        services.TryAddEnumerable(ServiceDescriptor.Transient<IShiftDbContextSaveObserver, SaveHandlersObserver>());
+
+        return services;
+    }
+
 
     private static IServiceCollection RegisterIShiftEntityFind(this IServiceCollection services, Assembly repositoriesAssembly)
     {

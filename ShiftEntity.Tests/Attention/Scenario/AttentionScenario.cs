@@ -44,10 +44,9 @@ public class GadgetEntity : ShiftEntity<GadgetEntity>, IHasAttention, IHasAttent
 }
 
 /// <summary>
-/// Indexed-mode entity (<see cref="IHasIndexedAttention"/>) — forces the repository's
-/// transactional save path (<c>_needsAttentionTransaction</c>) and, on Insert, the
-/// pending-signal flush that only knows the entity ID after the first
-/// <c>SaveChangesAsync</c>. Evaluated by the DI-registered <see cref="WidgetFlagEvaluator"/>.
+/// Indexed-mode entity (<see cref="IHasIndexedAttention"/>) — on Insert its signals wait for
+/// the row's key, so the save writes twice, in one transaction: the row, then the signal rows.
+/// Evaluated by the DI-registered <see cref="WidgetFlagEvaluator"/>.
 /// </summary>
 public class WidgetEntity : ShiftEntity<WidgetEntity>, IHasIndexedAttention
 {

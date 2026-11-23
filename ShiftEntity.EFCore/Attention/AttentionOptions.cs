@@ -12,4 +12,23 @@ public class AttentionOptions
     /// as an active uncleared signal exists).
     /// </summary>
     public TimeSpan ReRaiseWindow { get; set; } = TimeSpan.MaxValue;
+
+    /// <summary>
+    /// Which saves run the evaluators. Defaults to <see cref="AttentionSaves.Every"/>: a record is flagged whatever
+    /// saved it, a repository, a service or a function on the plain context.
+    /// </summary>
+    public AttentionSaves EvaluateOn { get; set; } = AttentionSaves.Every;
+}
+
+/// <summary>Which saves of an <see cref="Core.Attention.IHasAttention"/> row run its evaluators.</summary>
+public enum AttentionSaves
+{
+    /// <summary>Every save of the context that adds or modifies such a row.</summary>
+    Every,
+
+    /// <summary>
+    /// Only saves made through a repository (<c>ShiftRepository.SaveChangesAsync</c>), as before the evaluators moved
+    /// into the context's save pipeline. A save on the plain context then raises nothing.
+    /// </summary>
+    Repository,
 }

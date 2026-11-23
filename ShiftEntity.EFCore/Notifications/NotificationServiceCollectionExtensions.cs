@@ -49,6 +49,17 @@ public static class NotificationServiceCollectionExtensions
         foreach (var topic in registration.Options.TakeAddedTopics())
             registration.Catalog.Add(topic);
 
+        // A topic to raise when created must be known by now, so a typo fails at startup and not at the first save.
+        foreach (var rule in registration.Options.CreatedRules)
+        {
+            if (!registration.Catalog.TryGetTopic(rule.Topic.ID, out _))
+                throw new InvalidOperationException(
+                    $"RaiseWhenCreated<{rule.EntityType.Name}> names topic '{rule.Topic.ID}', which isn't registered. Add the class that declares it with AddTopics, in this AddNotifications call or an earlier one.");
+        }
+
+        foreach (var rule in registration.Options.RuleClasses)
+            services.TryAddScoped(rule.RuleType);
+
         return services;
     }
 
@@ -118,6 +129,11 @@ public static class NotificationServiceCollectionExtensions
 
         services.AddSingleton<NotificationQueue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, NotificationDispatcherService>());
+
+        // The rules (RaiseWhenCreated, an entity's IHasNotificationRules, AddRule) run after each save of the context,
+        // through its save observers.
+        services.AddSingleton(new NotificationRuleSet(created.Options, typeof(TDbContext)));
+        services.TryAddEnumerable(ServiceDescriptor.Transient<IShiftDbContextSaveObserver, NotificationRulesSaveObserver>());
 
         services.TryAddSingleton<NotificationWhereMatcher>();
         services.TryAddSingleton<NotificationSubscribersEntryValidator>();

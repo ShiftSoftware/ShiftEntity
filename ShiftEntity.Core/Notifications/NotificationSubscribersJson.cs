@@ -30,10 +30,13 @@ public static class NotificationSubscribersJson
         AllowTrailingCommas = true,
     };
 
-    // A misspelled key is refused. Ignoring it would quietly lose a block of recipients.
+    // A misspelled key is refused. Ignoring it would quietly lose a block of recipients. Each entry is read again from the
+    // file's own text, so it needs the same allowances as the file: without them a comment inside an entry dropped it.
     private static readonly JsonSerializerOptions EntryOptions = new()
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
     };
 
     /// <summary>The names of all the sections in the file.</summary>

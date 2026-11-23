@@ -5,13 +5,11 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftMapper;
 using ShiftSoftware.ShiftEntity.Core;
-using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.Core.Mapping;
 using ShiftSoftware.ShiftEntity.Core.Pii;
 using ShiftSoftware.ShiftEntity.Core.DataLevelAccess;
 using ShiftSoftware.ShiftEntity.Core.Flags;
 using ShiftSoftware.ShiftEntity.Core.Tagging;
-using ShiftSoftware.ShiftEntity.EFCore.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Tagging;
 using ShiftSoftware.ShiftEntity.Model;
 using ShiftSoftware.ShiftEntity.Model.Dtos;
@@ -63,8 +61,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     public IdentityClaimProvider identityClaimProvider { get; private set; } = default!;
     public ICurrentUserProvider? currentUserProvider { get; private set; }
     private bool _hasUniqueHashInterface;
-    private bool _hasAttentionInterface;
-    private bool _needsAttentionTransaction;
     private bool _hasTaggableInterface;
     private bool _dataLevelAccessPolicyResolved;
     private DataLevelAccessPolicy<EntityType>? _dataLevelAccessPolicy;
@@ -108,8 +104,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         _hasUniqueHashInterface = typeof(EntityType).GetInterfaces()
             .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
 
-        _hasAttentionInterface = typeof(IHasAttention).IsAssignableFrom(typeof(EntityType));
-        _needsAttentionTransaction = typeof(IHasIndexedAttention).IsAssignableFrom(typeof(EntityType));
         _hasTaggableInterface = typeof(IShiftEntityTaggable).IsAssignableFrom(typeof(EntityType));
 
         if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
@@ -943,13 +937,18 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         var beforeSaveTasks = new List<ValueTask>();
         var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 
-        if (this.afterSaveHook is not null || _needsAttentionTransaction)
+        // The context evaluates attention itself, before any save writes. This only tells it that the save is a
+        // repository's, for a host that evaluates on those alone (AttentionSaves.Repository).
+        using (db.RepositorySave())
         {
-            return await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
-        }
-        else
-        {
-            return await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+            if (this.afterSaveHook is not null)
+            {
+                return await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+            }
+            else
+            {
+                return await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
+            }
         }
     }
 
@@ -961,12 +960,16 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
 
+        // The context follows this transaction whether or not its options carry UseShiftEntityAfterCommit: what the
+        // saves in it queue for after the commit (replication, notifications, attention events) waits for the commit
+        // below, and a rollback drops it.
+        db.OnTransactionStarted(transaction.TransactionId);
+
         int result;
-        List<AttentionRaised>? raisedAttention;
 
         try
         {
-            (result, raisedAttention) = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
+            result = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
 
             // Execute all AfterSave hooks - if this fails, transaction will rollback
             var afterSaveTasks = afterSaveEntities.Select(x => this.afterSaveHook!.AfterSaveAsync(x.entity, x.action));
@@ -976,12 +979,13 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         }
         catch
         {
+            db.OnTransactionEnded();
             await transaction.RollbackAsync();
             throw;
         }
 
-        // Only after a successful commit — consumers must never observe a rolled-back signal
-        await PublishAttentionRaisedAsync(raisedAttention);
+        // The interceptor has run the queued work already when it is there; without it, the work runs now.
+        db.OnTransactionCommitted(transaction.TransactionId);
 
         return result;
     }
@@ -992,46 +996,17 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         List<ValueTask> beforeSaveTasks,
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
-        var (result, raisedAttention) = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
-
         // No AfterSave to execute since it's not overridden
-
-        await PublishAttentionRaisedAsync(raisedAttention);
-
-        return result;
+        return await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
     }
 
-    /// <summary>
-    /// Publishes one <see cref="AttentionRaised"/> event per newly-raised signal through the
-    /// registered <see cref="IAttentionDispatcher"/>. No-op when nothing was raised or when
-    /// no dispatcher is registered (emission is opt-in via <c>AddAttentionEmission()</c> /
-    /// <c>AddAttentionConsumer&lt;T&gt;()</c>). Must only be called after the save has
-    /// committed.
-    /// </summary>
-    private async Task PublishAttentionRaisedAsync(List<AttentionRaised>? raisedAttention)
-    {
-        if (raisedAttention is null || raisedAttention.Count == 0)
-            return;
-
-        var serviceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
-        var dispatcher = serviceProvider.GetService<IAttentionDispatcher>();
-
-        if (dispatcher is null)
-            return;
-
-        foreach (var attentionRaised in raisedAttention)
-            await dispatcher.PublishAsync(attentionRaised);
-    }
-
-    private async Task<(int result, List<AttentionRaised>? raisedAttention)> ProcessEntriesAndSave(
+    private async Task<int> ProcessEntriesAndSave(
         DateTimeOffset now,
         long? userId,
         List<ValueTask> beforeSaveTasks,
         List<(EntityType entity, ActionTypes action)> afterSaveEntities)
     {
         var entitiesToReload = new List<EntityType>();
-        List<PendingIndexedSignal>? allPendingSignals = null;
-        List<AttentionEntityOutcome>? attentionOutcomes = null;
 
         foreach (var entry in db.ChangeTracker.Entries())
         {
@@ -1085,28 +1060,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
                 afterSaveEntities.Add((entityType, actionType));
             }
 
-            // Attention evaluation
-            if (_hasAttentionInterface)
-            {
-                var original = added ? null : (EntityType?)entry.OriginalValues.ToObject();
-                var serviceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
-
-                var outcome = await AttentionPipeline.ProcessEntity(
-                    db, entry, entityType, original, actionType, serviceProvider);
-
-                if (outcome is not null)
-                {
-                    attentionOutcomes ??= [];
-                    attentionOutcomes.Add(outcome);
-
-                    if (outcome.PendingIndexed is not null)
-                    {
-                        allPendingSignals ??= [];
-                        allPendingSignals.AddRange(outcome.PendingIndexed);
-                    }
-                }
-            }
-
             // Track entities that need reload after save
             if (entityType.ReloadAfterSave)
             {
@@ -1150,46 +1103,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
 
                 throw;
             }
-
-            // Flush pending indexed attention signals (INSERT case — entity IDs now available)
-            if (allPendingSignals is { Count: > 0 })
-            {
-                AttentionPipeline.FlushPendingSignals(db, allPendingSignals);
-                await db.SaveChangesAsync();
-            }
-        }
-
-        // Materialize AttentionRaised events now that every entity has its database ID.
-        // The caller publishes them only after the save/transaction fully succeeds.
-        List<AttentionRaised>? raisedAttention = null;
-
-        if (attentionOutcomes is not null)
-        {
-            raisedAttention = [];
-
-            // The originating window's hub connection id (stamped on the request via
-            // AttentionRealtime.OriginHeader), captured now while the request context is current —
-            // the real-time fan-out runs later on a background loop where it can no longer be
-            // read. Carried on each event so the notifier can exclude that window. Null when the
-            // hub isn't wired or the save has no originating hub connection (background/timer).
-            var attentionServiceProvider = db.ApplicationServiceProvider ?? ((IInfrastructure<IServiceProvider>)db).Instance;
-            var originConnectionId = attentionServiceProvider.GetService<IAttentionOriginProvider>()?.OriginConnectionId;
-
-            foreach (var outcome in attentionOutcomes)
-            {
-                var attentionEntityId = (long)outcome.Entry.Property("ID").CurrentValue!;
-
-                foreach (var signal in outcome.NewSignals)
-                {
-                    raisedAttention.Add(new AttentionRaised
-                    {
-                        EntityType = outcome.EntityTypeName,
-                        EntityId = attentionEntityId,
-                        Signal = signal,
-                        OriginConnectionId = originConnectionId,
-                    });
-                }
-            }
         }
 
         // Reload entities that have navigation properties (Includes)
@@ -1205,7 +1118,7 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        return (result, raisedAttention);
+        return result;
     }
 
     /// <summary>

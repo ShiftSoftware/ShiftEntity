@@ -92,6 +92,9 @@ internal sealed class NotificationPipeline
             if (watcher.UserID is not null)
                 logger.LogWarning("Notification topic {Topic} is for customers, so user watcher {UserID} on {EntityType} {RecordID} is ignored.",
                     topic.ID, watcher.UserID, raised.EntityTypeName, raised.RecordID);
+            else if (watcher.TeamID is not null)
+                logger.LogWarning("Notification topic {Topic} is for customers, so team watcher {TeamID} on {EntityType} {RecordID} is ignored.",
+                    topic.ID, watcher.TeamID, raised.EntityTypeName, raised.RecordID);
             else if (watcher.CustomerEmail is not null)
                 addresses.Add(watcher.CustomerEmail, NotificationAddressPlace.To);
         }
@@ -215,7 +218,8 @@ internal sealed class NotificationPipeline
         }
     }
 
-    // The users named by the entries, the members of the entries' teams, and the user watchers, minus those left out.
+    // The user watchers, the members of the team watchers, the users named by the entries and the members of the entries'
+    // teams, minus those left out.
     private async Task<HashSet<long>> GatherUsersAsync<TEntity>(
         NotificationRaised<TEntity> raised,
         List<NotificationSubscribersEntryDTO> entries,
@@ -230,6 +234,8 @@ internal sealed class NotificationPipeline
         {
             if (watcher.UserID is { } userID)
                 candidates.Add(userID);
+            else if (watcher.TeamID is { } teamID)
+                await AddTeamMembersAsync(topic, teamID, directory, candidates, cancellationToken);
             else if (watcher.CustomerEmail is not null)
                 logger.LogWarning("Notification topic {Topic} isn't for customers, so a customer watcher on {EntityType} {RecordID} is ignored.",
                     topic.ID, raised.EntityTypeName, raised.RecordID);
@@ -247,31 +253,40 @@ internal sealed class NotificationPipeline
 
             foreach (var hash in entry.Teams)
             {
-                if (!hashIds.TryDecode(hash, NotificationIdentityHashIds.Team, out var teamID))
-                {
-                    logger.LogWarning("Notification topic {Topic}: the list holds team '{Hash}', which isn't a valid hash ID. It is ignored.", topic.ID, hash);
-                    continue;
-                }
-
-                if (directory is null)
-                {
-                    logger.LogError("Notification topic {Topic} has team {TeamID}, but no {Directory} is registered, so its members get nothing.",
-                        topic.ID, teamID, nameof(INotificationIdentityDirectory));
-                    continue;
-                }
-
-                var members = await directory.GetTeamMembersAsync(teamID, cancellationToken);
-
-                if (members is null)
-                    logger.LogWarning("Notification topic {Topic}: the members of team {TeamID} aren't known, so they get nothing.", topic.ID, teamID);
+                if (hashIds.TryDecode(hash, NotificationIdentityHashIds.Team, out var teamID))
+                    await AddTeamMembersAsync(topic, teamID, directory, candidates, cancellationToken);
                 else
-                    candidates.UnionWith(members);
+                    logger.LogWarning("Notification topic {Topic}: the list holds team '{Hash}', which isn't a valid hash ID. It is ignored.", topic.ID, hash);
             }
         }
 
         candidates.ExceptWith(raised.Except);
 
         return candidates;
+    }
+
+    // A team's members, read when the event is handled, so a change of members counts at once. A team on the list and a
+    // team watcher are read the same way.
+    private async Task AddTeamMembersAsync(
+        NotificationTopic topic,
+        long teamID,
+        INotificationIdentityDirectory? directory,
+        HashSet<long> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (directory is null)
+        {
+            logger.LogError("Notification topic {Topic} has team {TeamID}, but no {Directory} is registered, so its members get nothing.",
+                topic.ID, teamID, nameof(INotificationIdentityDirectory));
+            return;
+        }
+
+        var members = await directory.GetTeamMembersAsync(teamID, cancellationToken);
+
+        if (members is null)
+            logger.LogWarning("Notification topic {Topic}: the members of team {TeamID} aren't known, so they get nothing.", topic.ID, teamID);
+        else
+            candidates.UnionWith(members);
     }
 
     // The check for users: could they sign in, can they open the screen, can they open this record, is their email
@@ -306,7 +321,10 @@ internal sealed class NotificationPipeline
             logger.LogWarning("Notification topic {Topic}: the access of user {UserID} can't be worked out ({Reason}), so they get nothing. There is no retry.", topic.ID, userID, reason);
 
         if (lookup.Eligible.Count == 0)
+        {
+            WarnNobodyPassed(raised, candidates.Count);
             return allowed;
+        }
 
         // A repository that can't answer for another user, such as one with an enabled global filter, refuses by throwing.
         // That answer is the same for every user, and the caller then sends to no user.
@@ -342,8 +360,17 @@ internal sealed class NotificationPipeline
             allowed.Add(user.Email);
         }
 
+        if (allowed.Count == 0)
+            WarnNobodyPassed(raised, candidates.Count);
+
         return allowed;
     }
+
+    // Each person's reason is logged at Information, which some hosts don't keep, such as Azure Functions sending only
+    // warnings to Application Insights. This one line says that a whole event reached none of its users.
+    private void WarnNobodyPassed(NotificationRaised raised, int candidates)
+        => logger.LogWarning("Notification topic {Topic}: none of the {Count} user(s) to check on {EntityType} {RecordID} passed the checks, so the event reaches no user. Each reason is logged at Information.",
+            raised.Topic.ID, candidates, raised.EntityTypeName, raised.RecordID);
 
     // Two repositories for one type can have different rules, and one of them may be open to everyone. The check won't
     // guess between them, because the wrong guess would email a record to someone who can't open it.

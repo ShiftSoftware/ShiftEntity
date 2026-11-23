@@ -24,14 +24,32 @@ public class NotificationTestDbContext(DbContextOptions<NotificationTestDbContex
 {
     public DbSet<NotifiedRecord> Records => Set<NotifiedRecord>();
     public DbSet<PlainRecord> PlainRecords => Set<PlainRecord>();
+    public DbSet<ParentRecord> ParentRecords => Set<ParentRecord>();
+    public DbSet<ChildRecord> ChildRecords => Set<ChildRecord>();
 }
 
-/// <summary>A record with a company, a branch and watchers.</summary>
+/// <summary>A record with a company, a branch, watchers and a notification rule of its own.</summary>
 public class NotifiedRecord : ShiftEntity<NotifiedRecord>,
     IEntityHasCompany<NotifiedRecord>,
     IEntityHasCompanyBranch<NotifiedRecord>,
-    IHasNotificationWatchers
+    IHasNotificationWatchers,
+    IHasNotificationRules<NotifiedRecord>
 {
+    /// <summary>A record that becomes this name raises <see cref="NotificationTestTopics.Staff"/>, through its own rule.</summary>
+    public const string ApprovedName = "Approved through its rule";
+
+    /// <summary>A record saved with this name makes its own rule throw.</summary>
+    public const string RuleThrowsName = "Its rule throws";
+
+    public IEnumerable<NotificationTopic> GetTopicsToRaise(NotificationChange<NotifiedRecord> change)
+    {
+        if (change.Entity.Name == RuleThrowsName)
+            throw new InvalidOperationException("Deliberate rule failure.");
+
+        if (change.Became(record => record.Name == ApprovedName))
+            yield return NotificationTestTopics.Staff;
+    }
+
     public string? Name { get; set; }
     public string? CustomerEmail { get; set; }
     public long? CompanyID { get; set; }
@@ -46,6 +64,37 @@ public class NotifiedRecord : ShiftEntity<NotifiedRecord>,
 
     public IEnumerable<NotificationWatcher> GetNotificationWatchers()
         => WatchersThrow ? throw new InvalidOperationException("Deliberate watcher failure.") : TestWatchers;
+}
+
+/// <summary>An entity that a class derives from, with a notification rule of its own.</summary>
+public class ParentRecord : ShiftEntity<ParentRecord>, IHasNotificationRules<ParentRecord>
+{
+    public const string ApprovedName = "Approved";
+
+    public string? Name { get; set; }
+
+    public IEnumerable<NotificationTopic> GetTopicsToRaise(NotificationChange<ParentRecord> change)
+    {
+        if (change.Became(record => record.Name == ApprovedName))
+            yield return NotificationTestTopics.Staff;
+    }
+}
+
+/// <summary>A class derived from <see cref="ParentRecord"/>: a row of its table, with a column of its own.</summary>
+public class ChildRecord : ParentRecord
+{
+    public string? Extra { get; set; }
+}
+
+public sealed class ParentRecordEmailContent : INotificationEmailContent<ParentRecord>
+{
+    public ValueTask<NotificationEmailContent?> BuildAsync(NotificationTopic topic, ParentRecord record, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult<NotificationEmailContent?>(new NotificationEmailContent
+        {
+            Subject = topic.ID,
+            Headline = $"{record.GetType().Name} {record.Name}",
+            Details = [new("Name", record.Name)],
+        });
 }
 
 /// <summary>The same columns as <see cref="NotifiedRecord"/>, without watchers.</summary>
@@ -305,7 +354,8 @@ public sealed class NotificationTestApp : IAsyncDisposable
         Action<IServiceCollection>? services = null,
         bool withDirectory = true,
         bool withSender = true,
-        bool withContent = true)
+        bool withContent = true,
+        bool withTriggers = true)
     {
         var file = Path.Combine(Path.GetTempPath(), $"notification-tests-{Guid.NewGuid():N}.db");
         var collection = new ServiceCollection();
@@ -313,9 +363,13 @@ public sealed class NotificationTestApp : IAsyncDisposable
         collection.AddSingleton<RecordingLoggerProvider>();
         collection.AddLogging(logging => logging.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<RecordingLoggerProvider>()));
 
-        collection.AddDbContext<NotificationTestDbContext>(options => options
-            .UseSqlite($"Data Source={file};Pooling=False")
-            .UseTriggers());
+        // The trigger library detects changes on its own when it runs, so a test of what the save itself detects goes without it.
+        collection.AddDbContext<NotificationTestDbContext>(options =>
+        {
+            options.UseSqlite($"Data Source={file};Pooling=False");
+            if (withTriggers)
+                options.UseTriggers();
+        });
 
         // What the framework's registrations contribute, minimally.
         collection.AddScoped<ICurrentUserProvider>(_ => FakeCurrentUserProvider.Anonymous());

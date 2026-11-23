@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Core.Attention;
 using ShiftSoftware.ShiftEntity.EFCore.Entities;
+using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace ShiftSoftware.ShiftEntity.EFCore.Attention;
 
@@ -36,7 +37,7 @@ internal sealed class AttentionEntityOutcome
     public required string EntityTypeName { get; init; }
 
     /// <summary>
-    /// EF Core change-tracker entry; the repository reads the entity ID from it after save
+    /// EF Core change-tracker entry; the save reads the entity ID from it after it has written
     /// (Insert entities only receive their ID then) when materializing events.
     /// </summary>
     public required EntityEntry Entry { get; init; }
@@ -52,10 +53,11 @@ internal sealed class AttentionEntityOutcome
 }
 
 /// <summary>
-/// Core evaluation and persistence engine for the attention system. Invoked by
-/// <c>ShiftRepository.ProcessEntriesAndSave</c> for each <see cref="IHasAttention"/> entity.
-/// Discovers evaluators, runs them, deduplicates signals, persists results, and updates
-/// the entity's summary columns — all within the same <c>SaveChanges</c> transaction.
+/// Core evaluation and persistence engine for the attention system. The save pipeline of
+/// <see cref="ShiftDbContext"/> invokes it, through <see cref="AttentionSave"/>, for each added or
+/// modified <see cref="IHasAttention"/> row before a save writes. It discovers evaluators, runs them,
+/// deduplicates signals, persists results, and updates the entity's summary columns, all in the
+/// same save.
 /// </summary>
 internal static class AttentionPipeline
 {
@@ -63,47 +65,51 @@ internal static class AttentionPipeline
     /// Runs all registered evaluators against the entity, deduplicates raised signals,
     /// persists new signals in the entity's storage mode, and updates summary columns.
     /// </summary>
+    /// <param name="db">The context about to save.</param>
+    /// <param name="entry">The added or modified row.</param>
+    /// <param name="services">The save's services, for evaluators registered in DI.</param>
+    /// <param name="options">The host's attention options.</param>
+    /// <param name="indexedSignals">
+    /// The stored signals of an indexed row that already exists, loaded by the caller for all the
+    /// save's rows at once. Null for a new row and for a row in JSON mode.
+    /// </param>
     /// <returns>
-    /// The outcome carrying the newly-raised (post-dedup) signals — the repository turns
-    /// them into <see cref="AttentionRaised"/> events after the save commits — and any
-    /// pending indexed signals for Insert entities (flushed via
-    /// <see cref="FlushPendingSignals"/> after <c>SaveChangesAsync</c> assigns database
-    /// IDs). <c>null</c> when no new signal was raised.
+    /// The outcome carrying the newly-raised (post-dedup) signals, which become
+    /// <see cref="AttentionRaised"/> events after the save commits, and any pending indexed
+    /// signals for new rows (written by <see cref="FlushPendingSignals"/> once the save has
+    /// assigned database IDs). <c>null</c> when no new signal was raised.
     /// </returns>
-    internal static async Task<AttentionEntityOutcome?> ProcessEntity<TEntity>(
+    internal static AttentionEntityOutcome? ProcessEntity(
         ShiftDbContext db,
         EntityEntry entry,
-        TEntity entity,
-        TEntity? original,
-        ActionTypes action,
-        IServiceProvider services) where TEntity : class
+        IServiceProvider services,
+        AttentionOptions options,
+        IReadOnlyList<StoredAttentionSignal>? indexedSignals)
     {
+        var entity = entry.Entity;
+
         if (entity is not IHasAttention attentionEntity)
             return null;
 
         var clrType = entity.GetType();
         var entityTypeName = clrType.Name;
         var isIndexed = entity is IHasIndexedAttention;
-        var isInsert = action == ActionTypes.Insert;
-
-        var options = services.GetService<IOptions<AttentionOptions>>()?.Value ?? new AttentionOptions();
+        var isInsert = entry.State == EntityState.Added;
+        var action = isInsert ? ActionTypes.Insert : ActionTypes.Update;
+        var original = isInsert ? null : entry.OriginalValues.ToObject();
 
         var entityId = isInsert ? 0L : (long)entry.Property("ID").CurrentValue!;
-        var existingSignals = await LoadExistingSignals(db, entry, entityTypeName, isIndexed, entityId);
+
+        List<StoredAttentionSignal> existingSignals = isIndexed
+            ? indexedSignals is null ? [] : [.. indexedSignals]
+            : AttentionSignalJsonHelper.Deserialize((string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue);
 
         var rawSignals = new List<(AttentionSignal signal, string defaultSource)>();
 
-        // Source 1: entity's own evaluator
-        if (entity is IHasAttentionEvaluator<TEntity> selfEvaluator)
+        // Source 1: the entity's own evaluators
+        foreach (var evaluate in SelfEvaluatorsOf(clrType))
         {
-            var context = new AttentionContext<TEntity>
-            {
-                Action = action,
-                Entity = entity,
-                Original = original,
-                Services = services,
-            };
-            var signal = selfEvaluator.EvaluateAttention(context);
+            var signal = evaluate(entity, original, action, services);
             if (signal is not null)
                 rawSignals.Add((signal, clrType.Name));
         }
@@ -198,6 +204,9 @@ internal static class AttentionPipeline
         // Update summary columns
         UpdateSummaryColumns(attentionEntity, allSignals);
 
+        if (!isInsert)
+            MarkSummaryColumnsModified(entry);
+
         if (newStoredSignals.Count == 0)
             return null;
 
@@ -209,6 +218,30 @@ internal static class AttentionPipeline
             PendingIndexed = pendingIndexed,
         };
     }
+
+    // An entity names itself in IHasAttentionEvaluator<TSelf>, so each of its evaluators is called with the context
+    // typed that way. Worked out once per entity class.
+    private delegate AttentionSignal? SelfEvaluator(object entity, object? original, ActionTypes action, IServiceProvider services);
+
+    private static readonly ConcurrentDictionary<Type, SelfEvaluator[]> selfEvaluators = new();
+
+    private static readonly MethodInfo evaluateSelfMethod =
+        typeof(AttentionPipeline).GetMethod(nameof(EvaluateSelf), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static SelfEvaluator[] SelfEvaluatorsOf(Type clrType) => selfEvaluators.GetOrAdd(clrType, type => type.GetInterfaces()
+        .Where(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IHasAttentionEvaluator<>))
+        .Select(x => evaluateSelfMethod.MakeGenericMethod(x.GetGenericArguments()[0]).CreateDelegate<SelfEvaluator>())
+        .ToArray());
+
+    private static AttentionSignal? EvaluateSelf<TSelf>(object entity, object? original, ActionTypes action, IServiceProvider services)
+        where TSelf : class
+        => ((IHasAttentionEvaluator<TSelf>)entity).EvaluateAttention(new AttentionContext<TSelf>
+        {
+            Action = action,
+            Entity = (TSelf)entity,
+            Original = original as TSelf,
+            Services = services,
+        });
 
     /// <summary>
     /// Marks the active signals selected by <paramref name="filter"/> for the specified entity as
@@ -314,14 +347,16 @@ internal static class AttentionPipeline
         if (clearedAny && entity is IShiftEntityAudit auditable && db.Entry(entity).State == EntityState.Modified)
             AuditStamper.StampAuditFields(auditable, isAdded: false, userId, now);
 
-        await db.SaveChangesAsync();
+        // Acknowledging is not a change of the record. Evaluating here would raise a state-based signal again at once.
+        using (db.SuppressAttention())
+            await db.SaveChangesAsync();
 
         return (entity as IShiftEntityAudit)?.LastSaveDate;
     }
 
     /// <summary>
-    /// Persists pending indexed signals after <c>SaveChangesAsync</c> has assigned database IDs
-    /// to Insert entities. Called in a second save pass by the repository.
+    /// Adds the pending indexed signals once the save has assigned database IDs to the new rows.
+    /// The save pipeline writes them in a second pass, in the same transaction.
     /// </summary>
     internal static void FlushPendingSignals(ShiftDbContext db, List<PendingIndexedSignal> pending)
     {
@@ -331,29 +366,6 @@ internal static class AttentionPipeline
             db.Set<AttentionSignalEntry>().Add(
                 AttentionSignalEntry.FromStoredSignal(p.Signal, p.EntityTypeName, entityId));
         }
-    }
-
-    private static async Task<List<StoredAttentionSignal>> LoadExistingSignals(
-        ShiftDbContext db,
-        EntityEntry entry,
-        string entityTypeName,
-        bool isIndexed,
-        long entityId)
-    {
-        if (isIndexed)
-        {
-            if (entityId == 0)
-                return [];
-
-            var entries = await db.Set<AttentionSignalEntry>()
-                .Where(x => x.EntityType == entityTypeName && x.EntityId == entityId)
-                .ToListAsync();
-
-            return entries.Select(x => x.ToStoredSignal()).ToList();
-        }
-
-        var json = (string?)entry.Property(AttentionSignalJsonHelper.ShadowPropertyName).CurrentValue;
-        return AttentionSignalJsonHelper.Deserialize(json);
     }
 
     private static bool IsDuplicate(
@@ -376,5 +388,25 @@ internal static class AttentionPipeline
         entity.HasActiveAttention = active.Count > 0;
         entity.HighestSeverity = active.Count > 0 ? active.Max(s => s.Severity) : null;
         entity.ActiveSignalCount = active.Count;
+    }
+
+    private static readonly string[] SummaryColumns =
+        [nameof(IHasAttention.HasActiveAttention), nameof(IHasAttention.HighestSeverity), nameof(IHasAttention.ActiveSignalCount)];
+
+    // The summary columns of a row that already exists are written only when EF knows they changed. The evaluators run
+    // in every save now, also in one whose caller switched change detection off, so EF is told here, and not left to
+    // find out.
+    private static void MarkSummaryColumnsModified(EntityEntry entry)
+    {
+        foreach (var name in SummaryColumns)
+        {
+            if (entry.Metadata.FindProperty(name) is null)
+                continue;
+
+            var property = entry.Property(name);
+
+            if (!property.IsModified && !Equals(property.CurrentValue, property.OriginalValue))
+                property.IsModified = true;
+        }
     }
 }

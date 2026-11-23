@@ -42,6 +42,42 @@ public sealed class NotificationOptions
     /// <summary>The repositories named with <see cref="UseRepository{TEntity, TRepository}"/>, by entity type.</summary>
     internal Dictionary<Type, Type> Repositories { get; } = [];
 
+    /// <summary>
+    /// Raises the topic whenever a save creates a record of this type, through a repository or a plain
+    /// <c>SaveChanges</c>, once the save has committed. One line in place of an after-save trigger.
+    /// </summary>
+    /// <remarks>
+    /// <typeparamref name="TEntity"/> can also be a base class or an interface, and then every record that is one raises
+    /// the topic. A record of a class derived from an entity is raised as that entity, so its email content and
+    /// repository are the entity's. Register the topic in the same <c>AddNotifications</c> call or an earlier one. For
+    /// other moments, see <see cref="IHasNotificationRules{TSelf}"/>, which also lists the saves that raise nothing, and
+    /// <see cref="AddRule{TEntity, TRule}"/>.
+    /// </remarks>
+    public NotificationOptions RaiseWhenCreated<TEntity>(NotificationTopic topic) where TEntity : class
+    {
+        ArgumentNullException.ThrowIfNull(topic);
+        CreatedRules.Add(new(typeof(TEntity), topic));
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a rule class that says which topics a save raises, for a rule that needs services or applies to several entity
+    /// types. This also registers the class in DI as a scoped service, unless it is registered already.
+    /// </summary>
+    public NotificationOptions AddRule<TEntity, TRule>()
+        where TEntity : class
+        where TRule : class, INotificationRule<TEntity>
+    {
+        RuleClasses.Add(new(typeof(TEntity), typeof(TRule)));
+        return this;
+    }
+
+    /// <summary>The topics added with <see cref="RaiseWhenCreated{TEntity}"/>, each with its entity type.</summary>
+    internal List<NotificationCreatedRule> CreatedRules { get; } = [];
+
+    /// <summary>The rule classes added with <see cref="AddRule{TEntity, TRule}"/>, each with the entity type it is for.</summary>
+    internal List<NotificationRuleClass> RuleClasses { get; } = [];
+
     /// <inheritdoc cref="AddTopics(Type)"/>
     public NotificationOptions AddTopics<TTopics>() where TTopics : class
         => AddTopics(typeof(TTopics));
@@ -96,3 +132,9 @@ public sealed class NotificationEmailOptions
     /// <summary>The text at the bottom, such as the company's name and address, or null for none.</summary>
     public string? Footer { get; set; }
 }
+
+/// <summary>A topic raised when a record of the entity type, or of one that is assignable to it, is created.</summary>
+internal sealed record NotificationCreatedRule(Type EntityType, NotificationTopic Topic);
+
+/// <summary>A rule class, and the entity type, base class or interface it is written for.</summary>
+internal sealed record NotificationRuleClass(Type EntityType, Type RuleType);

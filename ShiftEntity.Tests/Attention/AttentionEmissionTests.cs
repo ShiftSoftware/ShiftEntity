@@ -171,8 +171,8 @@ public class AttentionEmissionTests
         var widget = new WidgetEntity { Name = "Sprocket", Flagged = true };
         db.Widgets.Add(widget);
 
-        // IHasIndexedAttention forces the transactional save path; on Insert the signal row
-        // is flushed in a second save once the entity ID exists.
+        // On Insert the signal row of an indexed entity waits for the entity's ID, and is
+        // written in a second pass of the same save.
         await WidgetRepository(db).SaveChangesAsync();
 
         var received = await app.Sink.WaitUntilAsync(s => s.Count >= 1);
