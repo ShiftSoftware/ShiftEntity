@@ -617,7 +617,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
         //SQLite keeps DateTimeOffset as text and cannot compare it in SQL, so there the dirty rows are picked in memory
         //from the two watermark columns and then selected by key. The pick ignores query filters; the query that loads
         //the rows still applies them, as it does with the comparison below.
-        if (this.db.Database.ProviderName == SqliteProviderName)
+        if (this.db.Database.IsSqlite())
         {
             var watermarks = await this.dbSet.IgnoreQueryFilters().AsNoTracking()
                 .Select(x => new { x.ID, x.LastSaveDate, x.LastReplicationDate })
@@ -633,8 +633,6 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
         return queryable.Where(x => x.LastReplicationDate < x.LastSaveDate || !x.LastReplicationDate.HasValue);
     }
-
-    private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
 
     //Sets the two replication columns of each selected row to what the run achieved for it, and returns the rows
     //whose columns changed.
