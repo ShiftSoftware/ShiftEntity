@@ -26,7 +26,7 @@ public class ShiftEntityCosmosDbOptions
         this.Services = serviceProvider;
     }
 
-    public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
+    public CosmosDbOnSaveReplicationOperation<Entity> SetUpReplication<DB, Entity>(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>, IShiftEntityReplication
         where DB : ShiftDbContext
@@ -34,7 +34,7 @@ public class ShiftEntityCosmosDbOptions
         return new(cosmosDbConnectionString, cosmosDataBaseId, mapper, this.internalServices, typeof(DB));
     }
 
-    public CosmosDbTriggerReplicateOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
+    public CosmosDbOnSaveReplicationOperation<Entity> SetUpReplication<DB, Entity>(CosmosClient client, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? mapper = null)
         where Entity : ShiftEntity<Entity>, IShiftEntityReplication
         where DB : ShiftDbContext
@@ -43,27 +43,27 @@ public class ShiftEntityCosmosDbOptions
     }
 }
 
-public class CosmosDbTriggerReplicateOperation<Entity>
+public class CosmosDbOnSaveReplicationOperation<Entity>
     where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
-    private readonly CosmosDbTriggerReferenceOperations<Entity> cosmosDbTriggerReferenceOperations;
+    private readonly CosmosDbOnSaveReferenceOperations<Entity> cosmosDbOnSaveReferenceOperations;
 
-    public CosmosDbTriggerReplicateOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
+    public CosmosDbOnSaveReplicationOperation(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
     {
-        this.cosmosDbTriggerReferenceOperations =
-            new CosmosDbTriggerReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping,
+        this.cosmosDbOnSaveReferenceOperations =
+            new CosmosDbOnSaveReferenceOperations<Entity>(cosmosDbConnectionString, cosmosDataBaseId, setupMapping,
             dbContextType);
-        services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
+        services.AddScoped(x => this.cosmosDbOnSaveReferenceOperations);
     }
 
-    public CosmosDbTriggerReplicateOperation(CosmosClient client, string cosmosDataBaseId,
+    public CosmosDbOnSaveReplicationOperation(CosmosClient client, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, IServiceCollection services, Type dbContextType)
     {
-        this.cosmosDbTriggerReferenceOperations =
-            new CosmosDbTriggerReferenceOperations<Entity>(client, cosmosDataBaseId, setupMapping,
+        this.cosmosDbOnSaveReferenceOperations =
+            new CosmosDbOnSaveReferenceOperations<Entity>(client, cosmosDataBaseId, setupMapping,
             dbContextType);
-        services.AddScoped(x => this.cosmosDbTriggerReferenceOperations);
+        services.AddScoped(x => this.cosmosDbOnSaveReferenceOperations);
     }
 
     /// <summary>
@@ -78,13 +78,13 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// sync loudly rather than leaving the row dirty.
     /// </param>
     /// <returns></returns>
-    public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
+    public CosmosDbOnSaveReferenceOperations<Entity> Replicate<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations
+        this.cosmosDbOnSaveReferenceOperations
             .Replicate(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
-        return this.cosmosDbTriggerReferenceOperations;
+        return this.cosmosDbOnSaveReferenceOperations;
     }
 
     /// <summary>
@@ -99,15 +99,15 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// sync loudly rather than leaving the row dirty.
     /// </param>
     /// <returns></returns>
-    public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
+    public CosmosDbOnSaveReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
+        this.cosmosDbOnSaveReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, null, mapping);
-        return this.cosmosDbTriggerReferenceOperations;
+        return this.cosmosDbOnSaveReferenceOperations;
     }
 
     /// <summary>
@@ -122,16 +122,16 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// sync loudly rather than leaving the row dirty.
     /// </param>
     /// <returns></returns>
-    public CosmosDbTriggerReferenceOperations<Entity> Replicate<CosmosDbItem>(
+    public CosmosDbOnSaveReferenceOperations<Entity> Replicate<CosmosDbItem>(
         string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel3Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
+        this.cosmosDbOnSaveReferenceOperations.Replicate(cosmosContainerId, partitionKeyLevel1Expression,
             partitionKeyLevel2Expression, partitionKeyLevel3Expression, mapping);
-        return this.cosmosDbTriggerReferenceOperations;
+        return this.cosmosDbOnSaveReferenceOperations;
     }
 
     /// <summary>
@@ -149,26 +149,26 @@ public class CosmosDbTriggerReplicateOperation<Entity>
     /// Builds the document from the loaded root. Optional: when omitted, the document is mapped through the host's
     /// registered ShiftMapper mapper, which must declare <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>.
     /// </param>
-    public CosmosDbTriggerReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
+    public CosmosDbOnSaveReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
-        return this.cosmosDbTriggerReferenceOperations;
+        this.cosmosDbOnSaveReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, null, null, mapping);
+        return this.cosmosDbOnSaveReferenceOperations;
     }
 
     /// <inheritdoc cref="ReplicateTree{CosmosDbItem}(string, Expression{Func{CosmosDbItem, object}}, Func{EntityWrapper{Entity}, CosmosDbItem}?)"/>
-    public CosmosDbTriggerReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
+    public CosmosDbOnSaveReferenceOperations<Entity> ReplicateTree<CosmosDbItem>(string cosmosContainerId,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel1Expression,
         Expression<Func<CosmosDbItem, object>> partitionKeyLevel2Expression,
         Func<EntityWrapper<Entity>, CosmosDbItem>? mapping = null)
     {
-        this.cosmosDbTriggerReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, partitionKeyLevel2Expression, null, mapping);
-        return this.cosmosDbTriggerReferenceOperations;
+        this.cosmosDbOnSaveReferenceOperations.ReplicateTree(cosmosContainerId, partitionKeyLevel1Expression, partitionKeyLevel2Expression, null, mapping);
+        return this.cosmosDbOnSaveReferenceOperations;
     }
 }
 
-public class CosmosDbTriggerReferenceOperations<Entity>
+public class CosmosDbOnSaveReferenceOperations<Entity>
     where Entity : ShiftEntity<Entity>, IShiftEntityReplication
 {
     private readonly string cosmosDbConnectionString;
@@ -203,7 +203,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     private static string? LastWrittenStamp(Entity entity) =>
         writtenStamps.TryGetValue(entity, out var stamp) ? stamp : entity.LastReplicationStamp;
 
-    internal CosmosDbTriggerReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
+    internal CosmosDbOnSaveReferenceOperations(string cosmosDbConnectionString, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
         this.cosmosDbConnectionString = cosmosDbConnectionString;
@@ -212,7 +212,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
         this.dbContextType = dbContextType;
     }
 
-    internal CosmosDbTriggerReferenceOperations(CosmosClient client, string cosmosDataBaseId,
+    internal CosmosDbOnSaveReferenceOperations(CosmosClient client, string cosmosDataBaseId,
         Func<EntityWrapper<Entity>, ValueTask<Entity>>? setupMapping, Type dbContextType)
     {
         this.client = client;
@@ -466,7 +466,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     /// document through its <c>CreateMap&lt;Entity, CosmosDbItem&gt;()</c>; a member that map ignores — typically
     /// the partition key — survives the merge.
     /// </param>
-    public CosmosDbTriggerReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
+    public CosmosDbOnSaveReferenceOperations<Entity> UpdateReference<CosmosDbItem>(string cosmosContainerId,
                 Func<IQueryable<CosmosDbItem>, EntityWrapper<Entity>, IQueryable<CosmosDbItem>> finder,
                 Func<EntityWrapper<Entity>, CosmosDbItem, CosmosDbItem>? mapping = null)
     {
@@ -526,7 +526,7 @@ public class CosmosDbTriggerReferenceOperations<Entity>
     /// host's registered ShiftMapper mapper (<see cref="ShiftMapper.IMapper"/>), which must declare
     /// <c>CreateMap&lt;Entity, CosmosDbItemReference&gt;()</c>.
     /// </param>
-    public CosmosDbTriggerReferenceOperations<Entity> UpdatePropertyReference<CosmosDbItemReference, DestinationContainer>(
+    public CosmosDbOnSaveReferenceOperations<Entity> UpdatePropertyReference<CosmosDbItemReference, DestinationContainer>(
         string cosmosContainerId, Expression<Func<DestinationContainer, object>> destinationReferencePropertyExpression,
         Func<IQueryable<DestinationContainer>, EntityWrapper<Entity>, IQueryable<DestinationContainer>> finder,
         Func<EntityWrapper<Entity>, CosmosDbItemReference>? mapping = null)

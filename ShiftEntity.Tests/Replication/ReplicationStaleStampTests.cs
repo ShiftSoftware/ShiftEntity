@@ -69,7 +69,7 @@ public class ReplicationStaleStampTests
 
         Assert.Equal(["""upsert items/1 {"id":"1","Region":"north","ItemType":"Item","Rank":0,"Code":"b","CategoryID":null,"CategoryName":null,"Category":null}"""],
             host.Cosmos.WriteLines);
-        Assert.Empty(host.Log.Failed);
+        host.Log.AssertNoneFailed();
         var stored = await host.StoredAsync<Item>(1);
         Assert.Equal((DateTimeOffset?)stored.LastSaveDate, stored.LastReplicationDate);
         AssertStampOfOneLevel(stored.LastReplicationStamp, 1);
@@ -90,15 +90,14 @@ public class ReplicationStaleStampTests
         await host.Log.AllFinishedAsync();
 
         Assert.Equal(["Item 1"], host.Log.Started);
-        Assert.Empty(host.Log.Failed);
+        host.Log.AssertNoneFailed();
         Assert.Empty(host.Cosmos.Writes);
     }
 
     [Fact]
     public async Task A_tree_document_is_written_to_its_new_container_and_nothing_is_deleted_for_a_stamp_of_another()
     {
-        // On disk: the three syncs of the save run at once, and an in-memory connection cannot be shared by them.
-        await using var host = new ShopTreeHost(onDisk: true);
+        await using var host = new ShopTreeHost();
         await host.SeedAsync();
         await using (var db = host.Bare())
             foreach (var id in new[] { 1L, 2L })
@@ -111,7 +110,7 @@ public class ReplicationStaleStampTests
         });
 
         Assert.Equal(["Shop 1", "Shop 2", "Shop 3"], host.Log.Started.Order());
-        Assert.Empty(host.Log.Failed);
+        host.Log.AssertNoneFailed();
         Assert.Equal(["upsert shops/1", "upsert shops/2", "upsert shops/3"],
             host.Cosmos.Writes.Select(x => $"{x.Kind} {x.Container}/{x.Id}").Order());
         foreach (var id in new[] { 1L, 2L })

@@ -22,7 +22,8 @@ public static class NotificationServiceCollectionExtensions
     /// </para>
     /// <para>
     /// <typeparamref name="TDbContext"/> is the context the host's saves run on. An event waits for that context's commit,
-    /// so this also adds <c>UseShiftEntityAfterCommit()</c> to it. A pooled context is not supported, as with replication.
+    /// which the context follows for every transaction begun through its <c>Database</c>. A pooled context is not
+    /// supported, as with replication.
     /// </para>
     /// <para>
     /// Calling this again with the same system name and context adds more topics, so a host can register them from
@@ -125,13 +126,15 @@ public static class NotificationServiceCollectionExtensions
         services.AddSingleton(created.Catalog);
         services.AddSingleton(created.Options);
 
-        services.ConfigureDbContext<TDbContext>((_, options) => options.UseShiftEntityAfterCommit(), ServiceLifetime.Singleton);
+        // The rules take part in the saves of the context, so the host is checked at start for triggers that would no
+        // longer run.
+        services.AddSaveLifecycleHost();
 
         services.AddSingleton<NotificationQueue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, NotificationDispatcherService>());
 
-        // The rules (RaiseWhenCreated, an entity's IHasNotificationRules, AddRule) run after each save of the context,
-        // through its save observers.
+        // The rules (RaiseWhenCreated, an entity's IHasNotificationRules, AddRule) run after the write of each save of
+        // the context, as one of its save observers.
         services.AddSingleton(new NotificationRuleSet(created.Options, typeof(TDbContext)));
         services.TryAddEnumerable(ServiceDescriptor.Transient<IShiftDbContextSaveObserver, NotificationRulesSaveObserver>());
 

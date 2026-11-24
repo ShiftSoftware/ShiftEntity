@@ -52,6 +52,12 @@
 
 	<ItemGroup>
 		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Web" />
+		<!-- Replication is told what each save wrote (IShiftDbContextSaveObserver), and queues the syncs of the saves that
+		     commit together as one piece of work (ShiftDbContext.AfterCommitTogether). -->
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.CosmosDbReplication" />
+		<!-- The tests drive the save observers, which only the framework's own parts implement, and read the counters
+		     that say what a save cost. -->
+		<InternalsVisibleTo Include="ShiftSoftware.ShiftEntity.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>

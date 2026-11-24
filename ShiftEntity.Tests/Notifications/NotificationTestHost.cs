@@ -1,4 +1,3 @@
-using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -127,8 +126,8 @@ public sealed class NotificationTestSettings
     /// <summary>Gives the repository an enabled global filter, which refuses CanAccessAs.</summary>
     public bool RepositoryHasGlobalFilter { get; set; }
 
-    /// <summary>The topic the after-save trigger raises, or null for none.</summary>
-    public NotificationTopic? RaiseFromTrigger { get; set; }
+    /// <summary>The topic the host's handler raises once a record is committed, or null for none.</summary>
+    public NotificationTopic? RaiseFromHandler { get; set; }
 
     public bool ContentReturnsNull { get; set; }
 }
@@ -148,21 +147,46 @@ public class NotifiedRecordRepository : ShiftRepository<NotificationTestDbContex
     }
 }
 
-/// <summary>The repository save path with a transaction: having an after-save hook is what selects it.</summary>
-public sealed class HookedRecordRepository(NotificationTestDbContext db, NotificationTestSettings settings, Func<NotifiedRecord, ValueTask> afterSave)
-    : NotifiedRecordRepository(db, settings), IShiftEntityHasAfterSaveHook<NotifiedRecord>
+/// <summary>
+/// What a test tells the after-save handler of <see cref="NotifiedRecord"/> to do with each saved record. A host that
+/// has it saves its records in a transaction: an after-save handler is what makes a save need one.
+/// </summary>
+public sealed class AfterSaveStep(Func<INotificationRaiser, NotifiedRecord, ValueTask> run)
 {
-    public ValueTask AfterSaveAsync(NotifiedRecord entity, ActionTypes action) => afterSave(entity);
+    public Func<INotificationRaiser, NotifiedRecord, ValueTask> Run => run;
+
+    /// <summary>A step that does nothing, for a test that only needs the save to run in a transaction.</summary>
+    public static AfterSaveStep Nothing => new((_, _) => ValueTask.CompletedTask);
 }
 
-/// <summary>A host's after-save trigger: the <c>if</c> stays in the host, and it raises the topic.</summary>
-public sealed class RaisingTrigger(INotificationRaiser raiser, NotificationTestSettings settings) : IAfterSaveTrigger<NotifiedRecord>
+/// <summary>A host's after-save handler: code that runs inside the save's transaction, after the write.</summary>
+public sealed class AfterSaveStepHandler(AfterSaveStep step, INotificationRaiser raiser) : IAfterSaveHandler<NotifiedRecord>
 {
-    public async Task AfterSave(ITriggerContext<NotifiedRecord> context, CancellationToken cancellationToken)
+    public async ValueTask AfterSaveAsync(SavedRows<NotifiedRecord> rows, CancellationToken cancellationToken)
     {
-        if (settings.RaiseFromTrigger is { } topic)
-            await raiser.RaiseAsync(topic, context.Entity);
+        foreach (var row in rows)
+            await step.Run(raiser, row.Entity);
     }
+}
+
+/// <summary>A host's after-commit handler: the <c>if</c> stays in the host, and it raises the topic.</summary>
+public sealed class RaisingHandler(INotificationRaiser raiser, NotificationTestSettings settings) : IAfterCommitHandler<NotifiedRecord>
+{
+    public async ValueTask AfterCommitAsync(SavedRows<NotifiedRecord> rows, CancellationToken cancellationToken)
+    {
+        if (settings.RaiseFromHandler is not { } topic)
+            return;
+
+        foreach (var row in rows)
+            await raiser.RaiseAsync(topic, row.Entity);
+    }
+}
+
+public static class NotificationTestHandlers
+{
+    /// <summary>Gives the host an after-save handler for its records, which runs the step inside the save's transaction.</summary>
+    public static IServiceCollection AddAfterSaveStep(this IServiceCollection services, AfterSaveStep step) =>
+        services.AddSingleton(step).AddSaveHandler<AfterSaveStepHandler>();
 }
 
 public sealed class TestEmailContent(NotificationTestSettings settings) : INotificationEmailContent<NotifiedRecord>
@@ -354,8 +378,7 @@ public sealed class NotificationTestApp : IAsyncDisposable
         Action<IServiceCollection>? services = null,
         bool withDirectory = true,
         bool withSender = true,
-        bool withContent = true,
-        bool withTriggers = true)
+        bool withContent = true)
     {
         var file = Path.Combine(Path.GetTempPath(), $"notification-tests-{Guid.NewGuid():N}.db");
         var collection = new ServiceCollection();
@@ -363,13 +386,7 @@ public sealed class NotificationTestApp : IAsyncDisposable
         collection.AddSingleton<RecordingLoggerProvider>();
         collection.AddLogging(logging => logging.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<RecordingLoggerProvider>()));
 
-        // The trigger library detects changes on its own when it runs, so a test of what the save itself detects goes without it.
-        collection.AddDbContext<NotificationTestDbContext>(options =>
-        {
-            options.UseSqlite($"Data Source={file};Pooling=False");
-            if (withTriggers)
-                options.UseTriggers();
-        });
+        collection.AddDbContext<NotificationTestDbContext>(options => options.UseSqlite($"Data Source={file};Pooling=False"));
 
         // What the framework's registrations contribute, minimally.
         collection.AddScoped<ICurrentUserProvider>(_ => FakeCurrentUserProvider.Anonymous());
@@ -384,7 +401,6 @@ public sealed class NotificationTestApp : IAsyncDisposable
         collection.AddSingleton<INotificationSubscribersList>(sp => sp.GetRequiredService<InMemoryNotificationSubscribersList>());
 
         collection.AddScoped<IShiftEntityFind<NotifiedRecord>, NotifiedRecordRepository>();
-        collection.AddTransient<IAfterSaveTrigger<NotifiedRecord>, RaisingTrigger>();
 
         collection.AddNotifications<NotificationTestDbContext>("Sales", options =>
         {
@@ -436,7 +452,7 @@ public sealed class NotificationTestApp : IAsyncDisposable
         return new(id, typeAuth, FakeCurrentUserProvider.WithClaims(), email ?? $"user{id}@example.com", emailVerified);
     }
 
-    /// <summary>Saves a record, and returns it as the host's trigger or hook would have it.</summary>
+    /// <summary>Saves a record, and returns it as the host's save handlers would have it.</summary>
     public async Task<NotifiedRecord> SaveAsync(NotifiedRecord? record = null)
     {
         record ??= new NotifiedRecord { Name = "Invoice", CompanyID = 4, CompanyBranchID = 8 };
@@ -474,7 +490,7 @@ public sealed class NotificationTestApp : IAsyncDisposable
         var expected = Interlocked.Increment(ref sentinels);
 
         if (savedRecord is null)
-            await SaveWithoutTriggerAsync(sentinel);
+            await SaveWithoutRaisingAsync(sentinel);
 
         await RaiseAsync(SentinelTopic, sentinel);
 
@@ -489,10 +505,10 @@ public sealed class NotificationTestApp : IAsyncDisposable
         }
     }
 
-    private async Task SaveWithoutTriggerAsync(NotifiedRecord record)
+    private async Task SaveWithoutRaisingAsync(NotifiedRecord record)
     {
-        var raise = Settings.RaiseFromTrigger;
-        Settings.RaiseFromTrigger = null;
+        var raise = Settings.RaiseFromHandler;
+        Settings.RaiseFromHandler = null;
 
         try
         {
@@ -500,7 +516,7 @@ public sealed class NotificationTestApp : IAsyncDisposable
         }
         finally
         {
-            Settings.RaiseFromTrigger = raise;
+            Settings.RaiseFromHandler = raise;
         }
     }
 

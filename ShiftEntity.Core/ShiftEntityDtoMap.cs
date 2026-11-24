@@ -40,8 +40,10 @@ public sealed class ShiftEntityDtoMap
     /// </summary>
     internal void PopulateFromAssemblies(IEnumerable<Assembly> assemblies)
     {
+        // An assembly with a type that cannot be loaded fails with a message that names what is missing.
         var repositoryTypes = assemblies
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .Where(a => a is not null)
+            .SelectMany(AssemblyScan.TypesOf)
             .Where(type => type.IsClass && !type.IsAbstract && typeof(ShiftRepositoryBase).IsAssignableFrom(type));
 
         foreach (var repositoryType in repositoryTypes)

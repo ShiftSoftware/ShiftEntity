@@ -2,7 +2,7 @@ namespace ShiftSoftware.ShiftEntity.Model.Replication;
 
 /// <summary>
 /// Opt-in surface for entities that replicate to Cosmos — the replication counterpart of the audit seam
-/// (<c>IShiftEntityAudit</c> in ShiftEntity.Core). Both sync paths (the after-save trigger and the catch-up
+/// (<c>IShiftEntityAudit</c> in ShiftEntity.Core). Both sync paths (replication on save and the catch-up
 /// service) require it through their generic constraints, and the replication bookkeeping columns live here as a
 /// pair — never on the base entity — so a table either participates in replication and carries both columns, or
 /// doesn't participate and carries neither. Both columns are written together by the pipeline's

@@ -45,10 +45,9 @@ public static class ShiftEntityEndpointDiscovery
 
         foreach (var assembly in assemblies.Where(a => a is not null).Distinct())
         {
-            IEnumerable<Type> types;
-            try { types = assembly.GetTypes(); }
-            catch (ReflectionTypeLoadException ex) { types = ex.Types.OfType<Type>(); }
-            catch { continue; }
+            // An assembly with a type that cannot be loaded fails the scan with a message that names what is missing,
+            // rather than losing that type's endpoints without a word.
+            IEnumerable<Type> types = AssemblyScan.TypesOf(assembly);
 
             // The endpoint attributes are only valid on entities, which all derive from ShiftEntityBase.
             // Narrowing to entity candidates here means GetCustomAttributes (which materializes attribute

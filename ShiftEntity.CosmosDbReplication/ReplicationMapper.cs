@@ -12,7 +12,7 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication;
 /// <para>
 /// Both pipelines call this ONCE per registered action, ABOVE the row loop, and never from inside it. That placement
 /// is the whole design. Every failure on the per-row path is swallowed and recorded as "this row did not sync" —
-/// the catch-up sweep's <c>catch</c>, the trigger's fire-and-forget task — so a mapper that was never registered,
+/// the catch-up sweep's <c>catch</c>, the fire-and-forget task of a save's sync — so a mapper that was never registered,
 /// resolved at the moment a row is mapped, would not throw; it would leave every row permanently dirty under a
 /// clean-looking watermark. Resolving up front and checking the pair with <see cref="IMapper.CanMap"/> turns
 /// that into an <see cref="InvalidOperationException"/> out of the run, naming the operation, the pair and the fix.

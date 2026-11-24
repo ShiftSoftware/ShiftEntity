@@ -1,4 +1,3 @@
-using EntityFrameworkCore.Triggered;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,9 +11,9 @@ using Topics = ShiftSoftware.ShiftEntity.Tests.Notifications.NotificationTestTop
 namespace ShiftSoftware.ShiftEntity.Tests.Notifications;
 
 /// <summary>
-/// Raise rules in place of triggers: RaiseWhenCreated, an entity's own rules and rule classes in DI, run by the save
-/// observer after each save of the host's context, once the save has written its rows. Also the team watcher and the
-/// warning when nobody passes.
+/// Raise rules: RaiseWhenCreated, an entity's own rules and rule classes in DI, run after the write of each save of the
+/// host's context, before anything that could change the records. Also the team watcher and the warning when nobody
+/// passes.
 /// </summary>
 public class NotificationRuleTests
 {
@@ -100,6 +99,61 @@ public class NotificationRuleTests
         Assert.Contains("Sales.Invoice.Unknown", failure.Message);
     }
 
+    /// <summary>When a record that asks for one is added, adds a plain record to the same save.</summary>
+    public sealed class AddsAPlainRecord : IBeforeSaveHandler<NotifiedRecord>
+    {
+        public const string Asks = "Wants a plain record";
+
+        public ValueTask BeforeSaveAsync(PendingRows<NotifiedRecord> rows, CancellationToken cancellationToken)
+        {
+            foreach (var row in rows)
+                if (row.Change == RowChange.Added && row.Entity.Name == Asks)
+                    rows.Db.Add(new PlainRecord { Name = "Added by a handler" });
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task RaiseWhenCreated_RaisesForARecordThatABeforeSaveHandlerAdds()
+    {
+        // The save writes the record, whoever added it, so the rule is asked about it as about any other.
+        await using var app = await NotificationTestApp.StartAsync(
+            options => options.RaiseWhenCreated<PlainRecord>(Topics.Staff),
+            services =>
+            {
+                PlainRecordContent(services);
+                services.AddSaveHandler<AddsAPlainRecord>();
+            });
+        app.SetEntries(StaffEmails());
+
+        await CreateAsync(app, new NotifiedRecord { Name = AddsAPlainRecord.Asks });
+        await app.DrainAsync();
+
+        Assert.Contains("Added by a handler", Assert.Single(app.Sent).TextBody);
+    }
+
+    [Fact]
+    public async Task RaiseWhenCreated_RaisesNothingForASaveUnderSuppressAfterCommit()
+    {
+        await using var app = await NotificationTestApp.StartAsync(
+            options => options.RaiseWhenCreated<PlainRecord>(Topics.Staff), PlainRecordContent);
+        app.SetEntries(StaffEmails());
+
+        await using (var scope = app.Provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
+            db.Add(new PlainRecord { Name = "Told to nobody" });
+
+            using (db.SuppressAfterCommit())
+                await db.SaveChangesAsync();
+        }
+
+        await app.DrainAsync();
+
+        Assert.Empty(app.Sent);
+    }
+
     // ── The entity's own rules ──────────────────────────────────────────────────
 
     [Fact]
@@ -136,14 +190,15 @@ public class NotificationRuleTests
     [Fact]
     public async Task EntityRule_OnTheRepositoryPathWithATransaction_RaisesAfterTheCommit()
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        // An after-save handler is what makes the save run in a transaction of the context's own.
+        await using var app = await NotificationTestApp.StartAsync(services: services => services.AddAfterSaveStep(AfterSaveStep.Nothing));
         app.SetEntries(StaffEmails());
         var id = await CreateAsync(app, new NotifiedRecord { Name = "Draft" });
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
-            var repository = new HookedRecordRepository(db, app.Settings, _ => ValueTask.CompletedTask);
+            var repository = new NotifiedRecordRepository(db, app.Settings);
 
             var record = await db.Records.SingleAsync(x => x.ID == id);
             record.Name = NotifiedRecord.ApprovedName;
@@ -248,15 +303,16 @@ public class NotificationRuleTests
     }
 
     [Fact]
-    public async Task EntityRule_WhenAnAfterSaveStepSavesTheRecordAgain_RaisesOnceForTheSaveThatMadeItTrue()
+    public async Task EntityRule_WhenAnAfterSaveHandlerSavesTheRecordAgain_RaisesOnceForTheSaveThatMadeItTrue()
     {
-        // A host trigger that changes the record and saves it again from its after-save step, as a push that stores its
-        // outcome does. The outer save is asked about what it wrote, not about the record the inner save changed.
+        // A host's after-save handler that changes the record and saves it again, inside the save's transaction. The
+        // rules of the first save run before the handler, on what that save wrote, and not on the record the handler's
+        // save changed. The handler's save is asked about on its own.
         await using var app = await NotificationTestApp.StartAsync(
-            services: services => services.AddTransient<IAfterSaveTrigger<NotifiedRecord>, ApprovingTrigger>());
+            services: services => services.AddSaveHandler<ApprovingAfterSaveHandler>());
         app.SetEntries(StaffEmails());
 
-        var id = await CreateAsync(app, new NotifiedRecord { Name = ApprovingTrigger.ApproveMe });
+        var id = await CreateAsync(app, new NotifiedRecord { Name = ApprovingAfterSaveHandler.ApproveMe });
         await app.DrainAsync();
 
         Assert.Single(app.Sent);
@@ -321,12 +377,12 @@ public class NotificationRuleTests
     // ── Values from before the save ─────────────────────────────────────────────
 
     [Fact]
-    public async Task EntityRule_WhenABeforeSaveStepMakesTheChange_StillRaises()
+    public async Task EntityRule_WhenABeforeSaveHandlerMakesTheChange_StillRaises()
     {
-        // The record is tracked and unchanged when the save starts. A before-save trigger of another row sets the name
+        // The record is tracked and unchanged when the save starts. A before-save handler of another row sets the name
         // the rule waits for, so the record only becomes modified inside the save.
         await using var app = await NotificationTestApp.StartAsync(
-            services: services => services.AddTransient<IBeforeSaveTrigger<PlainRecord>, ApprovingBeforeSaveTrigger>());
+            services: services => services.AddSaveHandler<ApprovingBeforeSaveHandler>());
         app.SetEntries(StaffEmails());
         var id = await CreateAsync(app, new NotifiedRecord { Name = "Draft" });
 
@@ -334,7 +390,7 @@ public class NotificationRuleTests
         {
             var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
             await db.Records.SingleAsync(x => x.ID == id);
-            db.Add(new PlainRecord { Name = "Its before-save step approves the record" });
+            db.Add(new PlainRecord { Name = "Its before-save handler approves the record" });
             await db.SaveChangesAsync();
         }
 
@@ -345,34 +401,11 @@ public class NotificationRuleTests
     }
 
     [Fact]
-    public async Task EntityRule_WithChangeDetectionSwitchedOff_AndATriggerLibraryThatDetects_Raises()
-    {
-        // The trigger library detects changes itself, so the change is written although the caller switched detection
-        // off. What is written is what the rules are asked about.
-        await using var app = await NotificationTestApp.StartAsync();
-        app.SetEntries(StaffEmails());
-        var id = await CreateAsync(app, new NotifiedRecord { Name = "Draft" });
-
-        await using (var scope = app.Provider.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
-            var record = await db.Records.SingleAsync(x => x.ID == id);
-            db.ChangeTracker.AutoDetectChangesEnabled = false;
-            record.Name = NotifiedRecord.ApprovedName;
-            await db.SaveChangesAsync();
-        }
-
-        await app.DrainAsync();
-
-        Assert.Single(app.Sent);
-    }
-
-    [Fact]
     public async Task EntityRule_OnARecordAttachedAsModified_HasNothingToCompare_AndRaisesNothing()
     {
         // Update() attaches the record as modified without loading it, so the context's picture of the row before the
         // save is what the caller passed in. Nothing "became" anything. Documented on NotificationChange.Original.
-        await using var app = await NotificationTestApp.StartAsync(withTriggers: false);
+        await using var app = await NotificationTestApp.StartAsync();
         app.SetEntries(StaffEmails());
         var id = await CreateAsync(app, new NotifiedRecord { Name = "Draft" });
 
@@ -389,11 +422,12 @@ public class NotificationRuleTests
     }
 
     [Fact]
-    public async Task ASaveThatDoesNotAcceptItsChanges_RaisesNothing()
+    public async Task ASaveThatDoesNotAcceptItsChanges_IsRefusedForARecordWithRules_AndGoesThroughWithTheRulesSwitchedOff()
     {
-        // EF's pattern for a transaction under a retrying execution strategy. The save is never reported, so no rule is
-        // asked. Documented on IHasNotificationRules.
-        await using var app = await NotificationTestApp.StartAsync(withTriggers: false);
+        // EF's pattern for a transaction under a retrying execution strategy. After such a save a record does not hold
+        // its new key and EF reports no row as written, so no rule could be asked. The save is refused while nothing is
+        // written, and does not skip the rules without a sign.
+        await using var app = await NotificationTestApp.StartAsync();
         app.SetEntries(StaffEmails());
 
         await using (var scope = app.Provider.CreateAsyncScope())
@@ -401,7 +435,16 @@ public class NotificationRuleTests
             var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.Add(new NotifiedRecord { Name = NotifiedRecord.ApprovedName });
-            await db.SaveChangesAsync(acceptAllChangesOnSuccess: false);
+
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(acceptAllChangesOnSuccess: false));
+            Assert.Contains("cannot save NotifiedRecord rows with acceptAllChangesOnSuccess: false: a notification rule applies to them after the write", refused.Message);
+            Assert.Contains("SuppressNotifications()", refused.Message);
+            Assert.Equal(0, await db.Records.AsNoTracking().CountAsync());
+
+            // The save says that it means to skip the rules.
+            using (db.SuppressNotifications())
+                await db.SaveChangesAsync(acceptAllChangesOnSuccess: false);
+
             await transaction.CommitAsync();
             db.ChangeTracker.AcceptAllChanges();
         }
@@ -419,7 +462,7 @@ public class NotificationRuleTests
         // The rules run once EF has accepted every row of the save. While they ran as EF accepted each row, a rule that
         // saved wrote the rows EF hadn't accepted yet a second time: three new records became six.
         await using var app = await NotificationTestApp.StartAsync(
-            options => options.AddRule<PlainRecord, NoteWritingRule>(), withTriggers: false);
+            options => options.AddRule<PlainRecord, NoteWritingRule>());
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
@@ -443,7 +486,7 @@ public class NotificationRuleTests
         // rules of the first save run before the handler, on what that save wrote. The handler's save is a save of its
         // own, asked about on its own.
         await using var app = await NotificationTestApp.StartAsync(
-            services: services => services.AddSaveHandler<NotifiedRecord, ApprovingSaveHandler>(), withTriggers: false);
+            services: services => services.AddSaveHandler<ApprovingSaveHandler>());
         app.SetEntries(StaffEmails());
 
         var id = await CreateAsync(app, new NotifiedRecord { Name = ApprovingSaveHandler.ApproveMe });
@@ -500,8 +543,8 @@ public class NotificationRuleTests
     public async Task WithChangeDetectionSwitchedOff_TheSaveLooksForNoChangeItWasNotAskedToWrite()
     {
         // The caller switched detection off and didn't detect, so EF writes nothing. Looking for old values must not change
-        // that by detecting the change itself. The trigger library detects changes on its own, so this host runs without it.
-        await using var app = await NotificationTestApp.StartAsync(withTriggers: false);
+        // that by detecting the change itself.
+        await using var app = await NotificationTestApp.StartAsync();
         app.SetEntries(StaffEmails());
         var id = await CreateAsync(app, new NotifiedRecord { Name = "Draft" });
 
@@ -661,45 +704,62 @@ public sealed class PlainRecordRule(PlainRecordRuleSettings settings) : INotific
     }
 }
 
-/// <summary>A host's after-save trigger that approves a record and saves it again, from inside the first save.</summary>
-public sealed class ApprovingTrigger(NotificationTestDbContext db) : IAfterSaveTrigger<NotifiedRecord>
+/// <summary>A host's after-save handler that approves a record and saves it again, inside the first save's transaction.</summary>
+public sealed class ApprovingAfterSaveHandler : IAfterSaveHandler<NotifiedRecord>
 {
     public const string ApproveMe = "Approve me after the save";
 
-    public async Task AfterSave(ITriggerContext<NotifiedRecord> context, CancellationToken cancellationToken)
+    public async ValueTask AfterSaveAsync(SavedRows<NotifiedRecord> rows, CancellationToken cancellationToken)
     {
-        if (context.Entity.Name != ApproveMe)
-            return;
+        var approved = false;
 
-        context.Entity.Name = NotifiedRecord.ApprovedName;
-        await db.SaveChangesAsync(cancellationToken);
+        foreach (var row in rows)
+        {
+            if (row.Entity.Name != ApproveMe)
+                continue;
+
+            row.Entity.Name = NotifiedRecord.ApprovedName;
+            approved = true;
+        }
+
+        if (approved)
+            await rows.Db.SaveChangesAsync(cancellationToken);
     }
 }
 
-/// <summary>A host's before-save trigger that approves every record the context tracks.</summary>
-public sealed class ApprovingBeforeSaveTrigger(NotificationTestDbContext db) : IBeforeSaveTrigger<PlainRecord>
+/// <summary>A host's before-save handler that approves every record the context tracks.</summary>
+public sealed class ApprovingBeforeSaveHandler : IBeforeSaveHandler<PlainRecord>
 {
-    public Task BeforeSave(ITriggerContext<PlainRecord> context, CancellationToken cancellationToken)
+    public ValueTask BeforeSaveAsync(PendingRows<PlainRecord> rows, CancellationToken cancellationToken)
     {
-        foreach (var record in db.Records.Local.ToList())
+        foreach (var record in ((NotificationTestDbContext)rows.Db).Records.Local.ToList())
             record.Name = NotifiedRecord.ApprovedName;
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 
 /// <summary>A host's save handler that approves a record and saves it again, after the first save's rules have run.</summary>
-public sealed class ApprovingSaveHandler(NotificationTestDbContext db) : ISaveHandler<NotifiedRecord>
+public sealed class ApprovingSaveHandler : IAfterCommitHandler<NotifiedRecord>
 {
     public const string ApproveMe = "Approve me after the save";
 
-    public async ValueTask HandleAsync(SavedRow<NotifiedRecord> row, CancellationToken cancellationToken)
+    public async ValueTask AfterCommitAsync(SavedRows<NotifiedRecord> rows, CancellationToken cancellationToken)
     {
-        if (row.Entity.Name != ApproveMe)
-            return;
+        var approved = false;
 
-        row.Entity.Name = NotifiedRecord.ApprovedName;
-        await db.SaveChangesAsync(cancellationToken);
+        foreach (var row in rows)
+        {
+            if (row.Entity.Name != ApproveMe)
+                continue;
+
+            row.Entity.Name = NotifiedRecord.ApprovedName;
+            approved = true;
+        }
+
+        // A save of its own. The handler is not called again for the records it is handling.
+        if (approved)
+            await rows.Db.SaveChangesAsync(cancellationToken);
     }
 }
 

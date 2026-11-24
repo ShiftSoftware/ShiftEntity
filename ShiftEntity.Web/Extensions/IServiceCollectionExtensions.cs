@@ -80,6 +80,11 @@ public static class IServiceCollectionExtensions
     /// </summary>
     internal static IServiceCollection AddShiftEntityWebSharedCore(this IServiceCollection services)
     {
+        // Every API and every functions host comes through here, so this is where a host that still has triggers
+        // registered is stopped at start, whatever else it registers. The registrations that take part in saves
+        // (replication, notifications, a host's own save handlers) add the same check, once.
+        ShiftSoftware.ShiftEntity.EFCore.SaveLifecycleHostServiceCollectionExtensions.AddSaveLifecycleHost(services);
+
         services.TryAddEnumerable(ServiceDescriptor.Scoped<ShiftSoftware.ShiftEntity.Web.IODataQueryPolicy,
             ShiftSoftware.ShiftEntity.Web.Pii.PiiODataGuard>());
         services

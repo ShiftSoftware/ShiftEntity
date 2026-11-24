@@ -10,9 +10,10 @@ using static ShiftSoftware.ShiftEntity.Tests.Replication.PinModel;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins the saves made in an ambient transaction (<c>TransactionScope</c>): their syncs start once it commits, and one
-/// row's syncs are combined there, as in an explicit transaction. SQLite takes no part in ambient transactions, so these
-/// run on SQL Server and are skipped without one (see <see cref="OwnedSqlCatalog"/>).
+/// Pins what an ambient transaction (<c>TransactionScope</c>) means for replication. The context is not told when a
+/// scope commits, so it cannot start a sync at the right time there: a save of rows it replicates is refused inside
+/// one, before it writes. With replication switched off the save joins the scope like any other. SQLite takes no part
+/// in ambient transactions, so these run on SQL Server and are skipped without one (see <see cref="OwnedSqlCatalog"/>).
 /// </summary>
 public class ReplicationAmbientTransactionTests
 {
@@ -33,7 +34,7 @@ public class ReplicationAmbientTransactionTests
             var services = new ServiceCollection();
             services.AddLogging(x => x.AddProvider(Log));
             services.AddDbContext<Db>(o => o.UseSqlServer(catalog.ConnectionString));
-            services.AddShiftEntityCosmosDbReplicationTrigger<Db>(o => o.SetUpReplication<Db, Item>(Cosmos.Client, ReplicationPinHost.Database)
+            services.AddShiftEntityCosmosDbReplicationOnSave<Db>(o => o.SetUpReplication<Db, Item>(Cosmos.Client, ReplicationPinHost.Database)
                 .Replicate<ItemDocument>("items", x => x.id, x => Document(x.Entity)));
             Provider = services.BuildServiceProvider(validateScopes: true);
         }
@@ -48,10 +49,10 @@ public class ReplicationAmbientTransactionTests
 
         public Db Bare() => new(new DbContextOptionsBuilder<Db>().UseSqlServer(catalog.ConnectionString).Options);
 
-        public async Task<Item> StoredAsync(long id)
+        public async Task<(int Items, int Notes)> StoredAsync()
         {
             await using var db = Bare();
-            return await db.Items.AsNoTracking().SingleAsync(x => x.ID == id, Ct);
+            return (await db.Items.CountAsync(Ct), await db.Notes.CountAsync(Ct));
         }
 
         public async ValueTask DisposeAsync()
@@ -69,13 +70,13 @@ public class ReplicationAmbientTransactionTests
         }
     }
 
-    // RV-09. In a TransactionScope the context has no transaction of its own, and its syncs used to be combined only in
-    // an explicit one. Each save's syncs started at the commit on their own, so the add wrote a document for a row the
-    // delete had removed, in 20 of 20 runs.
+    // In a TransactionScope the context has no transaction of its own to follow. Its syncs used to wait for the
+    // scope's completion event, which can run on another thread and has nothing before the commit. Now the save is
+    // refused while nothing is written.
     [Fact]
-    public async Task A_row_added_and_deleted_in_one_TransactionScope_writes_nothing()
+    public async Task A_save_of_rows_it_replicates_is_refused_inside_a_TransactionScope_before_it_writes()
     {
-        await using var host = await Host.CreateAsync("AmbientAddDelete");
+        await using var host = await Host.CreateAsync("AmbientRefused");
 
         using (var ambient = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
         {
@@ -83,68 +84,28 @@ public class ReplicationAmbientTransactionTests
             var db = scope.ServiceProvider.GetRequiredService<Db>();
             var item = new Item { Code = "a", Region = "north" };
             db.Items.Add(item);
-            await db.SaveChangesAsync(Ct);
-            db.Items.Remove(item);
-            await db.SaveChangesAsync(Ct);
+
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(Ct));
+
+            Assert.Contains("cannot save Item rows, for which replication waits for the commit", refused.Message);
+            Assert.Contains("an ambient transaction (TransactionScope)", refused.Message);
+            Assert.Contains("Begin the transaction through this context's Database", refused.Message);
+            Assert.Contains("SuppressReplication()", refused.Message);
+            Assert.Equal(EntityState.Added, db.Entry(item).State);
+            Assert.Equal(0, item.ID);
+
             ambient.Complete();
         }
         await host.Log.AllFinishedAsync();
 
+        Assert.Equal((0, 0), await host.StoredAsync());
         Assert.Empty(host.Log.Started);
         Assert.Empty(host.Cosmos.Writes);
     }
 
-    // RV-09. The delete and the add of one key used to start at the commit as syncs of their own, so a slow delete
-    // removed the new document after it was written.
+    // A synchronous save in a TransactionScope without async flow is refused the same way.
     [Fact]
-    public async Task A_row_deleted_and_added_again_in_one_TransactionScope_is_deleted_and_then_written_in_that_order()
-    {
-        await using var host = await Host.CreateAsync("AmbientDeleteAdd");
-        await using (var scope = host.Provider.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<Db>();
-            db.Items.Add(new Item { Code = "a", Region = "north" });
-            await db.SaveChangesAsync(Ct);
-        }
-        await host.Log.AllFinishedAsync();
-
-        host.Cosmos.Refuse = write =>
-        {
-            if (write.Kind == "delete")
-                Thread.Sleep(200);      // a slow delete
-            return false;
-        };
-
-        using (var ambient = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
-        {
-            await using var scope = host.Provider.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<Db>();
-
-            // One session for both saves, so that the second can give the new row the deleted row's key.
-            await db.Database.OpenConnectionAsync(Ct);
-            db.Items.Remove(await db.Items.SingleAsync(Ct));
-            await db.SaveChangesAsync(Ct);
-            var identityInsert = "SET IDENTITY_INSERT " +
-                db.GetService<ISqlGenerationHelper>().DelimitIdentifier(db.Model.FindEntityType(typeof(Item))!.GetTableName()!) + " ON";
-            await db.Database.ExecuteSqlRawAsync(identityInsert, Ct);
-            db.Items.Add(new Item { ID = 1, Code = "b", Region = "north" });
-            await db.SaveChangesAsync(Ct);
-
-            Assert.Equal(["Item 1"], host.Log.Started);     // only the first save's, before the scope
-            ambient.Complete();
-        }
-        await host.Log.AllFinishedAsync();
-
-        Assert.Equal(["delete items/1", "upsert items/1"], host.Cosmos.Writes.Skip(1).Select(x => $"{x.Kind} {x.Container}/{x.Id}"));
-        Assert.Contains("\"Code\":\"b\"", host.Cosmos.StoredLines("items").Single());
-        var stored = await host.StoredAsync(1);
-        Assert.Equal((DateTimeOffset?)stored.LastSaveDate, stored.LastReplicationDate);
-    }
-
-    // A synchronous save in a TransactionScope without async flow: its syncs wait for the commit too, and the saves of
-    // the scope start theirs together.
-    [Fact]
-    public async Task Synchronous_saves_in_a_TransactionScope_replicate_once_it_commits()
+    public async Task A_synchronous_save_of_rows_it_replicates_is_refused_inside_a_TransactionScope()
     {
         await using var host = await Host.CreateAsync("AmbientSync");
 
@@ -153,28 +114,51 @@ public class ReplicationAmbientTransactionTests
             using var scope = host.Provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<Db>();
             db.Items.Add(new Item { Code = "first", Region = "north" });
-            db.SaveChanges();
-            db.Items.Add(new Item { Code = "second", Region = "north" });
-            db.SaveChanges();
-            Assert.Empty(host.Log.Started);
+
+            Assert.Throws<InvalidOperationException>(() => db.SaveChanges());
             ambient.Complete();
         }
         await host.Log.AllFinishedAsync();
 
-        Assert.Equal(["Item 1", "Item 2"], host.Log.Started.Order());
-        Assert.Empty(host.Log.Failed);
-        Assert.Equal(2, host.Cosmos.StoredLines("items").Count);
-        foreach (var id in new[] { 1L, 2L })
-        {
-            var stored = await host.StoredAsync(id);
-            Assert.Equal((DateTimeOffset?)stored.LastSaveDate, stored.LastReplicationDate);
-        }
+        Assert.Equal((0, 0), await host.StoredAsync());
+        Assert.Empty(host.Log.Started);
     }
 
-    // The work queued in one ambient transaction runs once it commits, in the order it was queued, and none of it runs
-    // when it does not commit.
+    // A row with nothing that waits for the commit is saved in the scope, and commits or rolls back with it. So is a
+    // replicated row once replication is switched off for the save: the scope holds it, and a catch-up replicates it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Rows_with_nothing_that_waits_for_the_commit_are_saved_inside_a_TransactionScope(bool complete)
+    {
+        await using var host = await Host.CreateAsync("AmbientSaved");
+
+        using (var ambient = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+        {
+            await using var scope = host.Provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<Db>();
+
+            db.Notes.Add(new Note { Text = "not replicated" });
+            await db.SaveChangesAsync(Ct);
+
+            db.Items.Add(new Item { Code = "a", Region = "north" });
+            using (db.SuppressReplication())
+                await db.SaveChangesAsync(Ct);
+
+            if (complete)
+                ambient.Complete();
+        }
+        await host.Log.AllFinishedAsync();
+
+        Assert.Equal(complete ? (1, 1) : (0, 0), await host.StoredAsync());
+        Assert.Empty(host.Log.Started);
+        Assert.Empty(host.Cosmos.Writes);
+    }
+
+    // Work queued in code inside a TransactionScope used to run when the scope completed. The call is refused now:
+    // the context cannot say when that is.
     [Fact]
-    public async Task Work_queued_in_a_TransactionScope_runs_in_order_once_it_commits_and_never_without_a_commit()
+    public async Task Work_cannot_be_queued_for_after_the_commit_inside_a_TransactionScope()
     {
         await using var host = await Host.CreateAsync("AmbientWork");
         var ran = new List<string>();
@@ -184,13 +168,14 @@ public class ReplicationAmbientTransactionTests
             using var ambient = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
             await using var scope = host.Provider.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<Db>();
-            db.AfterCommit(() => ran.Add($"first, completed: {complete}"));
-            db.AfterCommit(() => ran.Add($"second, completed: {complete}"));
-            Assert.Empty(ran);
+
+            var refused = Assert.Throws<InvalidOperationException>(() => db.AfterCommit(() => ran.Add("ran")));
+            Assert.Contains("cannot hold work for after the commit inside an ambient transaction (TransactionScope)", refused.Message);
+
             if (complete)
                 ambient.Complete();
         }
 
-        Assert.Equal(["first, completed: True", "second, completed: True"], ran);
+        Assert.Empty(ran);
     }
 }

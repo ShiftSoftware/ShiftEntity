@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.Model.Flags;
 using System.Collections.Concurrent;
@@ -6,11 +7,11 @@ using System.Reflection;
 namespace ShiftSoftware.ShiftEntity.EFCore;
 
 /// <summary>
-/// The shared audit-stamping rules, used by <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/>
-/// (its SaveChanges sweep, inserts and updates alike), by <see cref="ShiftDbContext"/> (its SaveChanges override —
-/// the insert-only fallback for rows added outside a repository), and by any non-repository update path that opts
-/// into stamping explicitly (e.g. <c>AttentionPipeline.ClearSignals</c>). Centralizing them keeps every path
-/// stamping identically.
+/// The audit-stamping rules. <see cref="ShiftDbContext"/> applies them in every save, to the rows that are new in each
+/// round of its before-save stage: a new row is filled where it was left unset, and on a repository's save a modified
+/// row gets its last-save columns too. <see cref="ShiftRepository{DB,EntityType,ListDTO,ViewAndUpsertDTO}"/> applies
+/// them to the record it maps, before the save, and so does any other update path that opts into stamping explicitly
+/// (e.g. <c>AttentionPipeline.ClearSignals</c>). Centralizing them keeps every path stamping identically.
 /// </summary>
 internal static class AuditStamper
 {
@@ -46,6 +47,34 @@ internal static class AuditStamper
             entity.LastSaveDate = now;
             entity.LastSavedByUserID = userId;
         }
+
+        entity.AuditFieldsAreSet = true;
+        return true;
+    }
+
+    /// <summary>
+    /// The stamp of a row that a save is about to write as modified: its last-save columns advance. They are written
+    /// through EF's entry, so the change is marked at once and is written whether or not change detection runs again
+    /// before the write, also when the app has switched automatic detection off. Honors the
+    /// <c>AuditFieldsAreSet</c> guard.
+    /// </summary>
+    public static bool StampLastSave(EntityEntry entry, IShiftEntityAudit entity, long? userId, DateTimeOffset now)
+    {
+        if (entity.AuditFieldsAreSet)
+            return false;
+
+        var metadata = entry.Metadata;
+
+        // A column the model does not map as the interface names it is set on the record itself.
+        if (metadata.FindProperty(nameof(IShiftEntityAudit.LastSaveDate)) is { } lastSaveDate && lastSaveDate.ClrType == typeof(DateTimeOffset))
+            entry.Property(lastSaveDate).CurrentValue = now;
+        else
+            entity.LastSaveDate = now;
+
+        if (metadata.FindProperty(nameof(IShiftEntityAudit.LastSavedByUserID)) is { } lastSavedBy && lastSavedBy.ClrType == typeof(long?))
+            entry.Property(lastSavedBy).CurrentValue = userId;
+        else
+            entity.LastSavedByUserID = userId;
 
         entity.AuditFieldsAreSet = true;
         return true;

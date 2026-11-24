@@ -12,7 +12,7 @@ namespace ShiftSoftware.ShiftEntity.Core.Notifications;
 /// <para>
 /// It runs inside the save call, after the save has written its rows, and before the commit when a transaction is open,
 /// so keep it quick. It answers a question and changes nothing: don't save from it. Code that reacts to a save by doing
-/// something belongs in a save handler (<c>ISaveHandler</c>).
+/// something belongs in a save handler (<c>IAfterSaveHandler</c>, <c>IAfterCommitHandler</c>).
 /// </para>
 /// <para>
 /// It composes with <see cref="IHasNotificationRules{TSelf}"/> and <see cref="NotificationOptions.RaiseWhenCreated{TEntity}"/>:

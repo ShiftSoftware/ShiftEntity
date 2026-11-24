@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.Core;
 using ShiftSoftware.ShiftEntity.EFCore;
@@ -19,12 +18,13 @@ namespace ShiftSoftware.ShiftEntity.Tests.Repository;
 /// <list type="number">
 /// <item><b>Protected-row guard</b> — <c>ShiftRepository.UpsertAsync</c>/<c>DeleteAsync</c> reject an edit/delete of a
 /// row whose <see cref="IShiftEntityProtectable.IsProtected"/> is true (403), replacing the per-repository guard.</item>
-/// <item><b>Save validators</b> — every DI-registered <see cref="IShiftEntitySaveValidator"/> runs on the repository
-/// save path with the pending unit of work, and can abort it (the seam ShiftIdentity's feature-locking uses).</item>
+/// <item><b>A check on repository saves</b> — a before-save handler gets the rows a repository's save is about to write,
+/// is told that the save is a repository's (<see cref="PendingRows{TEntity}.IsRepositorySave"/>), and can refuse it
+/// (the seam ShiftIdentity's feature-locking uses, as a guard).</item>
 /// <item><b>Default data-level baseline</b> — the built-in repository picks up a host-registered
 /// <see cref="DefaultDataLevelAccessOptions"/> instead of a fresh all-filters-enabled <c>new()</c>.</item>
 /// </list>
-/// The identity-side halves (the 6 entities implementing the marker, the feature-lock validator) live in ShiftIdentity.
+/// The identity-side halves (the 6 entities implementing the marker, the feature-lock guard) live in ShiftIdentity.
 /// </summary>
 public class Phase0EnablerTests
 {
@@ -62,42 +62,46 @@ public class Phase0EnablerTests
             => target.Name = source.Name;
     }
 
-    private sealed class RecordingSaveValidator : IShiftEntitySaveValidator
+    // What the recording handler saw: each call, with the rows as they stood before the write.
+    private sealed class SaveRecord
     {
-        // Snapshot state/entities AT validation time — the live EntityEntry.State flips to Unchanged once the save
-        // commits, so asserting on the entry after the fact would be misleading.
-        public int Calls { get; private set; }
-        public List<EntityState> States { get; } = new();
-        public List<object> Entities { get; } = new();
-        public void Validate(IReadOnlyList<EntityEntry> pendingWrites)
+        public List<(bool IsRepositorySave, EntityState State, object Entity)> Rows { get; } = new();
+        public int Calls { get; set; }
+    }
+
+    private sealed class RecordingHandler(SaveRecord record) : IBeforeSaveHandler<GuardedEntity>
+    {
+        public ValueTask BeforeSaveAsync(PendingRows<GuardedEntity> rows, CancellationToken cancellationToken)
         {
-            Calls++;
-            States.Clear();
-            Entities.Clear();
-            foreach (var entry in pendingWrites)
-            {
-                States.Add(entry.State);
-                Entities.Add(entry.Entity);
-            }
+            record.Calls++;
+
+            // The state is read now: it turns Unchanged once the save has written.
+            foreach (var row in rows)
+                record.Rows.Add((rows.IsRepositorySave, rows.Entry(row).State, row.Entity));
+
+            return ValueTask.CompletedTask;
         }
     }
 
-    // Stands in for ShiftIdentity's feature-lock validator: refuses to save when a locked entity type is present.
-    private sealed class BlockingSaveValidator : IShiftEntitySaveValidator
+    // Stands in for ShiftIdentity's feature lock: a guard that refuses a repository's save of a locked entity type.
+    [Guard]
+    private sealed class BlockingGuard : IBeforeSaveHandler<GuardedEntity>
     {
-        public void Validate(IReadOnlyList<EntityEntry> pendingWrites)
+        public ValueTask BeforeSaveAsync(PendingRows<GuardedEntity> rows, CancellationToken cancellationToken)
         {
-            if (pendingWrites.Any(e => e.Entity is GuardedEntity))
+            if (rows.IsRepositorySave)
                 throw new ShiftEntityException(new Message("Locked", "Feature is locked"));
+
+            return ValueTask.CompletedTask;
         }
     }
 
     /// <summary>A web-shaped DI host for the built-in repository over <see cref="GuardedDbContext"/>, mirroring the
     /// scenario <c>RepositoryHost</c> but parameterized with an optional registered default-data-level options and
-    /// optional save validators.</summary>
+    /// optional save handlers.</summary>
     private static ServiceProvider BuildHost(
         DefaultDataLevelAccessOptions? dataLevelOptions = null,
-        params IShiftEntitySaveValidator[] validators)
+        Action<IServiceCollection>? handlers = null)
     {
         var services = new ServiceCollection();
 
@@ -111,8 +115,7 @@ public class Phase0EnablerTests
         if (dataLevelOptions is not null)
             services.AddSingleton(dataLevelOptions);
 
-        foreach (var validator in validators)
-            services.AddSingleton(validator);
+        handlers?.Invoke(services);
 
         services.AddShiftEntityDataLevelAccess();
 
@@ -187,13 +190,13 @@ public class Phase0EnablerTests
         Assert.Equal("created", result.Name);
     }
 
-    // ---- 0.1 Save validators ------------------------------------------------------------------------------------
+    // ---- 0.1 A check on repository saves ------------------------------------------------------------------------
 
     [Fact]
-    public async Task SaveChanges_InvokesRegisteredValidators_WithThePendingUnitOfWork()
+    public async Task RepositorySave_CallsABeforeSaveHandler_WithTheRowsItIsAboutToWrite_AndSaysThatItIsARepositorys()
     {
-        var recorder = new RecordingSaveValidator();
-        using var provider = BuildHost(validators: recorder);
+        var record = new SaveRecord();
+        using var provider = BuildHost(handlers: services => services.AddSingleton(record).AddSaveHandler<RecordingHandler>());
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GuardedDbContext>();
         var repo = Repo(scope);
@@ -201,16 +204,25 @@ public class Phase0EnablerTests
         db.Items.Add(new GuardedEntity { Name = "row" });
         var saved = await repo.SaveChangesAsync();
 
-        Assert.Equal(1, recorder.Calls);
-        Assert.Equal(EntityState.Added, Assert.Single(recorder.States)); // seen as Added at validation time
-        Assert.IsType<GuardedEntity>(Assert.Single(recorder.Entities));
-        Assert.Equal(1, saved); // save proceeded after the validator allowed it
+        Assert.Equal(1, record.Calls);
+        var row = Assert.Single(record.Rows);
+        Assert.True(row.IsRepositorySave);
+        Assert.Equal(EntityState.Added, row.State); // seen as Added before the write
+        Assert.IsType<GuardedEntity>(row.Entity);
+        Assert.Equal(1, saved); // the save proceeded after the handler allowed it
+
+        // A save made through the context itself, such as a seeder's, is not a repository's.
+        record.Rows.Clear();
+        db.Items.Add(new GuardedEntity { Name = "seeded" });
+        await db.SaveChangesAsync();
+
+        Assert.False(Assert.Single(record.Rows).IsRepositorySave);
     }
 
     [Fact]
-    public async Task SaveChanges_WhenAValidatorThrows_AbortsTheSave_NothingPersisted()
+    public async Task RepositorySave_WhenAGuardThrows_IsRefused_NothingPersisted()
     {
-        using var provider = BuildHost(validators: new BlockingSaveValidator());
+        using var provider = BuildHost(handlers: services => services.AddSaveHandler<BlockingGuard>());
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GuardedDbContext>();
         var repo = Repo(scope);
@@ -219,13 +231,17 @@ public class Phase0EnablerTests
 
         await Assert.ThrowsAsync<ShiftEntityException>(() => repo.SaveChangesAsync());
 
+        // A guard is not switched off with the other handlers: the save is still refused.
+        using (db.SuppressAllSaveHandlers())
+            await Assert.ThrowsAsync<ShiftEntityException>(() => repo.SaveChangesAsync());
+
         using var verifyScope = provider.CreateScope();
         var freshDb = verifyScope.ServiceProvider.GetRequiredService<GuardedDbContext>();
-        Assert.Empty(freshDb.Items); // the validator threw before db.SaveChanges, so nothing hit the store
+        Assert.Empty(freshDb.Items); // the guard threw before anything was written
     }
 
     [Fact]
-    public async Task SaveChanges_WithNoValidatorsRegistered_ProceedsNormally()
+    public async Task RepositorySave_WithNoHandlerRegistered_ProceedsNormally()
     {
         using var provider = BuildHost();
         using var scope = provider.CreateScope();

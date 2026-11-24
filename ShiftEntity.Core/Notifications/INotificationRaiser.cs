@@ -4,8 +4,8 @@ using System.Threading.Tasks;
 namespace ShiftSoftware.ShiftEntity.Core.Notifications;
 
 /// <summary>
-/// Announces that something happened to a record. The host keeps the decision about when: it calls this from an
-/// after-save trigger or a repository hook. The framework works out who hears, checks who may hear, and sends the
+/// Announces that something happened to a record. The host keeps the decision about when: it calls this from a
+/// save handler or from its own code. The framework works out who hears, checks who may hear, and sends the
 /// email in the background. <c>AddNotifications</c> registers this, so it is resolved in the same scope as the save.
 /// </summary>
 public interface INotificationRaiser

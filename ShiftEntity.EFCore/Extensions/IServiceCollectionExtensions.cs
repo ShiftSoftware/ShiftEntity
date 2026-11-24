@@ -100,47 +100,66 @@ public static class IServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds a save handler: host code that runs after any save of a <see cref="ShiftDbContext"/> has written a row of
-    /// <typeparamref name="TEntity"/>, through a repository or a plain <c>SaveChanges</c>. See
-    /// <see cref="ISaveHandler{TEntity}"/> for when it runs and what it may do.
+    /// Adds a save handler that belongs to this host: app code that takes part in every save of a
+    /// <see cref="ShiftDbContext"/> that writes a row of its entity type, through a repository, a plain
+    /// <c>SaveChanges</c> or a save made by another handler.
     /// </summary>
     /// <remarks>
-    /// The handler class is registered as a scoped service unless the host registered it already. Handlers of one row
-    /// run in the order of these calls. Registering the same class for the same type twice keeps one registration.
+    /// <para>
+    /// A handler that keeps data right belongs with the model instead, so that every host that saves the type has it:
+    /// declared with the context (<c>ConfigureSaveHandlers</c>) or with the module that contributes the entity type
+    /// (<see cref="IModelBuildingContributor.ConfigureSaveHandlers"/>). Add a handler here when it really belongs to
+    /// one host, such as an email only the API sends.
+    /// </para>
+    /// <para>
+    /// The class implements one interface for each stage it takes part in: <see cref="IBeforeSaveHandler{TEntity}"/>,
+    /// <see cref="IAfterSaveHandler{TEntity}"/>, <see cref="IBeforeCommitHandler{TEntity}"/>,
+    /// <see cref="IAfterCommitHandler{TEntity}"/>. It may implement several stages and several entity types, and it is
+    /// registered for every one of them. A class that implements none throws here.
+    /// </para>
+    /// <para>
+    /// The class is registered as a scoped service unless the host registered it already, and it is created from the
+    /// scope the saving context came from. The same class added twice is one handler: the first call counts. A class
+    /// whose only constructor takes nothing needs no services: where the context has no scope to create it in, such as
+    /// a context from a pool or a factory, it is created with <c>new</c>.
+    /// </para>
     /// </remarks>
     /// <param name="services">The host's services.</param>
-    /// <param name="withOriginal">
-    /// Whether the handler reads <see cref="SavedRow{TEntity}.Original"/>, a modified row's values from before the save.
-    /// Off by default, because it costs a copy of every modified row of the type.
+    /// <param name="order">
+    /// Its place among the handlers of a stage, lowest first. Among handlers with the same order, a context's own run
+    /// first, then its modules', then the host's, each in the order they were declared.
     /// </param>
-    /// <typeparam name="TEntity">The entity type, or a base class or interface, whose saved rows the handler gets.</typeparam>
     /// <typeparam name="THandler">The handler class.</typeparam>
-    public static IServiceCollection AddSaveHandler<TEntity, THandler>(this IServiceCollection services, bool withOriginal = false)
-        where TEntity : class
-        where THandler : class, ISaveHandler<TEntity>
+    public static IServiceCollection AddSaveHandler<THandler>(this IServiceCollection services, int order = 0)
+        where THandler : class
+        => services.AddSaveHandler(typeof(THandler), order);
+
+    /// <summary>
+    /// <inheritdoc cref="AddSaveHandler{THandler}(IServiceCollection, int)" path="/summary"/> The class may be an open
+    /// generic class with one type parameter, such as <c>typeof(ChangeLog&lt;&gt;)</c>: it is closed over every entity
+    /// type of the context's model that fits its constraints.
+    /// </summary>
+    /// <inheritdoc cref="AddSaveHandler{THandler}(IServiceCollection, int)" path="/remarks"/>
+    /// <param name="services">The host's services.</param>
+    /// <param name="handlerType">The handler class.</param>
+    /// <param name="order"><inheritdoc cref="AddSaveHandler{THandler}(IServiceCollection, int)" path="/param[@name='order']"/></param>
+    public static IServiceCollection AddSaveHandler(this IServiceCollection services, Type handlerType, int order = 0)
     {
-        // The same class for the same type a second time (a shared registration method called from two places) keeps
-        // its place among the handlers, and reads the old values if either call asked for them.
-        var existing = services.FirstOrDefault(descriptor =>
+        SaveHandlerRegistration.Validate(handlerType, nameof(handlerType));
+
+        // A host with a handler takes part in the save lifecycle: it keeps its registrations, for the lifetimes of its
+        // handlers, and it is stopped at start when it still has triggers.
+        services.AddSaveLifecycleHost();
+
+        var declared = services.Any(descriptor =>
             descriptor.ServiceType == typeof(SaveHandlerRegistration) &&
-            descriptor.ImplementationInstance is SaveHandlerRegistration registration &&
-            registration.Invoker is SaveHandlerInvoker<TEntity> invoker && invoker.HandlerType == typeof(THandler));
+            descriptor.ImplementationInstance is SaveHandlerRegistration registration && registration.HandlerType == handlerType);
 
-        if (existing is not null)
-        {
-            if (!withOriginal || ((SaveHandlerRegistration)existing.ImplementationInstance!).WithOriginal)
-                return services;
-
-            services[services.IndexOf(existing)] = ServiceDescriptor.Singleton(
-                new SaveHandlerRegistration(typeof(TEntity), true, new SaveHandlerInvoker<TEntity>(typeof(THandler), true)));
-
+        if (declared)
             return services;
-        }
 
-        services.TryAddScoped<THandler>();
-        services.AddSingleton(new SaveHandlerRegistration(typeof(TEntity), withOriginal, new SaveHandlerInvoker<TEntity>(typeof(THandler), withOriginal)));
-        services.TryAddSingleton<SaveHandlerRegistry>();
-        services.TryAddEnumerable(ServiceDescriptor.Transient<IShiftDbContextSaveObserver, SaveHandlersObserver>());
+        services.TryAdd(ServiceDescriptor.Scoped(handlerType, handlerType));
+        services.AddSingleton(new SaveHandlerRegistration(handlerType, order));
 
         return services;
     }
@@ -151,7 +170,7 @@ public static class IServiceCollectionExtensions
         Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
         // Find all types in the assembly that implement IRepository<>
-        var repositoryTypes = repositoryAssembly!.GetTypes()
+        var repositoryTypes = AssemblyScan.TypesOf(repositoryAssembly!)
             .Where(t => t.IsClass && !t.IsAbstract)
             .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityFind<>)) &&
                 !t.IsInterface);
@@ -173,7 +192,7 @@ public static class IServiceCollectionExtensions
     {
         Assembly repositoryAssembly = repositoriesAssembly ?? Assembly.GetEntryAssembly()!; // Adjust this as needed
 
-        var repositoryTypes = repositoryAssembly.GetTypes()
+        var repositoryTypes = AssemblyScan.TypesOf(repositoryAssembly)
             .Where(t => t.IsClass && !t.IsAbstract)
             .Where(t => t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IShiftEntityPrepareForReplicationAsync<>)) &&
                 !t.IsInterface);
@@ -198,7 +217,7 @@ public static class IServiceCollectionExtensions
             services.RegisterIShiftEntityFind(assembly);
             services.RegisterIShiftEntityPrepareForReplication(assembly);
 
-            var repositoryTypes = assembly.GetTypes()
+            var repositoryTypes = AssemblyScan.TypesOf(assembly)
            .Where(type => type.IsClass && !type.IsAbstract && typeof(ShiftRepositoryBase).IsAssignableFrom(type))
            .ToList();
 

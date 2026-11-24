@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+		What a save costs: time and allocated bytes, for a save of many rows, of one row and of none, in a host with no
+		save handlers and with a handler in each stage. Run it in Release, with BenchmarkDotNet's arguments after the
+		separator that "dotnet run" takes before a program's own arguments; a filter of * runs everything.
+
+		SQLite in memory is measured, for time and allocations. Set SHIFT_ENTITY_BENCH_SQL to the connection string of a
+		local SQL Server to measure there instead, where a save's round trips show: a catalog of its own is created there
+		and dropped.
+
+		For the figures of another version of the framework, to compare with, build against a checkout of it by setting
+		the property ShiftEntityBefore to that checkout's folder (-p:ShiftEntityBefore=...). Only the scenarios without a
+		handler are built then (the constant BEFORE), because how a handler is written is what differs between versions.
+		A checkout that stands alone, without the sibling repositories next to it, also needs the versions of their
+		packages (-p:TypeAuthVersion=... -p:ShiftMapperVersion=...).
+	-->
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>ShiftSoftware.ShiftEntity.Benchmarks</RootNamespace>
+		<AssemblyName>ShiftSoftware.ShiftEntity.Benchmarks</AssemblyName>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(ShiftEntityBefore)' != ''">
+		<DefineConstants>$(DefineConstants);BEFORE</DefineConstants>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" Condition="'$(ShiftEntityBefore)' == ''" />
+		<ProjectReference Include="$(ShiftEntityBefore)\ShiftEntity.EFCore\ShiftEntity.EFCore.csproj" Condition="'$(ShiftEntityBefore)' != ''" />
+	</ItemGroup>
+
+</Project>

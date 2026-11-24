@@ -1,8 +1,8 @@
-using EntityFrameworkCore.Triggered;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,13 +15,11 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins what the two replication registrations do to the host's DbContext: they configure it (both switch the triggers
-/// pipeline on, and the save-time one adds the interceptor that holds syncs until a transaction commits) and never
-/// register it. Replication no longer uses the triggers pipeline, but host triggers registered through DI rely on it to
-/// fire, so the registrations keep switching it on until the cleanup release removes the library. The host
-/// registers the context itself, with its own provider and lifetimes, in any order and in any form (AddDbContext, a
-/// pool, a factory). The registrations used to call AddDbContext a second time: that took over the context's lifetime
-/// when it came first, and gave a pooled factory a scoped configuration its singleton options cannot use.
+/// Pins what the two replication registrations do to the host's DbContext: nothing. They register the framework's own
+/// services and never the context, which the host registers itself, with its own provider and lifetimes, in any order
+/// and in any form (AddDbContext, a pool, a factory). They used to switch the trigger library on for it, because
+/// replication ran as a trigger. They no longer do, and both add the check that stops a host that still has triggers.
+/// And the check of the registrations themselves when the host starts.
 /// </summary>
 public class ReplicationRegistrationTests : IDisposable
 {
@@ -37,22 +35,7 @@ public class ReplicationRegistrationTests : IDisposable
         public DbSet<RegisteredItem> Items => Set<RegisteredItem>();
     }
 
-    public sealed class SaveRecorder
-    {
-        public int Saves;
-    }
-
-    public sealed class RecordingTrigger(SaveRecorder recorder) : IAfterSaveTrigger<RegisteredItem>
-    {
-        public Task AfterSave(ITriggerContext<RegisteredItem> context, CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref recorder.Saves);
-            return Task.CompletedTask;
-        }
-    }
-
     private readonly SqliteConnection connection = new("DataSource=:memory:");
-    private readonly SaveRecorder recorder = new();
 
     public ReplicationRegistrationTests() => connection.Open();
 
@@ -62,12 +45,10 @@ public class ReplicationRegistrationTests : IDisposable
         connection.Dispose();
     }
 
-    private ServiceCollection HostServices()
+    private static ServiceCollection HostServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(recorder);
-        services.AddTransient<IAfterSaveTrigger<RegisteredItem>, RecordingTrigger>();
         return services;
     }
 
@@ -82,20 +63,28 @@ public class ReplicationRegistrationTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Triggers_fire_on_the_hosts_context_with_either_registration(bool afterSaveSide)
+    public async Task Neither_registration_switches_the_trigger_library_on_and_both_add_the_check_for_it(bool afterSaveSide)
     {
         var services = HostServices();
         services.AddDbContext<RegisteredDbContext>(o => o.UseSqlite(connection));
         if (afterSaveSide)
-            services.AddShiftEntityCosmosDbReplicationTrigger<RegisteredDbContext>(_ => { });
+            services.AddShiftEntityCosmosDbReplicationOnSave<RegisteredDbContext>(_ => { });
         else
             services.AddShiftEntityCosmosDbReplication<RegisteredDbContext>();
 
+        // The check that stops a host with triggers, added once.
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType == typeof(TriggerLibraryCheck));
+
         await using var provider = services.BuildServiceProvider(validateScopes: true);
         await using var scope = provider.CreateAsyncScope();
-        await SaveOneItemAsync(scope.ServiceProvider.GetRequiredService<RegisteredDbContext>());
+        var db = scope.ServiceProvider.GetRequiredService<RegisteredDbContext>();
 
-        Assert.Equal(1, recorder.Saves);
+        // The context's options are the host's own, plus the framework's extension that every ShiftDbContext carries.
+        var extensions = db.GetService<IDbContextOptions>().Extensions.Select(extension => extension.GetType().Assembly.GetName().Name).ToList();
+        Assert.DoesNotContain(extensions, assembly => assembly!.StartsWith("EntityFrameworkCore.Triggered", StringComparison.Ordinal));
+
+        await SaveOneItemAsync(db);
+        Assert.Equal(1, await db.Items.CountAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -113,7 +102,7 @@ public class ReplicationRegistrationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_pooled_factory_gets_the_triggers_too()
+    public async Task A_pooled_factory_is_left_as_the_host_registered_it()
     {
         var services = HostServices();
         services.AddPooledDbContextFactory<RegisteredDbContext>(o => o.UseSqlite(connection));
@@ -124,7 +113,7 @@ public class ReplicationRegistrationTests : IDisposable
         await using var db = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
         await SaveOneItemAsync(db);
 
-        Assert.Equal(1, recorder.Saves);
+        Assert.Equal(1, await db.Items.CountAsync(TestContext.Current.CancellationToken));
     }
 
     public sealed class RegisteredDocument
@@ -164,7 +153,7 @@ public class ReplicationRegistrationTests : IDisposable
     {
         services.AddLogging(x => x.AddProvider(log));
         services.AddDbContext<RegisteredDbContext>(o => o.UseSqlite(connection));
-        services.AddShiftEntityCosmosDbReplicationTrigger<RegisteredDbContext>(o =>
+        services.AddShiftEntityCosmosDbReplicationOnSave<RegisteredDbContext>(o =>
         {
             if (registration == Registration.Failing)
                 throw new InvalidOperationException("No Cosmos DB connection is configured in this environment.");
@@ -207,7 +196,8 @@ public class ReplicationRegistrationTests : IDisposable
     }
 
     // A builder that fails for another reason, such as a setting a development or test environment lacks, let its host
-    // start and failed at the first replicated save. It still does, and the start logs why it could not be built.
+    // start and failed at the first replicated save. It still does, and the start logs why it could not be built. The
+    // row of that save is committed by then, so the failure reaches the caller as a step after the commit that failed.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -222,8 +212,9 @@ public class ReplicationRegistrationTests : IDisposable
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            var afterCommit = await Assert.ThrowsAsync<AfterCommitException>(() =>
                 SaveOneItemAsync(scope.ServiceProvider.GetRequiredService<RegisteredDbContext>()));
+            var failure = Assert.IsType<InvalidOperationException>(Assert.Single(afterCommit.Failures));
             Assert.Equal("No Cosmos DB connection is configured in this environment.", failure.Message);
         }
         await host.StopAsync(TestContext.Current.CancellationToken);
@@ -241,7 +232,7 @@ public class ReplicationRegistrationTests : IDisposable
         Assert.Empty(log.Warnings);
     }
 
-    // Without a host, the refusal still comes, at the first replicated save.
+    // Without a host, the refusal still comes, at the first replicated save, once its row is committed.
     [Fact]
     public async Task Without_a_host_a_refused_registration_fails_the_first_replicated_save()
     {
@@ -250,8 +241,9 @@ public class ReplicationRegistrationTests : IDisposable
         await using var provider = services.BuildServiceProvider(validateScopes: true);
 
         await using var scope = provider.CreateAsyncScope();
-        var refusal = await Assert.ThrowsAsync<ReplicationRegistrationException>(() =>
+        var afterCommit = await Assert.ThrowsAsync<AfterCommitException>(() =>
             SaveOneItemAsync(scope.ServiceProvider.GetRequiredService<RegisteredDbContext>()));
+        var refusal = Assert.IsType<ReplicationRegistrationException>(Assert.Single(afterCommit.Failures));
         Assert.Contains("registers both Replicate and ReplicateTree", refusal.Message);
     }
 }

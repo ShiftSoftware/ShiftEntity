@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.OData;
 using Microsoft.OData.UriParser;
@@ -203,6 +204,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         {
             await repository.SaveChangesAsync();
         }
+        catch (AfterCommitException saved)
+        {
+            ReportSavedWithFailure(httpContext, repository, saved);
+        }
         catch (DuplicateIdempotencyKeyException)
         {
             var existingItem = await repository.FindByIdempotencyKeyAsync(idempotencyKey!.Value);
@@ -296,6 +301,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         {
             await repository.SaveChangesAsync();
         }
+        catch (AfterCommitException saved)
+        {
+            ReportSavedWithFailure(httpContext, repository, saved);
+        }
         catch (ShiftEntityException ex)
         {
             return (HandleException(ex), null);
@@ -343,6 +352,10 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         {
             await repository.SaveChangesAsync();
         }
+        catch (AfterCommitException saved)
+        {
+            ReportSavedWithFailure(httpContext, repository, saved);
+        }
         catch (ShiftEntityException ex)
         {
             return (HandleException(ex), null);
@@ -358,6 +371,31 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         };
 
         return (CrudResult.Ok(body), item);
+    }
+
+    /// <summary>
+    /// The save is committed, and one or more steps that run after the commit failed. Nothing was undone, so the
+    /// endpoint answers as for a successful save: the same status, with the saved record. What failed is the message,
+    /// in place of one the repository had set, because it is the news the user needs. And the response carries a
+    /// marker, <see cref="ShiftEntityResponse.SavedWithFailure"/>, so that a client that is not a person can tell
+    /// "saved" from "saved, but" without reading text. Every failure is logged.
+    /// </summary>
+    private static void ReportSavedWithFailure(HttpContext httpContext, Repository repository, AfterCommitException saved)
+    {
+        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()?
+            .CreateLogger("ShiftSoftware.ShiftEntity.Web.ShiftEntityCrudHandler");
+
+        foreach (var failure in saved.Failures)
+            logger?.LogError(failure, "A {Entity} was saved, but a step that runs after the commit failed. The request is answered as saved, with the failure as its message.",
+                typeof(Entity).Name);
+
+        // A ShiftEntityException says what failed in words meant for the user. Any other exception's text is not.
+        repository.ResponseMessage = saved.SavedMessage();
+
+        repository.AdditionalResponseData = new Dictionary<string, object>(repository.AdditionalResponseData ?? [])
+        {
+            [ShiftEntityResponse.SavedWithFailure] = true,
+        };
     }
 
     public async Task<CrudResult> PrintAsync(HttpContext httpContext, string key)

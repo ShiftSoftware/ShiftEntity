@@ -41,17 +41,22 @@ public class NotificationPipelineTests
     [Fact]
     public async Task RepositoryPathWithTransaction_SendsAfterTheCommit()
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        // The host's after-save handler raises inside the transaction the context opened for the save. The sentinel
+        // that DrainAsync saves afterwards is let through.
+        await using var app = await NotificationTestApp.StartAsync(
+            services: services => services.AddAfterSaveStep(new(async (raiser, record) =>
+            {
+                if (record.Name == "Invoice")
+                    await raiser.RaiseAsync(Topics.Staff, record);
+            })));
         app.SetEntries(EmailsEntry("list@example.com"));
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
-            var raiser = scope.ServiceProvider.GetRequiredService<INotificationRaiser>();
-            var repository = new HookedRecordRepository(db, app.Settings, record => new(raiser.RaiseAsync(Topics.Staff, record)));
 
             db.Records.Add(new NotifiedRecord { Name = "Invoice" });
-            await repository.SaveChangesAsync();
+            await new NotifiedRecordRepository(db, app.Settings).SaveChangesAsync();
         }
 
         await app.DrainAsync();
@@ -62,23 +67,25 @@ public class NotificationPipelineTests
     [Fact]
     public async Task RepositoryPathWithTransaction_RolledBackSave_SendsNothing()
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        // The after-save handler raises, then fails, so the save's transaction is rolled back.
+        await using var app = await NotificationTestApp.StartAsync(
+            services: services => services.AddAfterSaveStep(new(async (raiser, record) =>
+            {
+                // The sentinel that DrainAsync saves afterwards is let through.
+                if (record.Name != "Invoice")
+                    return;
+
+                await raiser.RaiseAsync(Topics.Staff, record);
+                throw new InvalidOperationException("Deliberate handler failure.");
+            })));
         app.SetEntries(EmailsEntry("list@example.com"));
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
-            var raiser = scope.ServiceProvider.GetRequiredService<INotificationRaiser>();
-
-            // The hook raises, then fails, so the repository rolls its transaction back.
-            var repository = new HookedRecordRepository(db, app.Settings, async record =>
-            {
-                await raiser.RaiseAsync(Topics.Staff, record);
-                throw new InvalidOperationException("Deliberate hook failure.");
-            });
 
             db.Records.Add(new NotifiedRecord { Name = "Invoice" });
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.SaveChangesAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => new NotifiedRecordRepository(db, app.Settings).SaveChangesAsync());
         }
 
         await app.DrainAsync();
@@ -87,11 +94,11 @@ public class NotificationPipelineTests
     }
 
     [Fact]
-    public async Task RepositoryPathWithoutTransaction_RaisedFromATrigger_Sends()
+    public async Task RepositoryPathWithoutTransaction_RaisedFromAHandler_Sends()
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        await using var app = await NotificationTestApp.StartAsync(services: services => services.AddSaveHandler<RaisingHandler>());
         app.SetEntries(EmailsEntry("list@example.com"));
-        app.Settings.RaiseFromTrigger = Topics.Staff;
+        app.Settings.RaiseFromHandler = Topics.Staff;
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
@@ -109,10 +116,10 @@ public class NotificationPipelineTests
     [Fact]
     public async Task RepositoryPathWithoutTransaction_FailedSave_SendsNothing()
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        await using var app = await NotificationTestApp.StartAsync(services: services => services.AddSaveHandler<RaisingHandler>());
         app.SetEntries(EmailsEntry("list@example.com"));
         var existing = await app.SaveAsync();
-        app.Settings.RaiseFromTrigger = Topics.Staff;
+        app.Settings.RaiseFromHandler = Topics.Staff;
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
@@ -133,9 +140,9 @@ public class NotificationPipelineTests
     [InlineData(false)]
     public async Task RepositoryPathInsideACallersTransaction_FollowsThatTransaction(bool commit)
     {
-        await using var app = await NotificationTestApp.StartAsync();
+        await using var app = await NotificationTestApp.StartAsync(services: services => services.AddSaveHandler<RaisingHandler>());
         app.SetEntries(EmailsEntry("list@example.com"));
-        app.Settings.RaiseFromTrigger = Topics.Staff;
+        app.Settings.RaiseFromHandler = Topics.Staff;
 
         await using (var scope = app.Provider.CreateAsyncScope())
         {
@@ -152,7 +159,7 @@ public class NotificationPipelineTests
                 await transaction.RollbackAsync();
         }
 
-        app.Settings.RaiseFromTrigger = null;
+        app.Settings.RaiseFromHandler = null;
         await app.DrainAsync();
 
         Assert.Equal(commit ? 1 : 0, app.Sent.Count);
@@ -1204,5 +1211,49 @@ public class NotificationPipelineTests
         services.AddNotifications<NotificationTestDbContext>("Sales", options => options.AddTopics<Topics>());
 
         Assert.Same(mine, services.Single(d => d.ServiceType == typeof(INotificationSubscribersList)).ImplementationInstance);
+    }
+
+    [Fact]
+    public async Task InATransactionTheContextCannotFollow_ASaveWithARuleIsRefused_AndARaiseInCodeIsLoggedAndDropped()
+    {
+        // An event waits for the commit, and the context is never told when a transaction it joined with UseTransaction
+        // commits. A save of a record with a rule is refused before it writes. A raise in code never throws, so it logs
+        // the refusal and drops the event.
+        await using var app = await NotificationTestApp.StartAsync();
+        app.SetEntries(EmailsEntry("list@example.com"));
+
+        var saved = await app.SaveAsync(new NotifiedRecord { Name = "Saved before" });
+
+        await using (var scope = app.Provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NotificationTestDbContext>();
+            var raiser = scope.ServiceProvider.GetRequiredService<INotificationRaiser>();
+
+            await db.Database.OpenConnectionAsync();
+            await using var owner = await db.Database.GetDbConnection().BeginTransactionAsync();
+            await db.Database.UseTransactionAsync(owner);
+
+            var record = new NotifiedRecord { Name = NotifiedRecord.ApprovedName };
+            db.Records.Add(record);
+
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+            Assert.Contains("cannot save NotifiedRecord rows, for which a notification rule waits for the commit", refused.Message);
+            Assert.Contains("SuppressNotifications()", refused.Message);
+            Assert.Equal(0, record.ID);
+
+            // With the rules switched off for the save, the record is saved in that transaction.
+            using (db.SuppressNotifications())
+                await db.SaveChangesAsync();
+
+            await raiser.RaiseAsync(Topics.Staff, saved);
+
+            await owner.CommitAsync();
+            await db.Database.UseTransactionAsync(null);
+        }
+
+        await app.DrainAsync();
+
+        Assert.Empty(app.Sent);
+        Assert.Contains(app.Log.Lines, line => line.Level == LogLevel.Error && line.Message.Contains("Could not raise notification topic"));
     }
 }

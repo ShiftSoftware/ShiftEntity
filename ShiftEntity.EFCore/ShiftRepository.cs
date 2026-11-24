@@ -65,9 +65,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
     private bool _dataLevelAccessPolicyResolved;
     private DataLevelAccessPolicy<EntityType>? _dataLevelAccessPolicy;
 
-    private IShiftEntityHasBeforeSaveHook<EntityType>? beforeSaveHook = null;
-    private IShiftEntityHasAfterSaveHook<EntityType>? afterSaveHook = null;
-
     public ShiftRepository(DB db, Action<ShiftRepositoryOptions<EntityType, ListDTO, ViewAndUpsertDTO>>? shiftRepositoryBuilder = null)
     {
         InitCommon(db, shiftRepositoryBuilder);
@@ -105,12 +102,6 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             .Any(x => x.IsAssignableFrom(typeof(IEntityHasUniqueHash<EntityType>)));
 
         _hasTaggableInterface = typeof(IShiftEntityTaggable).IsAssignableFrom(typeof(EntityType));
-
-        if (this is IShiftEntityHasBeforeSaveHook<EntityType> beforeSaveHook)
-            this.beforeSaveHook = beforeSaveHook;
-
-        if (this is IShiftEntityHasAfterSaveHook<EntityType> afterSaveHook)
-            this.afterSaveHook = afterSaveHook;
 
         if (shiftRepositoryBuilder is not null)
         {
@@ -884,9 +875,8 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
         dbSet.Add(entity);
     }
 
-    // Audit stamping rules live in AuditStamper, shared with ShiftDbContext's SaveChanges override so both paths
-    // behave identically. The repository can resolve its claim values eagerly — identityClaimProvider is always
-    // registered here (the DbContext fallback resolves them defensively instead).
+    // The audit-stamping rules live in AuditStamper. The repository stamps the record it maps, here, before the save.
+    // Every other row of the save is stamped by the context, in the save itself (see SaveChangesAsync).
     private void SetAuditFields(IShiftEntityAudit entity, bool isAdded, long? userId, DateTimeOffset now)
         => AuditStamper.StampAuditFields(entity, isAdded, userId, now);
 
@@ -899,189 +889,58 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             identityClaimProvider.GetCompanyID(),
             identityClaimProvider.GetCompanyBranchID());
 
-    // Runs every DI-registered IShiftEntitySaveValidator against the pending unit of work before the repository
-    // persists it — the seam that lets cross-cutting, save-time rules (e.g. ShiftIdentity's feature locking) live
-    // outside any repository. Only repository saves reach here; direct DbContext saves (seeding/replication) do not.
-    // Resolution is optional: hosts that register no validator (or provide no application service provider) skip it.
-    private void RunSaveValidators()
-    {
-        // Resolve from the application (request-scoped) service provider — the same one the repository uses for its
-        // other on-demand services. GetServices never returns null (empty when none are registered), and resolves
-        // scoped validators correctly. EF's db.GetService<IEnumerable<T>>() does not bridge IEnumerable to the app
-        // provider, so it can't be used here.
-        var validators = MapperServiceProvider.GetServices<IShiftEntitySaveValidator>().ToList();
-        if (validators.Count == 0)
-            return;
-
-        List<EntityEntry>? pendingWrites = null;
-        foreach (var entry in db.ChangeTracker.Entries())
-        {
-            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-                (pendingWrites ??= new()).Add(entry);
-        }
-
-        if (pendingWrites is null)
-            return;
-
-        foreach (var validator in validators)
-            validator.Validate(pendingWrites);
-    }
-
+    /// <summary>
+    /// Saves the context's tracked changes as a repository's save. The save itself is the context's: its stages run
+    /// for it as for any save (the save handlers, attention, the notification rules, replication), and it opens a
+    /// transaction only when the save needs one.
+    /// </summary>
+    /// <remarks>
+    /// What makes it a repository's save:
+    /// <list type="bullet">
+    /// <item>
+    /// The audit columns of every row it writes are stamped, whatever its type: a new row is filled where it was left
+    /// unset, and a modified row gets its last-save date and user. <see cref="ShiftDbContext.SuppressAuditStamping"/>
+    /// does not change that.
+    /// </item>
+    /// <item>
+    /// A before-save handler sees <see cref="PendingRows{TEntity}.IsRepositorySave"/>. A save a handler makes from
+    /// inside this one is not a repository's save.
+    /// </item>
+    /// <item>
+    /// The unique hash of the repository's own rows is computed once, after every before-save handler has run, so it
+    /// reads the values the rows are written with.
+    /// </item>
+    /// <item>
+    /// The rows of the repository's own type that were loaded with includes are loaded again after the save's handlers,
+    /// inside its transaction when it has one.
+    /// </item>
+    /// <item>A duplicate idempotency key and a duplicate unique hash leave as the exceptions the endpoints answer.</item>
+    /// </list>
+    /// <para>
+    /// A step that fails once the rows are committed undoes nothing: it leaves as an
+    /// <see cref="AfterCommitException"/>, and the rows are saved. That includes the reload in a save that needed no
+    /// transaction.
+    /// </para>
+    /// </remarks>
     public virtual async Task<int> SaveChangesAsync()
     {
-        RunSaveValidators();
-
-        var now = DateTimeOffset.UtcNow;
         var hashIdService = this.db.GetService<IHashIdService>();
         long? userId = this.currentUserProvider?.GetUser()?.GetUserID(hashIdService);
-        var beforeSaveTasks = new List<ValueTask>();
-        var afterSaveEntities = new List<(EntityType entity, ActionTypes action)>();
 
-        // The context evaluates attention itself, before any save writes. This only tells it that the save is a
-        // repository's, for a host that evaluates on those alone (AttentionSaves.Repository).
-        using (db.RepositorySave())
+        var save = new RepositorySave
         {
-            if (this.afterSaveHook is not null)
-            {
-                return await SaveChangesWithTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
-            }
-            else
-            {
-                return await SaveChangesWithoutTransactionAsync(now, userId, beforeSaveTasks, afterSaveEntities);
-            }
-        }
-    }
+            EntityType = typeof(EntityType),
+            UserId = userId,
+            Claims = identityClaimProvider,
+            BeforeWrite = BeforeWrite,
+        };
 
-    private async Task<int> SaveChangesWithTransactionAsync(
-        DateTimeOffset now,
-        long? userId,
-        List<ValueTask> beforeSaveTasks,
-        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync();
-
-        // The context follows this transaction whether or not its options carry UseShiftEntityAfterCommit: what the
-        // saves in it queue for after the commit (replication, notifications, attention events) waits for the commit
-        // below, and a rollback drops it.
-        db.OnTransactionStarted(transaction.TransactionId);
-
-        int result;
-
-        try
-        {
-            result = await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
-
-            // Execute all AfterSave hooks - if this fails, transaction will rollback
-            var afterSaveTasks = afterSaveEntities.Select(x => this.afterSaveHook!.AfterSaveAsync(x.entity, x.action));
-            await Task.WhenAll(afterSaveTasks.Select(vt => vt.AsTask()));
-
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            db.OnTransactionEnded();
-            await transaction.RollbackAsync();
-            throw;
-        }
-
-        // The interceptor has run the queued work already when it is there; without it, the work runs now.
-        db.OnTransactionCommitted(transaction.TransactionId);
-
-        return result;
-    }
-
-    private async Task<int> SaveChangesWithoutTransactionAsync(
-        DateTimeOffset now,
-        long? userId,
-        List<ValueTask> beforeSaveTasks,
-        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
-    {
-        // No AfterSave to execute since it's not overridden
-        return await ProcessEntriesAndSave(now, userId, beforeSaveTasks, afterSaveEntities);
-    }
-
-    private async Task<int> ProcessEntriesAndSave(
-        DateTimeOffset now,
-        long? userId,
-        List<ValueTask> beforeSaveTasks,
-        List<(EntityType entity, ActionTypes action)> afterSaveEntities)
-    {
-        var entitiesToReload = new List<EntityType>();
-
-        foreach (var entry in db.ChangeTracker.Entries())
-        {
-            var added = entry.State == EntityState.Added;
-            var modified = entry.State == EntityState.Modified;
-
-            if (!added && !modified)
-                continue;
-
-            // Audit columns are stamped on EVERY changed auditable row in the unit of work — not just this
-            // repository's own entity type. A single SaveChanges flushes the whole ChangeTracker, so cascaded
-            // children and unrelated entities (any ShiftEntity<T>) must be stamped here too. A row already handled
-            // upstream (UpsertAsync sets the guard) is left alone; the rest get the same backfill upsert would do —
-            // dates/user via SetAuditFields, plus the insert-only org/location claims.
-            if (entry.Entity is IShiftEntityAudit auditable)
-            {
-                var alreadyStamped = auditable.AuditFieldsAreSet;
-                this.SetAuditFields(auditable, added, userId, now);
-
-                if (added && !alreadyStamped)
-                    this.SetCreationClaimDefaults(entry.Entity);
-            }
-
-            // The remaining work below is specific to this repository's own entity type.
-            if (entry.Entity is not EntityType entityType)
-                continue;
-
-            // Only process unique hash if the interface is implemented
-            if (_hasUniqueHashInterface && entityType is IEntityHasUniqueHash<EntityType> entryWithUniqueHash)
-            {
-                var uniqueHash = entryWithUniqueHash.CalculateUniqueHash();
-                if (uniqueHash is not null)
-                {
-                    using var sha256 = System.Security.Cryptography.SHA256.Create();
-                    var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
-                    entry.Property("UniqueHash").CurrentValue = hashBytes;
-                }
-            }
-
-            var actionType = added ? ActionTypes.Insert : ActionTypes.Update;
-
-            // Only call BeforeSave if it's overridden
-            if (this.beforeSaveHook is not null)
-            {
-                beforeSaveTasks.Add(this.beforeSaveHook.BeforeSaveAsync(entityType, actionType));
-            }
-
-            // Only track entities for AfterSave if it's overridden
-            if (this.afterSaveHook is not null)
-            {
-                afterSaveEntities.Add((entityType, actionType));
-            }
-
-            // Track entities that need reload after save
-            if (entityType.ReloadAfterSave)
-            {
-                entitiesToReload.Add(entityType);
-            }
-        }
-
-        // Execute all BeforeSave hooks only if there are any
-        if (beforeSaveTasks.Count > 0)
-        {
-            await Task.WhenAll(beforeSaveTasks.Select(vt => vt.AsTask()));
-        }
-
-        // The sweep above already stamped every tracked auditable row, so suppress the context's SaveChanges override
-        // for these repository-initiated saves — otherwise it would run its (insert-only) backfill a second time.
-        // (The AuditFieldsAreSet guard already prevents double-writing; this also avoids the redundant second pass.)
-        int result;
-        using (db.SuppressAuditStamping())
+        // The context does the rest in the save itself. It is told that the save is a repository's.
+        using (db.StartRepositorySave(save))
         {
             try
             {
-                result = await db.SaveChangesAsync();
+                return await db.SaveChangesAsync();
             }
             catch (DbUpdateException dbUpdateException)
             {
@@ -1105,20 +964,45 @@ public class ShiftRepository<DB, EntityType, ListDTO, ViewAndUpsertDTO> :
             }
         }
 
-        // Reload entities that have navigation properties (Includes)
-        if (entitiesToReload.Count > 0)
+        // Once, on the rows of the repository's own type as every before-save handler left them: the unique hash reads
+        // their final values. The rows to load again are noted here too, while the context still shows what the save is
+        // about to write.
+        Func<Task>? BeforeWrite(IReadOnlyList<EntityEntry> rows)
         {
-            foreach (var trackedEntity in entitiesToReload)
-            {
-                var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
-                if (freshEntity is not null)
-                    // Refresh the tracked entity from the fresh DB load via the mapper's CopyEntity (a top-level
-                    // copy: scalars + navigation references, real keys preserved).
-                    CopyEntity(freshEntity, trackedEntity, new MappingContext(MapperServiceProvider));
-            }
-        }
+            List<EntityType>? reload = null;
 
-        return result;
+            foreach (var entry in rows)
+            {
+                var entity = (EntityType)entry.Entity;
+
+                if (_hasUniqueHashInterface && entity is IEntityHasUniqueHash<EntityType> withUniqueHash &&
+                    withUniqueHash.CalculateUniqueHash() is { } uniqueHash)
+                {
+                    using var sha256 = System.Security.Cryptography.SHA256.Create();
+                    entry.Property("UniqueHash").CurrentValue = sha256.ComputeHash(Encoding.UTF8.GetBytes(uniqueHash));
+                }
+
+                if (entity.ReloadAfterSave)
+                    (reload ??= []).Add(entity);
+            }
+
+            // After the write and the after-save handlers, the rows that were loaded with includes are loaded again.
+            return reload is null ? null : () => ReloadAsync(reload);
+        }
+    }
+
+    // Loads the saved rows again with the repository's includes (their navigation properties), onto the tracked
+    // records.
+    private async Task ReloadAsync(List<EntityType> saved)
+    {
+        foreach (var trackedEntity in saved)
+        {
+            var freshEntity = await FindAsync(trackedEntity.ID, bypass: RepositoryBypass.All);
+            if (freshEntity is not null)
+                // Refresh the tracked entity from the fresh DB load via the mapper's CopyEntity (a top-level
+                // copy: scalars + navigation references, real keys preserved).
+                CopyEntity(freshEntity, trackedEntity, new MappingContext(MapperServiceProvider));
+        }
     }
 
     /// <summary>

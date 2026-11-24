@@ -1,4 +1,3 @@
-using EntityFrameworkCore.Triggered;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,9 +9,10 @@ using static ShiftSoftware.ShiftEntity.Tests.Replication.PinModel;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins the save pipeline that replication now rides on: <see cref="ShiftDbContext"/> reports the rows each save wrote
-/// to its <see cref="IShiftDbContextSaveObserver"/>s, and <see cref="ShiftDbContext.AfterCommit"/> holds work until an
-/// explicit transaction commits.
+/// Pins the seam that the framework's own parts ride on: <see cref="ShiftDbContext"/> reports the rows each save wrote
+/// to its <see cref="IShiftDbContextSaveObserver"/>s, and <see cref="ShiftDbContext.AfterCommit(Action)"/> holds work
+/// until an explicit transaction commits. The observer is internal: replication and the notification rules implement
+/// it, and app code takes part in a save through handlers.
 /// </summary>
 public class ShiftDbContextSaveObserverTests : IDisposable
 {
@@ -25,10 +25,15 @@ public class ShiftDbContextSaveObserverTests : IDisposable
     public void Dispose() => connection.Dispose();
 
     // Records each report as one line per row, and queues one after-commit action per report.
-    public sealed class RecordingObserver : IShiftDbContextSaveObserver
+    internal sealed class RecordingObserver : IShiftDbContextSaveObserver
     {
         public List<string> Reports { get; } = new();
         public List<string> Committed { get; } = new();
+
+        /// <summary>The entity types the observer asks for. Null for every type.</summary>
+        public Type[]? Wanted { get; init; }
+
+        public bool Wants(ShiftDbContext context, Type entityType) => Wanted is null || Wanted.Contains(entityType);
 
         public ValueTask SavedAsync(ShiftDbContext context, SaveReport saved, CancellationToken cancellationToken)
         {
@@ -39,40 +44,37 @@ public class ShiftDbContextSaveObserverTests : IDisposable
         }
     }
 
-    // Adds a note before every item is saved, as a host's before-save step might.
-    public sealed class AddNoteBeforeSave(Db db) : IBeforeSaveTrigger<Item>
+    // Adds a note for every new item before it is saved, as a host's before-save handler might.
+    public sealed class AddNoteBeforeSave : IBeforeSaveHandler<Item>
     {
-        public Task BeforeSave(ITriggerContext<Item> context, CancellationToken cancellationToken)
+        public ValueTask BeforeSaveAsync(PendingRows<Item> rows, CancellationToken cancellationToken)
         {
-            if (context.ChangeType == ChangeType.Added)
-                db.Notes.Add(new Note { Text = "added by a before-save step" });
-            return Task.CompletedTask;
+            foreach (var row in rows)
+                if (row.Change == RowChange.Added)
+                    rows.Db.Add(new Note { Text = "added by a before-save handler" });
+
+            return ValueTask.CompletedTask;
         }
     }
 
-    // Saves a log row from its after-save step, on the same context.
-    public sealed class SaveLogAfterSave(Db db) : IAfterSaveTrigger<Item>
+    // Saves a log row from its after-save stage, on the same context.
+    public sealed class SaveLogAfterSave : IAfterSaveHandler<Item>
     {
-        public async Task AfterSave(ITriggerContext<Item> context, CancellationToken cancellationToken)
+        public async ValueTask AfterSaveAsync(SavedRows<Item> rows, CancellationToken cancellationToken)
         {
-            if (context.ChangeType != ChangeType.Added)
+            if (!rows.Any(row => row.Change == RowChange.Added))
                 return;
 
-            db.Logs.Add(new Log { Text = "saved from an after-save step" });
-            await db.SaveChangesAsync(cancellationToken);
+            rows.Db.Add(new Log { Text = "saved from an after-save handler" });
+            await rows.Db.SaveChangesAsync(cancellationToken);
         }
     }
 
-    private (ServiceProvider Provider, RecordingObserver Observer) Host(bool afterCommit = true, Action<IServiceCollection>? services = null)
+    private (ServiceProvider Provider, RecordingObserver Observer) Host(Action<IServiceCollection>? services = null, Type[]? wanted = null)
     {
-        var observer = new RecordingObserver();
+        var observer = new RecordingObserver { Wanted = wanted };
         var collection = new ServiceCollection();
-        collection.AddDbContext<Db>(o =>
-        {
-            o.UseSqlite(connection).UseTriggers();
-            if (afterCommit)
-                o.UseShiftEntityAfterCommit();
-        });
+        collection.AddDbContext<Db>(o => o.UseSqlite(connection));
         collection.AddSingleton<IShiftDbContextSaveObserver>(observer);
         services?.Invoke(collection);
 
@@ -107,11 +109,11 @@ public class ShiftDbContextSaveObserverTests : IDisposable
     }
 
     [Fact]
-    public async Task A_row_a_before_save_step_added_is_reported_and_a_save_from_an_after_save_step_reports_its_own_rows_first()
+    public async Task A_row_a_before_save_handler_added_is_reported_and_a_save_from_an_after_save_handler_reports_its_own_rows_after()
     {
         var (provider, observer) = Host(services: s => s
-            .AddScoped<IBeforeSaveTrigger<Item>, AddNoteBeforeSave>()
-            .AddScoped<IAfterSaveTrigger<Item>, SaveLogAfterSave>());
+            .AddSaveHandler<AddNoteBeforeSave>()
+            .AddSaveHandler<SaveLogAfterSave>());
         await using var _ = provider;
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
@@ -119,7 +121,35 @@ public class ShiftDbContextSaveObserverTests : IDisposable
         db.Items.Add(new Item { Code = "a" });
         await db.SaveChangesAsync(Ct);
 
-        Assert.Equal(["Added Log 1", "Added Item 1, Added Note 1"], observer.Reports);
+        // The observers of a save hear about it before its after-save handlers run, so the save a handler makes is
+        // reported after the save it was made from.
+        Assert.Equal(["Added Item 1, Added Note 1", "Added Log 1"], observer.Reports);
+
+        // Both saves ran in the one transaction the context opened, so what they queued ran at its commit, in order.
+        Assert.Equal(observer.Reports, observer.Committed);
+    }
+
+    [Fact]
+    public async Task An_observer_is_reported_only_the_rows_of_the_types_it_asks_for_and_the_context_collects_no_others()
+    {
+        var (provider, observer) = Host(wanted: [typeof(Item)]);
+        await using var _ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Db>();
+
+        db.Items.Add(new Item { Code = "a" });
+        db.Notes.AddRange(new Note { Text = "one" }, new Note { Text = "two" });
+        await db.SaveChangesAsync(Ct);
+
+        Assert.Equal(["Added Item 1"], observer.Reports);
+        Assert.Equal(1, db.RowsCollected);
+
+        // A save of rows that nobody asked for is not reported at all.
+        db.Notes.Add(new Note { Text = "three" });
+        await db.SaveChangesAsync(Ct);
+
+        Assert.Equal(["Added Item 1"], observer.Reports);
+        Assert.Equal(1, db.RowsCollected);
     }
 
     [Fact]
@@ -185,41 +215,44 @@ public class ShiftDbContextSaveObserverTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_the_after_commit_interceptor_work_runs_at_once_even_inside_a_transaction()
+    public async Task A_context_without_observers_reports_nothing()
     {
-        var (provider, observer) = Host(afterCommit: false);
-        await using var _ = provider;
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<Db>();
+        await using var bare = new Db(new DbContextOptionsBuilder<Db>().UseSqlite(connection).Options);
 
-        await using (var transaction = await db.Database.BeginTransactionAsync(Ct))
-        {
-            db.Items.Add(new Item { Code = "a" });
-            await db.SaveChangesAsync(Ct);
+        await bare.Database.EnsureCreatedAsync(Ct);
+        bare.Items.Add(new Item { Code = "a" });
+        await bare.SaveChangesAsync(Ct);
+        bare.AfterCommit(() => { });     // no DI, no transaction: runs at once, and nothing breaks
 
-            Assert.Equal(["Added Item 1"], observer.Committed);
-            await transaction.RollbackAsync(Ct);
-        }
+        Assert.Equal(0, bare.RowsCollected);
     }
 
     [Fact]
-    public async Task A_context_without_observers_reports_nothing_and_a_save_that_does_not_accept_its_changes_reports_nothing()
+    public async Task A_save_that_does_not_accept_its_changes_is_refused_when_an_observer_wants_its_rows()
     {
-        await using (var bare = new Db(new DbContextOptionsBuilder<Db>().UseSqlite(connection).Options))
-        {
-            await bare.Database.EnsureCreatedAsync(Ct);
-            bare.Items.Add(new Item { Code = "a" });
-            await bare.SaveChangesAsync(Ct);
-            bare.AfterCommit(() => { });     // no DI, no transaction: runs at once, and nothing breaks
-        }
-
-        var (provider, observer) = Host();
+        var (provider, observer) = Host(wanted: [typeof(Item)]);
         await using var _ = provider;
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
-        db.Items.Add(new Item { Code = "b" });
+
+        // After such a save EF reports no row as written, so the observer could not be told. The save used to go
+        // through and the observer heard nothing.
+        var item = new Item { Code = "b" };
+        db.Items.Add(item);
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(acceptAllChangesOnSuccess: false, Ct));
+        Assert.Contains("cannot save Item rows with acceptAllChangesOnSuccess: false", refused.Message);
+        Assert.Equal(0, await db.Items.AsNoTracking().CountAsync(Ct));
+
+        // Under the observer's switch the save is EF's own. So is a save of rows no observer wants.
+        using (db.SuppressReplication())
+            await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, Ct);
+        db.ChangeTracker.AcceptAllChanges();
+
+        db.Notes.Add(new Note { Text = "nobody asked for notes" });
         await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, Ct);
+        db.ChangeTracker.AcceptAllChanges();
 
         Assert.Empty(observer.Reports);
+        Assert.Equal((1, 1), (await db.Items.AsNoTracking().CountAsync(Ct), await db.Notes.AsNoTracking().CountAsync(Ct)));
     }
 }

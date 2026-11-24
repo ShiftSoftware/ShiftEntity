@@ -25,7 +25,7 @@ public class ReplicationCatchUpTests
         await db.Shops.Where(x => ids.Contains(x.ID)).ExecuteUpdateAsync(s => s.SetProperty(x => x.LastReplicationDate, (DateTimeOffset?)null), Ct);
     }
 
-    // RV-14. The run's context is shared by its steps, and an earlier step may have loaded a root's children. Loaded with
+    // The run's context is shared by its steps, and an earlier step may have loaded a root's children. Loaded with
     // tracking, the root's collection started with those, out of the ordered step's order.
     [Fact]
     public async Task The_catch_up_keeps_an_ordered_step_in_order_when_its_context_already_tracks_the_children()
@@ -61,7 +61,7 @@ public class ReplicationCatchUpTests
         }
     }
 
-    // RV-14. The save side loads a root ignoring query filters; the catch-up used to apply them, and left out the rows
+    // The save side loads a root ignoring query filters; the catch-up used to apply them, and left out the rows
     // they hide.
     [Fact]
     public async Task The_catch_up_builds_the_document_the_save_does_under_a_query_filter()
@@ -73,7 +73,7 @@ public class ReplicationCatchUpTests
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(log));
         services.AddDbContext<FilteredDb>(o => o.UseSqlite(connection));
-        services.AddShiftEntityCosmosDbReplicationTrigger<FilteredDb>(o =>
+        services.AddShiftEntityCosmosDbReplicationOnSave<FilteredDb>(o =>
             o.SetUpReplication<FilteredDb, Shop>(cosmos.Client, ReplicationPinHost.Database)
                 .ReplicateTree<ShopDocument>("shops", x => x.id, x => Document(x.Entity)));
         services.AddShiftEntityCosmosDbReplication<FilteredDb>();
@@ -114,7 +114,7 @@ public class ReplicationCatchUpTests
         Assert.Equal(saved, cosmos.StoredLines("shops").Single());
     }
 
-    // RV-19. A container that could not be read used to throw out of the run, so a host's catch-up of several steps
+    // A container that could not be read used to throw out of the run, so a host's catch-up of several steps
     // (branches, then companies, then teams) stopped there.
     [Fact]
     public async Task A_catch_up_step_whose_container_fails_reports_its_rows_and_the_next_step_runs()
@@ -143,9 +143,9 @@ public class ReplicationCatchUpTests
         Assert.Equal(2, host.Cosmos.StoredLines("owners").Count);
     }
 
-    // RV-07. The bookkeeping used to be one UPDATE per row, each in a transaction of its own: 41 times the statements of
+    // The bookkeeping used to be one UPDATE per row, each in a transaction of its own: 41 times the statements of
     // the batched save it replaced. On SQLite it is one UPDATE of up to 100 rows at a time now, all in one transaction,
-    // and like that save it runs no host triggers, no audit stamping, and marks no root of a tree the rows belong to.
+    // and like that save it runs no save handlers, no audit stamping, and marks no root of a tree the rows belong to.
     [Fact]
     public async Task The_catch_up_writes_its_bookkeeping_set_based_in_one_transaction_and_marks_no_root()
     {

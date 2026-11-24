@@ -11,8 +11,9 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Replication;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It works from the rows the save had changed when it began, whether or not the save is replicated or accepts its
-/// changes. Rows that a before-save step (a host trigger or interceptor) changes during the save are not followed.
+/// It works from the rows the save is about to write once every before-save handler has run, whether or not the save
+/// is replicated or accepts its changes. So a row that a handler changed or added is followed to its roots. A row
+/// that an interceptor of the app's changes during EF's own write is not.
 /// </para>
 /// <para>
 /// A root the save wrote itself is dirty already when the save advanced its <c>LastSaveDate</c>, as a repository
@@ -47,10 +48,15 @@ internal sealed class ReplicationTreeSave
     /// Whether to detect changes while looking at the entries. The save's audit stamping has detected them already when
     /// it ran, and a second pass over every tracked row would cost the same again.
     /// </param>
-    public static ReplicationTreeSave? Prepare(ShiftDbContext context, bool detectChanges)
+    /// <param name="looked">Whether the entries were looked at, which is when the changes are detected by now.</param>
+    public static ReplicationTreeSave? Prepare(ShiftDbContext context, bool detectChanges, out bool looked)
     {
+        looked = false;
+
         if (ReplicationTreeIndex.For(context) is not { } index)
             return null;
+
+        looked = true;
 
         List<(EntityEntry Entry, IReadOnlyList<ReplicationTreeIndex.Place> Places)>? changed = null;
         var tracker = context.ChangeTracker;
@@ -124,6 +130,10 @@ internal sealed class ReplicationTreeSave
 
         return save;
     }
+
+    /// <summary>The root types of the trees the save may change through a row that is not the root itself.</summary>
+    public IEnumerable<Type> RootTypes() =>
+        linked.Select(x => x.Root).Concat(edited.Keys.Select(x => x.Root.ClrType)).Concat(rootsToMark.Select(x => x.Root)).Distinct();
 
     private void Link(Type root, long id, HashSet<(Type, long)> settledBySave)
     {

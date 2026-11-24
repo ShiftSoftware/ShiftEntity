@@ -15,17 +15,18 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins what the after-save trigger leaves on the caller's side. The trigger replicates in a background task and then
-/// records the sync, while the entity it holds is the caller's own instance, still tracked by the caller's context. A
-/// unit of work that saves more than once on one context (a seeder, for example) must not see that record as a change
-/// of its own. The sync used to mark the instance as replicated, so the caller's next save wrote the row again, added a
-/// temporal history row and replicated the row a second time. The trigger still has to remember what it wrote: when a
-/// later save of the same instance moves the document or deletes the row, the document the earlier sync wrote is
-/// removed. Runs the real trigger on SQLite, against a Cosmos DB stand-in that records what it is asked to do.
+/// Pins what replication on save leaves on the caller's side. The sync that a save starts replicates in a background
+/// task and then records itself, while the entity it holds is the caller's own instance, still tracked by the caller's
+/// context. A unit of work that saves more than once on one context (a seeder, for example) must not see that record as
+/// a change of its own. The sync used to mark the instance as replicated, so the caller's next save wrote the row
+/// again, added a temporal history row and replicated the row a second time. The sync still has to remember what it
+/// wrote: when a later save of the same instance moves the document or deletes the row, the document the earlier sync
+/// wrote is removed. Runs the real registration on SQLite, against a Cosmos DB stand-in that records what it is asked
+/// to do.
 /// </summary>
-public class ReplicationTriggerTests : IAsyncDisposable
+public class ReplicationOnSaveTests : IAsyncDisposable
 {
-    public sealed class TriggerItem : ShiftEntity<TriggerItem>, IShiftEntityReplication
+    public sealed class ReplicatedItem : ShiftEntity<ReplicatedItem>, IShiftEntityReplication
     {
         public string Code { get; set; } = "";
         public DateTimeOffset? LastReplicationDate { get; set; }
@@ -33,24 +34,24 @@ public class ReplicationTriggerTests : IAsyncDisposable
     }
 
     // Not replicated: the unrelated row of a later save.
-    public sealed class TriggerNote : ShiftEntity<TriggerNote>
+    public sealed class PlainNote : ShiftEntity<PlainNote>
     {
         public string Text { get; set; } = "";
     }
 
-    public sealed class TriggerDbContext(DbContextOptions<TriggerDbContext> options) : ShiftDbContext(options)
+    public sealed class OnSaveDbContext(DbContextOptions<OnSaveDbContext> options) : ShiftDbContext(options)
     {
-        public DbSet<TriggerItem> Items => Set<TriggerItem>();
-        public DbSet<TriggerNote> Notes => Set<TriggerNote>();
+        public DbSet<ReplicatedItem> Items => Set<ReplicatedItem>();
+        public DbSet<PlainNote> Notes => Set<PlainNote>();
     }
 
     // The document id comes from the item's code, so a new code moves the document.
-    public sealed class TriggerDocument
+    public sealed class ItemDocument
     {
         public string id { get; set; } = "";
     }
 
-    //Reads the trigger's own messages. "Starting" is logged during the save; "Succeeded" or "Failed" when the
+    //Reads the sync's own messages. "Starting" is logged during the save; "Succeeded" or "Failed" when the
     //background task has finished, the bookkeeping write included.
     private sealed class SyncLog : ILoggerProvider, ILogger
     {
@@ -62,7 +63,7 @@ public class ReplicationTriggerTests : IAsyncDisposable
         public IReadOnlyCollection<long> Started => started;
         public IReadOnlyCollection<string> Failed => failed;
 
-        //Waits until every sync started so far has finished. It waits for the trigger's message, not for a set time.
+        //Waits until every sync started so far has finished. It waits for the sync's message, not for a set time.
         public async Task AllFinishedAsync()
         {
             while (waitedFor < started.Count)
@@ -97,7 +98,7 @@ public class ReplicationTriggerTests : IAsyncDisposable
         public void Dispose() { }
     }
 
-    private const string Database = "trigger";
+    private const string Database = "on-save";
     private const string Container = "items";
     private readonly SqliteConnection connection = new("DataSource=:memory:");
     private readonly SyncLog log = new();
@@ -105,15 +106,15 @@ public class ReplicationTriggerTests : IAsyncDisposable
     private readonly ConcurrentQueue<string> deleted = new();
     private readonly ServiceProvider provider;
 
-    public ReplicationTriggerTests()
+    public ReplicationOnSaveTests()
     {
         connection.Open();
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(log));
-        services.AddDbContext<TriggerDbContext>(o => o.UseSqlite(connection));
-        services.AddShiftEntityCosmosDbReplicationTrigger<TriggerDbContext>(o => o
-            .SetUpReplication<TriggerDbContext, TriggerItem>(Cosmos(), Database)
-            .Replicate<TriggerDocument>(Container, x => x.id, x => new TriggerDocument { id = x.Entity.Code }));
+        services.AddDbContext<OnSaveDbContext>(o => o.UseSqlite(connection));
+        services.AddShiftEntityCosmosDbReplicationOnSave<OnSaveDbContext>(o => o
+            .SetUpReplication<OnSaveDbContext, ReplicatedItem>(Cosmos(), Database)
+            .Replicate<ItemDocument>(Container, x => x.id, x => new ItemDocument { id = x.Entity.Code }));
         provider = services.BuildServiceProvider(validateScopes: true);
     }
 
@@ -132,14 +133,14 @@ public class ReplicationTriggerTests : IAsyncDisposable
 
         var container = Substitute.For<Microsoft.Azure.Cosmos.Container>();
         container.ReadContainerAsync(Arg.Any<ContainerRequestOptions>(), Arg.Any<CancellationToken>()).Returns(properties);
-        container.UpsertItemAsync(Arg.Any<TriggerDocument>(), Arg.Any<PartitionKey?>(), Arg.Any<ItemRequestOptions>(),
+        container.UpsertItemAsync(Arg.Any<ItemDocument>(), Arg.Any<PartitionKey?>(), Arg.Any<ItemRequestOptions>(),
                 Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                upserted.Enqueue(call.Arg<TriggerDocument>()!.id);
+                upserted.Enqueue(call.Arg<ItemDocument>()!.id);
                 return Task.FromResult(Response(HttpStatusCode.OK));
             });
-        container.DeleteItemAsync<TriggerDocument>(Arg.Any<string>(), Arg.Any<PartitionKey>(),
+        container.DeleteItemAsync<ItemDocument>(Arg.Any<string>(), Arg.Any<PartitionKey>(),
                 Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
@@ -156,35 +157,35 @@ public class ReplicationTriggerTests : IAsyncDisposable
         return client;
     }
 
-    private static ItemResponse<TriggerDocument> Response(HttpStatusCode status)
+    private static ItemResponse<ItemDocument> Response(HttpStatusCode status)
     {
-        var response = Substitute.For<ItemResponse<TriggerDocument>>();
+        var response = Substitute.For<ItemResponse<ItemDocument>>();
         response.StatusCode.Returns(status);
         return response;
     }
 
     //The caller: the context of a scope of its own, as a request or a seeder has.
-    private static async Task<TriggerDbContext> CallerAsync(AsyncServiceScope scope)
+    private static async Task<OnSaveDbContext> CallerAsync(AsyncServiceScope scope)
     {
-        var db = scope.ServiceProvider.GetRequiredService<TriggerDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<OnSaveDbContext>();
         await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         return db;
     }
 
     //Adds an item and saves it, then waits until its sync has written the bookkeeping.
-    private async Task<TriggerItem> AddSyncedItemAsync(TriggerDbContext caller)
+    private async Task<ReplicatedItem> AddSyncedItemAsync(OnSaveDbContext caller)
     {
-        var item = new TriggerItem { Code = "item-1" };
+        var item = new ReplicatedItem { Code = "item-1" };
         caller.Items.Add(item);
         await caller.SaveChangesAsync(TestContext.Current.CancellationToken);
         await log.AllFinishedAsync();
         return item;
     }
 
-    private async Task<TriggerItem> StoredAsync(long id)
+    private async Task<ReplicatedItem> StoredAsync(long id)
     {
-        using var check = new TriggerDbContext(
-            new DbContextOptionsBuilder<TriggerDbContext>().UseSqlite(connection).Options);
+        using var check = new OnSaveDbContext(
+            new DbContextOptionsBuilder<OnSaveDbContext>().UseSqlite(connection).Options);
         return await check.Items.AsNoTracking().SingleAsync(x => x.ID == id, TestContext.Current.CancellationToken);
     }
 
@@ -200,7 +201,7 @@ public class ReplicationTriggerTests : IAsyncDisposable
         Assert.Equal((DateTimeOffset?)item.LastSaveDate, stored.LastReplicationDate);
         Assert.Equal("item-1", LastReplicationStamp.Deserialize(stored.LastReplicationStamp)?.Id);
 
-        caller.Notes.Add(new TriggerNote { Text = "Unrelated" });
+        caller.Notes.Add(new PlainNote { Text = "Unrelated" });
         var written = await caller.SaveChangesAsync(TestContext.Current.CancellationToken);
         await log.AllFinishedAsync();
 

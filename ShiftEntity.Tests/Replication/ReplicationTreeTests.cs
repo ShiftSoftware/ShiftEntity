@@ -170,7 +170,7 @@ public static class TreeModel
 }
 
 /// <summary>
-/// Pins replication from a tree (S3 of the replication aggregates plan): the declaration, the walk up from a changed
+/// Pins replication from a tree: the declaration, the walk up from a changed
 /// row to its roots along the model's foreign keys, the set-based mark inside the save's transaction, and the sync
 /// that loads each root by ID with its tree after the commit. The catch-up builds the same document.
 /// </summary>
@@ -218,7 +218,9 @@ public class ReplicationTreeTests : IAsyncDisposable
         }
     }
 
-    private readonly SqliteConnection connection = new("DataSource=:memory:");
+    // A file that every context opens a connection of its own to: the tree syncs of one save run at once, each with a
+    // context of its own.
+    private readonly SqliteTestFile database = new();
     private readonly ReplicationSyncLog log = new();
     private readonly RecordingCosmos cosmos = new RecordingCosmos(ReplicationPinHost.Database)
         .Container("shops", "/id")
@@ -228,12 +230,10 @@ public class ReplicationTreeTests : IAsyncDisposable
 
     private ServiceProvider Host()
     {
-        connection.Open();
-
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(log));
-        services.AddDbContext<Db>(o => o.UseSqlite(connection).AddInterceptors(commands));
-        services.AddShiftEntityCosmosDbReplicationTrigger<Db>(o =>
+        services.AddDbContext<Db>(o => database.Use(o).AddInterceptors(commands));
+        services.AddShiftEntityCosmosDbReplicationOnSave<Db>(o =>
             o.SetUpReplication<Db, Shop>(cosmos.Client, ReplicationPinHost.Database)
                 .ReplicateTree<ShopDocument>("shops", x => x.id, x => Document(x.Entity)));
         services.AddShiftEntityCosmosDbReplication<Db>();
@@ -250,10 +250,10 @@ public class ReplicationTreeTests : IAsyncDisposable
         if (provider is not null)
             await provider.DisposeAsync();
         cosmos.Dispose();
-        await connection.DisposeAsync();
+        await database.DisposeAsync();
     }
 
-    private Db Bare() => new(new DbContextOptionsBuilder<Db>().UseSqlite(connection).Options);
+    private Db Bare() => new(database.Use(new DbContextOptionsBuilder<Db>()).Options);
 
     private async Task<Shop> StoredAsync(long id)
     {
@@ -309,6 +309,7 @@ public class ReplicationTreeTests : IAsyncDisposable
             return Task.CompletedTask;
         });
 
+        log.AssertNoneFailed();
         Assert.Equal(["Shop 1"], log.Started);
         Assert.Equal(["""{"id":"1","Name":"Corner","Town":"Oak","District":"Hills","Land":"North","Owner":"Ada","Products":["Milk"],"Days":[]}"""], Shops);
 
@@ -331,6 +332,7 @@ public class ReplicationTreeTests : IAsyncDisposable
 
         await SaveAsync(async db => (await db.Owners.SingleAsync(x => x.ID == 2, Ct)).Name = "Bea");
 
+        log.AssertNoneFailed();
         Assert.Equal(["Shop 2", "Shop 3"], log.Started.Order());
         Assert.Equal(
         [
@@ -347,6 +349,7 @@ public class ReplicationTreeTests : IAsyncDisposable
 
         await SaveAsync(async db => (await db.Lands.SingleAsync(x => x.ID == 1, Ct)).Name = "Uplands");
 
+        log.AssertNoneFailed();
         Assert.Equal(["Shop 1", "Shop 3"], log.Started.Order());
         Assert.All(Shops, x => Assert.Contains("\"Land\":\"Uplands\"", x));
     }
@@ -363,6 +366,7 @@ public class ReplicationTreeTests : IAsyncDisposable
             return Task.CompletedTask;
         });
 
+        log.AssertNoneFailed();
         Assert.Equal(["""{"id":"1","Name":"Corner","Town":"Oak","District":"Hills","Land":"North","Owner":"Ada","Products":[],"Days":[1,3,5]}"""], Shops);
     }
 
@@ -411,6 +415,7 @@ public class ReplicationTreeTests : IAsyncDisposable
         }
 
         await log.AllFinishedAsync();
+        log.AssertNoneFailed();
         Assert.Equal(["""{"id":"2","Name":"Dock","Town":"Pier","District":"Coast","Land":"Lowlands","Owner":"Bo","Products":[],"Days":[]}"""], Shops);
         var stored = await StoredAsync(2);
         Assert.Equal((DateTimeOffset?)stored.LastSaveDate, stored.LastReplicationDate);
@@ -493,6 +498,7 @@ public class ReplicationTreeTests : IAsyncDisposable
             return Task.CompletedTask;
         });
 
+        log.AssertNoneFailed();
         Assert.Contains("""{"id":"4","Name":"Kiosk","Town":"Pier","District":"Coast","Land":"South","Owner":"Ada","Products":[],"Days":[]}""", Shops);
         Assert.Null(shop.Town);
         Assert.Null(shop.Owner);
@@ -504,6 +510,7 @@ public class ReplicationTreeTests : IAsyncDisposable
             return Task.CompletedTask;
         });
 
+        log.AssertNoneFailed();
         Assert.DoesNotContain(Shops, x => x.Contains("\"id\":\"4\""));
     }
 
@@ -523,6 +530,7 @@ public class ReplicationTreeTests : IAsyncDisposable
             return Task.CompletedTask;
         });
 
+        log.AssertNoneFailed();
         Assert.DoesNotContain(commands.SentBy(saving!), x => x.StartsWith("UPDATE") || x.Contains("EXISTS"));
         Assert.Equal(["Shop 4"], log.Started);
         Assert.Equal(1, cosmos.Writes.Count);
@@ -577,12 +585,15 @@ public class ReplicationTreeTests : IAsyncDisposable
         await SeedAsync();
 
         await SaveAsync(async db => (await db.Shops.SingleAsync(x => x.ID == 1, Ct)).Name = "Corner Shop");
+        log.AssertNoneFailed();
         Assert.Equal("1", LastReplicationStamp.Deserialize((await StoredAsync(1)).LastReplicationStamp)?.Id);
 
         await SaveAsync(async db => (await db.Owners.SingleAsync(x => x.ID == 1, Ct)).Name = "Ana");
+        log.AssertNoneFailed();
         Assert.Contains("\"Owner\":\"Ana\"", Shops.Single());
 
         await SaveAsync(async db => db.Shops.Remove(await db.Shops.SingleAsync(x => x.ID == 1, Ct)));
+        log.AssertNoneFailed();
         Assert.Empty(Shops);
     }
 }

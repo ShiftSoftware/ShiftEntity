@@ -148,7 +148,8 @@ public static class ShiftEntityMapperValidation
             if (seen.Add(triple)) yield return (triple, spec.Repository);
         }
 
-        foreach (var type in assemblies.SelectMany(SafeTypes))
+        // An assembly with a type that cannot be loaded fails with a message that names what is missing.
+        foreach (var type in assemblies.SelectMany(AssemblyScan.TypesOf))
         {
             if (!type.IsClass || type.IsAbstract || type.ContainsGenericParameters) continue;
 
@@ -162,11 +163,5 @@ public static class ShiftEntityMapperValidation
                 break;
             }
         }
-    }
-
-    private static IEnumerable<Type> SafeTypes(Assembly a)
-    {
-        try { return a.GetTypes(); }
-        catch (ReflectionTypeLoadException e) { return e.Types.Where(t => t is not null)!; }
     }
 }

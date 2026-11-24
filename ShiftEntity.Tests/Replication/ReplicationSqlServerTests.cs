@@ -108,7 +108,7 @@ public class ReplicationSqlServerTests
             var services = new ServiceCollection();
             services.AddLogging(x => x.AddProvider(Log));
             services.AddDbContext<TemporalTreeModel.TDb>(o => o.UseSqlServer(catalog.ConnectionString).UseTemporal(true).AddInterceptors(Sql));
-            services.AddShiftEntityCosmosDbReplicationTrigger<TemporalTreeModel.TDb>(o =>
+            services.AddShiftEntityCosmosDbReplicationOnSave<TemporalTreeModel.TDb>(o =>
                 o.SetUpReplication<TemporalTreeModel.TDb, TemporalTreeModel.TRoot>(Cosmos.Client, ReplicationPinHost.Database)
                     .ReplicateTree<TemporalTreeModel.TRootDocument>("roots", x => x.id, x => new TemporalTreeModel.TRootDocument
                     {
@@ -191,6 +191,24 @@ public class ReplicationSqlServerTests
             return await db.Set<T>().TemporalAll().CountAsync(x => x.ID == id, Ct);
         }
 
+        /// <summary>
+        /// Waits until the server's clock has moved on, so that the next write begins later than every write before
+        /// it. SQL Server stamps a version with the time its transaction began, and <c>FOR SYSTEM_TIME ALL</c> (EF's
+        /// <c>TemporalAll</c>, and the revisions list) leaves out a version whose start and end are the same moment.
+        /// Two writes that begin within one tick of that clock, a millisecond or two, would leave a version uncounted.
+        /// </summary>
+        public async Task NextServerTickAsync()
+        {
+            await using var connection = new SqlConnection(catalog.ConnectionString);
+            await connection.OpenAsync(Ct);
+            await using var command = new SqlCommand("SELECT SYSUTCDATETIME()", connection);
+
+            var start = (DateTime)(await command.ExecuteScalarAsync(Ct))!;
+
+            while ((DateTime)(await command.ExecuteScalarAsync(Ct))! <= start)
+                await Task.Yield();
+        }
+
         /// <summary>A catch-up of the cities, each as a document of its own, in a scope of the host.</summary>
         public async Task<(CosmosDbReplicationResult Result, IReadOnlyList<string> Sent)> CatchUpCitiesAsync(Func<TemporalTreeModel.TCity, string>? id = null)
         {
@@ -228,7 +246,7 @@ public class ReplicationSqlServerTests
 
     private static bool IsCurrent(RevisionDTO revision) => revision.ValidTo?.UtcDateTime.Year == DateTime.MaxValue.Year;
 
-    // RV-04. A sync records its watermark on the row, and a part's save marks the root, and on a system-versioned table
+    // A sync records its watermark on the row, and a part's save marks the root, and on a system-versioned table
     // each write is a version. The revisions list used to show every version as a revision by the row's last editor.
     [Fact]
     public async Task The_revisions_list_shows_the_saves_and_not_the_versions_that_record_replication()
@@ -274,7 +292,7 @@ public class ReplicationSqlServerTests
         Assert.Equal(revisions[1].ValidFrom, latest.ValidFrom);
     }
 
-    // RV-04. Each mark is an UPDATE of a system-versioned root, and so a version. A root that is marked already is not
+    // Each mark is an UPDATE of a system-versioned root, and so a version. A root that is marked already is not
     // marked again, so a burst of part changes before its sync adds one version, not one for each change.
     [Fact]
     public async Task A_part_change_marks_only_the_roots_not_marked_already()
@@ -284,6 +302,7 @@ public class ReplicationSqlServerTests
         host.Cosmos.Refuse = _ => true;     // the syncs record nothing, so the marks stay
         var before = await host.VersionsAsync(1);
 
+        await host.NextServerTickAsync();   // so that the mark is a version of its own, after the seed's watermark
         await host.RenameCityAsync(1, "Erbil 2");
         Assert.Equal("[1,2]", await host.MarkedAsync());
         Assert.Equal(before + 1, await host.VersionsAsync(1));
@@ -292,7 +311,7 @@ public class ReplicationSqlServerTests
         Assert.Equal(before + 1, await host.VersionsAsync(1));
     }
 
-    // RV-07, on SQL Server: one UPDATE joined to the values of up to 1,000 rows, passed as one JSON parameter, all in one
+    // On SQL Server: one UPDATE joined to the values of up to 1,000 rows, passed as one JSON parameter, all in one
     // transaction. The base engine's batched save sent 121 commands for 5,000 rows; this sends 5.
     [Fact]
     public async Task The_catch_up_writes_its_bookkeeping_set_based_on_SQL_Server()
@@ -334,10 +353,12 @@ public class ReplicationSqlServerTests
         Assert.Equal("[]", await host.MarkedAsync());
     }
 
-    // RV-10. Under an ambient transaction EF refuses a transaction of the context's own, and a tree save used to throw.
-    // The ambient transaction holds the save and its mark together, and the sync starts once it commits.
+    // Under an ambient transaction EF refuses a transaction of the context's own, and a tree save used to throw.
+    // The context is not told when a TransactionScope commits, so a save of rows it replicates is refused inside one,
+    // before it writes. Under SuppressReplication the ambient transaction holds the save and its mark together, and
+    // the catch-up replicates the root once the scope has committed.
     [Fact]
-    public async Task A_tree_save_inside_a_TransactionScope_marks_in_it_and_replicates_after_it_commits()
+    public async Task A_tree_save_inside_a_TransactionScope_is_refused_and_with_replication_off_marks_in_it_for_the_catch_up()
     {
         await using var host = await Host.CreateAsync("Scope");
         await host.SeedAsync();
@@ -349,8 +370,13 @@ public class ReplicationSqlServerTests
             {
                 var db = scope.ServiceProvider.GetRequiredService<TemporalTreeModel.TDb>();
                 (await db.Cities.SingleAsync(x => x.ID == 2, Ct)).Name = name;
-                await db.SaveChangesAsync(Ct);
-                Assert.Empty(host.Log.Started);
+
+                var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(Ct));
+                Assert.Contains("for which replication waits for the commit", refused.Message);
+                Assert.Contains("TransactionScope", refused.Message);
+
+                using (db.SuppressReplication())
+                    await db.SaveChangesAsync(Ct);
             }
             if (complete)
                 ambient.Complete();
@@ -365,15 +391,15 @@ public class ReplicationSqlServerTests
 
         await RenameInScopeAsync("Basra 3", complete: true);
         await host.Log.AllFinishedAsync();
-        Assert.Equal(["TRoot 3"], host.Log.Started);
-        Assert.Empty(host.Log.Failed);
-        Assert.Equal(["""{"id":"3","Name":"R3","City":"Basra 3"}"""], host.Cosmos.StoredLines("roots"));
-        Assert.Equal("[]", await host.MarkedAsync());
+        Assert.Empty(host.Log.Started);
+        Assert.Equal("[3]", await host.MarkedAsync());
+        await using (var db = host.Bare())
+            Assert.Equal("Basra 3", (await db.Cities.SingleAsync(x => x.ID == 2, Ct)).Name);
     }
 
-    // RV-10. The same for a connection enlisted in a transaction by hand.
+    // The same for a connection enlisted in a transaction by hand.
     [Fact]
-    public async Task A_tree_save_on_a_connection_enlisted_in_a_transaction_replicates_after_it_commits()
+    public async Task A_tree_save_on_a_connection_enlisted_in_a_transaction_is_refused_and_with_replication_off_marks_in_it_for_the_catch_up()
     {
         await using var host = await Host.CreateAsync("Enlisted");
         await host.SeedAsync();
@@ -386,20 +412,25 @@ public class ReplicationSqlServerTests
                 await db.Database.OpenConnectionAsync(Ct);
                 db.Database.EnlistTransaction(transaction);
                 (await db.Cities.SingleAsync(x => x.ID == 2, Ct)).Name = "Basra 2";
-                await db.SaveChangesAsync(Ct);
-                Assert.Empty(host.Log.Started);
+
+                var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(Ct));
+                Assert.Contains("for which replication waits for the commit", refused.Message);
+                Assert.Contains("a transaction the connection is enlisted in", refused.Message);
+
+                using (db.SuppressReplication())
+                    await db.SaveChangesAsync(Ct);
             }
             transaction.Commit();
         }
         await host.Log.AllFinishedAsync();
 
-        Assert.Equal(["TRoot 3"], host.Log.Started);
-        Assert.Empty(host.Log.Failed);
-        Assert.Equal(["""{"id":"3","Name":"R3","City":"Basra 2"}"""], host.Cosmos.StoredLines("roots"));
-        Assert.Equal("[]", await host.MarkedAsync());
+        Assert.Empty(host.Log.Started);
+        Assert.Equal("[3]", await host.MarkedAsync());
+        await using (var bare = host.Bare())
+            Assert.Equal("Basra 2", (await bare.Cities.SingleAsync(x => x.ID == 2, Ct)).Name);
     }
 
-    // RV-04. The revisions list used to leave out every version whose LastSaveDate did not move, and a write outside a
+    // The revisions list used to leave out every version whose LastSaveDate did not move, and a write outside a
     // repository, such as a job's rename through a bare context, leaves LastSaveDate alone. Only the versions in which
     // replication records itself are left out, and only for a replicated type.
     [Fact]
@@ -415,12 +446,16 @@ public class ReplicationSqlServerTests
             await db.SaveChangesAsync(Ct);
             (city, note) = (duhok.ID, memo.ID);
         }
+
+        // Each write is a version of its own only if it begins in a later tick of the server's clock.
+        await host.NextServerTickAsync();
         await using (var db = host.Bare())
         {
             (await db.Cities.SingleAsync(x => x.ID == city, Ct)).Name = "Duhok (renamed by a nightly job)";
             (await db.Notes.SingleAsync(x => x.ID == note, Ct)).Text = "memo (edited by a nightly job)";
             await db.SaveChangesAsync(Ct);      // a bare save stamps no LastSaveDate on an update
         }
+        await host.NextServerTickAsync();
         await using (var db = host.Bare())
         {
             var duhok = await db.Cities.SingleAsync(x => x.ID == city, Ct);
@@ -437,6 +472,7 @@ public class ReplicationSqlServerTests
         Assert.True(IsCurrent(revisions[2]));
 
         // A sync's watermark is replication's own write: it belongs to the revision before it.
+        await host.NextServerTickAsync();
         await using (var db = host.Bare())
             await db.Cities.Where(x => x.ID == city)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastReplicationDate, x => (DateTimeOffset?)x.LastSaveDate), Ct);
@@ -485,7 +521,7 @@ public class ReplicationSqlServerTests
         await db.SaveChangesAsync(Ct);
     }
 
-    // RV-04. The repository reads the row's versions once, with window functions. Each kind of version a row can have is
+    // The repository reads the row's versions once, with window functions. Each kind of version a row can have is
     // here: replication's own writes (a watermark, a mark, a new stamp alone), a write outside a repository, a stamp that
     // changes only in letter case (equal under the column's collation), saves, and a delete followed by an insert of the
     // same key, whose first version does not start where the last one ended. A deleted row's last revision ends at its
@@ -566,7 +602,7 @@ public class ReplicationSqlServerTests
             Assert.Equal(only.To, await db.Cities.TemporalAll().Where(x => x.ID == city).MaxAsync(x => (DateTimeOffset?)EF.Property<DateTime>(x, "PeriodEnd"), Ct));
     }
 
-    // RV-04. The list is an IQueryable, as the revisions endpoint pages and counts it in SQL.
+    // The list is an IQueryable, as the revisions endpoint pages and counts it in SQL.
     [Fact]
     public async Task The_revisions_list_is_filtered_sorted_paged_and_counted_in_SQL()
     {
@@ -601,7 +637,7 @@ public class ReplicationSqlServerTests
         Assert.False(await repository.GetRevisionsAsync(1).AnyAsync(x => x.ValidTo == null, Ct));
     }
 
-    // RV-04. SQL Server shows only the last version that one transaction writes of a row, so the writes of one
+    // SQL Server shows only the last version that one transaction writes of a row, so the writes of one
     // transaction are one version: a row added and changed in one is one revision, and a save that a mark of the same
     // root follows in its transaction is the save's revision. A bare save of a root marks the root in the same
     // transaction, so its one version looks like replication's own write and is left out, as the remarks of
@@ -654,7 +690,7 @@ public class ReplicationSqlServerTests
         Assert.True(IsCurrent(Assert.Single(await host.RevisionsAsync(3))));
     }
 
-    // RV-07. OPENJSON needs compatibility level 130, and a database upgraded from an older version keeps its older
+    // OPENJSON needs compatibility level 130, and a database upgraded from an older version keeps its older
     // level. There the bookkeeping used to fail after the Cosmos writes, so every run threw and its rows stayed dirty.
     // Below 130 the rows go as a list of values, a hundred a statement.
     [Fact]
@@ -692,7 +728,7 @@ public class ReplicationSqlServerTests
         Assert.Equal("[]", await host.MarkedAsync());
     }
 
-    // RV-07. The level is read once per database. A database lowered below 130 afterwards answers the JSON statement
+    // The level is read once per database. A database lowered below 130 afterwards answers the JSON statement
     // with an error, and the write then goes as a list of values once, in the same transaction, and from then on.
     [Fact]
     public async Task A_database_lowered_below_level_130_after_its_level_was_read_gets_a_list_of_values()
@@ -730,7 +766,7 @@ public class ReplicationSqlServerTests
 
     private static readonly string Odd = "-\"" + (char)0xFC + "<>&'\\/" + (char)0x2028 + char.ConvertFromUtf32(0x1F4A1) + new string('x', 3000);
 
-    // RV-07. Both statements write each row's watermark and stamp exactly: a save date with an offset and seven digits,
+    // Both statements write each row's watermark and stamp exactly: a save date with an offset and seven digits,
     // and a stamp with quotes, markup, a line separator, a character outside the basic plane and 3,000 more characters.
     [Theory]
     [InlineData(null)]
@@ -766,11 +802,12 @@ public class ReplicationSqlServerTests
         Assert.Equal(0, again.Selected);
     }
 
-    // RV-10. A context that joined another's transaction with UseTransaction is not told about its commit, so its syncs
-    // start at once. On a database with snapshot reads, a tree sync then read the tree as committed before the change,
-    // wrote that document, and its watermark cleared the root's mark: the root looked replicated with the old tree.
+    // A context that joined another's transaction with UseTransaction is not told about its commit, so its syncs
+    // used to start at once. On a database with snapshot reads, a tree sync then read the tree as committed before the
+    // change, wrote that document, and its watermark cleared the root's mark: the root looked replicated with the old
+    // tree. Such a save is refused, and with replication off its roots are left to the catch-up.
     [Fact]
-    public async Task A_tree_save_in_a_joined_transaction_leaves_its_roots_to_the_catch_up_on_a_snapshot_database()
+    public async Task A_tree_save_in_a_joined_transaction_is_refused_and_with_replication_off_leaves_its_roots_to_the_catch_up_on_a_snapshot_database()
     {
         await using var host = await Host.CreateAsync("Joined", "READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE");
         await host.SeedAsync();
@@ -781,7 +818,7 @@ public class ReplicationSqlServerTests
         await using var joinScope = host.Provider.CreateAsyncScope();
         TemporalTreeModel.TDb Context(IServiceProvider services) => new((DbContextOptions<TemporalTreeModel.TDb>)
             new DbContextOptionsBuilder<TemporalTreeModel.TDb>().UseSqlServer(shared).UseTemporal(true)
-                .UseShiftEntityAfterCommit().UseApplicationServiceProvider(services).Options);
+                .UseApplicationServiceProvider(services).Options);
         await using var owner = Context(ownerScope.ServiceProvider);
         await using var joining = Context(joinScope.ServiceProvider);
 
@@ -789,7 +826,13 @@ public class ReplicationSqlServerTests
         {
             await joining.Database.UseTransactionAsync(transaction.GetDbTransaction(), Ct);
             (await joining.Cities.SingleAsync(x => x.ID == 2, Ct)).Name = "Basra 2";
-            await joining.SaveChangesAsync(Ct);
+
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => joining.SaveChangesAsync(Ct));
+            Assert.Contains("for which replication waits for the commit", refused.Message);
+
+            using (joining.SuppressReplication())
+                await joining.SaveChangesAsync(Ct);
+
             Assert.Empty(host.Log.Started);
             await transaction.CommitAsync(Ct);
         }

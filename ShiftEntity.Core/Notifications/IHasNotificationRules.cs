@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace ShiftSoftware.ShiftEntity.Core.Notifications;
 
 /// <summary>
-/// Lets an entity say which topics a save of it raises, without DI and without a trigger. Implement it on the entity class
+/// Lets an entity say which topics a save of it raises, without DI and without a save handler. Implement it on the entity class
 /// for moments only the host knows, such as "the status became Resolved".
 /// </summary>
 /// <remarks>

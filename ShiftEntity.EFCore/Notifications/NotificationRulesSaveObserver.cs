@@ -9,7 +9,7 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Notifications;
 /// <summary>
 /// Raises what the rules say about the rows a save of the host's context wrote: <see cref="NotificationOptions.RaiseWhenCreated{TEntity}"/>,
 /// an entity's <see cref="IHasNotificationRules{TSelf}"/> and the classes added with
-/// <see cref="NotificationOptions.AddRule{TEntity, TRule}"/>. This is what lets a host drop its after-save triggers.
+/// <see cref="NotificationOptions.AddRule{TEntity, TRule}"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,20 +17,32 @@ namespace ShiftSoftware.ShiftEntity.EFCore.Notifications;
 /// any other type costs nothing extra.
 /// </para>
 /// <para>
-/// The rules run once the save has written and EF has accepted every row, before any other observer and before the
-/// host's save handlers, so each record still holds exactly what the save wrote and nothing is copied. No rule runs
-/// inside EF. It never throws: a rule that fails is logged and the save carries on. The events it raises wait for the
-/// save's commit, as any raise does.
+/// The rules run once the save has written and EF has accepted every row, before any other part of the framework and
+/// before the after-save handlers, so each record still holds exactly what the save wrote and nothing is copied. No
+/// rule runs inside EF. It never throws: a rule that fails is logged and the save carries on. The events it raises wait
+/// for the save's commit, as any raise does.
 /// </para>
 /// <para>
-/// A save under <see cref="ShiftDbContext.SuppressNotifications"/> isn't reported to it. Under
-/// <see cref="ShiftDbContext.SuppressReplication"/> it still runs.
+/// A save under <see cref="ShiftDbContext.SuppressNotifications"/> or <see cref="ShiftDbContext.SuppressAfterCommit"/>
+/// isn't reported to it. Under <see cref="ShiftDbContext.SuppressReplication"/> it still runs.
 /// </para>
 /// </remarks>
-internal sealed class NotificationRulesSaveObserver(IServiceProvider services) : IShiftDbContextSaveObserver, ISavedRowOriginals, IOrderedSaveObserver, ISwitchedSaveObserver
+internal sealed class NotificationRulesSaveObserver(IServiceProvider services)
+    : IShiftDbContextSaveObserver, ISavedRowOriginals, IOrderedSaveObserver, ISwitchedSaveObserver, IWaitsForCommitSaveObserver
 {
     // SuppressNotifications. SuppressReplication doesn't silence the rules.
     public bool IsSuppressed(ShiftDbContext context) => context.NotificationsSuppressed;
+
+    public string Work => "a notification rule";
+
+    public string Switch => "SuppressNotifications()";
+
+    // A rule raises an event, which waits for the commit. Whether it raises one is known only once the row is written.
+    public bool WaitsFor(ShiftDbContext context, Type entityType, bool asChangedRoot) =>
+        !asChangedRoot && RuleSet.DbContextType.IsInstanceOfType(context) && !RulesOrNone(RuleSet, entityType).IsEmpty;
+
+    // Only the rows of the types that have a rule, saved by the context the host registered notifications on.
+    public bool Wants(ShiftDbContext context, Type entityType) => WaitsFor(context, entityType, asChangedRoot: false);
 
     private NotificationRuleSet RuleSet => services.GetRequiredService<NotificationRuleSet>();
 
@@ -248,9 +260,8 @@ internal sealed class NotificationTypeRules<TEntity>(NotificationTopic[] created
             else
             {
                 // The record still holds exactly what this save wrote: the rules run before anything that could change
-                // it. Only a save made from inside this save's write gets ahead of them, and then the row carries a copy
-                // of what was written. A save that changes the record later is a save of its own, asked about on its own.
-                var written = row.Written ?? row.Entity;
+                // it. A save that changes the record later is a save of its own, asked about on its own.
+                var written = row.Entity;
 
                 foreach (var rule in rules)
                 {

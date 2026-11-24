@@ -44,7 +44,7 @@ public sealed class NotificationOptions
 
     /// <summary>
     /// Raises the topic whenever a save creates a record of this type, through a repository or a plain
-    /// <c>SaveChanges</c>, once the save has committed. One line in place of an after-save trigger.
+    /// <c>SaveChanges</c>, once the save has committed. One line in place of a save handler.
     /// </summary>
     /// <remarks>
     /// <typeparamref name="TEntity"/> can also be a base class or an interface, and then every record that is one raises

@@ -54,7 +54,7 @@ public static class ShiftEntityReplicationExtensions
 
     /// <summary>
     /// Records a sync of the row with key <paramref name="id"/>, and nothing else: one UPDATE of the two replication
-    /// columns that is not a save, so it runs no host triggers, no audit backfill and no replication of its own, with
+    /// columns that is not a save, so it runs no save handlers, no audit backfill and no replication of its own, with
     /// query filters ignored. The watermark is <paramref name="replicatedVersion"/>, the
     /// <see cref="IShiftEntityAudit.LastSaveDate"/> of the version the sync replicated (as
     /// <see cref="MarkReplicated{TEntity}"/> copies it), or null for a row a catch-up run failed (see
@@ -85,7 +85,7 @@ public static class ShiftEntityReplicationExtensions
     /// transaction (the caller's, or one of its own): on SQL Server joined to the rows' values as JSON, a thousand rows
     /// a statement, or, on a database below compatibility level 130, which has no <c>OPENJSON</c>, to a list of values,
     /// a hundred rows a statement; on SQLite joined to a list of values, a hundred rows a statement. It is not a save,
-    /// so no host trigger, no audit backfill, no replication and no marking of replication trees runs for it. Other
+    /// so no save handler, no audit backfill, no replication and no marking of replication trees runs for it. Other
     /// providers get one UPDATE per row.
     /// </summary>
     internal static async Task SaveReplicationBookkeepingAsync<TEntity>(this ShiftDbContext db, IReadOnlyList<TEntity> rows,

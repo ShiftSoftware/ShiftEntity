@@ -146,7 +146,7 @@ public class ReplicationTreeShapeTests
     public void A_collection_whose_rows_point_at_the_root_through_a_shadow_foreign_key_is_refused_when_the_model_is_built() =>
         Assert.Contains("cannot include 'Notes'", Refused<ShadowForeignKeyDb>());
 
-    // RV-17. The save and the mark find rows by a key named ID. A part with another key name used to pass and then
+    // The save and the mark find rows by a key named ID. A part with another key name used to pass and then
     // fail every save of it, after EF had accepted the save.
     [Fact]
     public void A_part_whose_key_is_not_named_ID_is_refused_when_the_model_is_built() =>

@@ -140,8 +140,9 @@ public static class ReplicationTreeExtensions
     /// The roots are marked whenever the context declares the tree: also under <c>SuppressReplication()</c>, in a
     /// process that replicates nothing, and in a save that does not accept its changes. The next dirty-only catch-up
     /// rebuilds them. A save that changes nothing but a row's <c>LastReplicationDate</c> and
-    /// <c>LastReplicationStamp</c> marks nothing. Rows that a host's before-save step (a trigger or an interceptor)
-    /// changes during the save are not followed to their roots.
+    /// <c>LastReplicationStamp</c> marks nothing. Rows that a before-save handler changes or adds are followed to
+    /// their roots: the trees are looked at once every handler has run. Rows that an interceptor of the app's
+    /// changes during EF's own write are not.
     /// </para>
     /// <para>
     /// LOUD: the mark has no version. A sync or catch-up that loaded a root before a later change of its tree writes back

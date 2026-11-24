@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,8 +12,8 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// The model the replication pins save: items in categories, notes that are not replicated, and log rows that a host
-/// trigger writes. The pins fix what replication does today, before its engine changes, so the same tests can prove
+/// The model the replication pins save: items in categories, notes that are not replicated, and log rows that a host's
+/// handler writes. The pins fix what replication does today, before its engine changes, so the same tests can prove
 /// that the new engine does the same.
 /// </summary>
 public static class PinModel
@@ -43,7 +42,7 @@ public static class PinModel
         public string Text { get; set; } = "";
     }
 
-    // Replicated, and written by a host trigger from inside another row's save.
+    // Replicated, and written by a host's handler from inside another row's save.
     public sealed class Log : ShiftEntity<Log>, IShiftEntityReplication
     {
         public string Text { get; set; } = "";
@@ -101,7 +100,7 @@ public static class PinModel
 }
 
 /// <summary>
-/// Reads the after-save trigger's own log messages. "Starting" is logged while the save runs; "Succeeded" or "Failed"
+/// Reads the log messages of replication on save. "Starting" is logged while the save runs; "Succeeded" or "Failed"
 /// when the background task has finished, the bookkeeping write included. ShiftIdentity.Tests has a copy
 /// (Infrastructure/ReplicationSyncLog.cs); keep the two the same.
 /// </summary>
@@ -122,7 +121,11 @@ public sealed class ReplicationSyncLog : ILoggerProvider, ILogger
     /// <summary>Every warning, for example a catch-up run's report of failed rows.</summary>
     public IReadOnlyList<string> Warnings => warnings.ToList();
 
-    /// <summary>Waits until every sync started so far has finished. It waits for the trigger's message, not for a set time.</summary>
+    /// <summary>
+    /// Waits until every sync started so far has finished. It waits for the sync's message, not for a set time. A sync
+    /// that failed has finished too, so a test that expects every sync to succeed says so with
+    /// <see cref="AssertNoneFailed"/>.
+    /// </summary>
     public async Task AllFinishedAsync()
     {
         while (waitedFor < started.Count)
@@ -130,6 +133,17 @@ public sealed class ReplicationSyncLog : ILoggerProvider, ILogger
             Assert.True(await finished.WaitAsync(TimeSpan.FromSeconds(30)), "A replication sync did not finish.");
             waitedFor++;
         }
+    }
+
+    /// <summary>
+    /// Fails the test with the whole message of every sync that has failed so far, its exception included. Without it a
+    /// failed sync shows only as a document or a record that is missing, and <c>Assert.Empty(Failed)</c> shows only the
+    /// first characters of the message.
+    /// </summary>
+    public void AssertNoneFailed()
+    {
+        if (!failed.IsEmpty)
+            Assert.Fail($"{failed.Count} of the replication syncs failed:{Environment.NewLine}{string.Join(Environment.NewLine, failed)}");
     }
 
     public ILogger CreateLogger(string categoryName) => this;
@@ -202,22 +216,24 @@ public sealed class PinMapper : IMapper
 
 /// <summary>
 /// One host for a replication pin: a SQLite database, the replication registration under test, a Cosmos DB stand-in
-/// that records every write, and the trigger's log. Each test builds its own.
+/// that records every write, and the log of the syncs. Each test builds its own.
 /// </summary>
 public sealed class ReplicationPinHost : IAsyncDisposable
 {
     public const string Database = "pins";
 
-    private readonly SqliteConnection connection = new("DataSource=:memory:");
+    // A file that every context opens a connection of its own to: the syncs of one save run at once, each with a
+    // context of its own.
+    private readonly SqliteTestFile database = new();
 
     public RecordingCosmos Cosmos { get; } = new(Database);
     public ReplicationSyncLog Log { get; } = new();
     public ServiceProvider Provider { get; }
 
     /// <param name="replication">The replication registration, as a host writes it inside
-    /// <c>AddShiftEntityCosmosDbReplicationTrigger</c>. It gets the Cosmos stand-in's client.</param>
-    /// <param name="services">More registrations: a mapper, a preparer, host triggers.</param>
-    /// <param name="context">More context options, for example a host's own <c>UseTriggers</c> call.</param>
+    /// <c>AddShiftEntityCosmosDbReplicationOnSave</c>. It gets the Cosmos stand-in's client.</param>
+    /// <param name="services">More registrations: a mapper, a preparer, save handlers of the host.</param>
+    /// <param name="context">More context options, for example an interceptor of the host's own.</param>
     /// <param name="containers">The containers the registration writes, with their partition key paths.</param>
     public ReplicationPinHost(
         Action<ShiftEntityCosmosDbOptions, Microsoft.Azure.Cosmos.CosmosClient>? replication,
@@ -228,18 +244,16 @@ public sealed class ReplicationPinHost : IAsyncDisposable
         foreach (var (id, paths) in containers)
             Cosmos.Container(id, paths);
 
-        connection.Open();
-
         var collection = new ServiceCollection();
         collection.AddLogging(x => x.AddProvider(Log));
         collection.AddDbContext<PinModel.Db>(o =>
         {
-            o.UseSqlite(connection);
+            database.Use(o);
             context?.Invoke(o);
         });
 
         if (replication is not null)
-            collection.AddShiftEntityCosmosDbReplicationTrigger<PinModel.Db>(o => replication(o, Cosmos.Client));
+            collection.AddShiftEntityCosmosDbReplicationOnSave<PinModel.Db>(o => replication(o, Cosmos.Client));
 
         services?.Invoke(collection);
         Provider = collection.BuildServiceProvider(validateScopes: true);
@@ -249,7 +263,7 @@ public sealed class ReplicationPinHost : IAsyncDisposable
     }
 
     /// <summary>A context of its own, outside every scope: for setting up rows and for reading what was stored.</summary>
-    public PinModel.Db Bare() => new(new DbContextOptionsBuilder<PinModel.Db>().UseSqlite(connection).Options);
+    public PinModel.Db Bare() => new(database.Use(new DbContextOptionsBuilder<PinModel.Db>()).Options);
 
     /// <summary>The stored row, read with a context of its own.</summary>
     public async Task<T> StoredAsync<T>(long id) where T : ShiftEntity<T>
@@ -267,9 +281,9 @@ public sealed class ReplicationPinHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await Log.AllFinishedAsync();   // no sync may still use the connection
+        await Log.AllFinishedAsync();   // no sync may still use the database
         await Provider.DisposeAsync();
         Cosmos.Dispose();
-        await connection.DisposeAsync();
+        await database.DisposeAsync();
     }
 }

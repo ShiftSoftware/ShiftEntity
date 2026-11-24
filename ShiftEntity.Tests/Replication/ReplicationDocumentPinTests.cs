@@ -9,7 +9,7 @@ using static ShiftSoftware.ShiftEntity.Tests.Replication.PinModel;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins the documents the after-save trigger writes for each shape of registration: through the host's mapper (no
+/// Pins the documents replication on save writes for each shape of registration: through the host's mapper (no
 /// delegate), through a mapping delegate, with a preparer, with a set-up mapping, and with one, two and three partition
 /// key levels. For each shape it pins an insert, an edit, an edit that moves the document, and a hard delete: the
 /// writes, in order, with ids, partition keys and bodies. Written against the engine as it was before the replication
@@ -123,8 +123,8 @@ public class ReplicationDocumentPinTests
     }
 
     // Loads the item's category onto the entity the way Identity's link preparers load the service, department or
-    // brand: a tracking query on the context it is given, which in the trigger is the caller's own context, because
-    // the trigger is resolved in the caller's scope. Records what it was given.
+    // brand: a tracking query on the context it is given, which on save is the caller's own context, because the
+    // preparer is resolved in the caller's scope. Records what it was given.
     public sealed class CategoryPreparer(Db db) : IShiftEntityPrepareForReplicationAsync<Item>
     {
         public static readonly List<string> Calls = new();
@@ -175,7 +175,8 @@ public class ReplicationDocumentPinTests
             """delete items/1 ["1"]""",
         ], host.Cosmos.WriteLines);
 
-        // The preparer set the navigation on the caller's own instance (correction C5 is about this).
+        // The preparer set the navigation on the caller's own instance. A registration with a preparer still changes the
+        // caller's entity; a root replicated from its tree is loaded fresh and leaves the caller's entity alone.
         Assert.Equal("Tools", item.Category?.Name);
         Assert.Empty(host.Log.Failed);
     }

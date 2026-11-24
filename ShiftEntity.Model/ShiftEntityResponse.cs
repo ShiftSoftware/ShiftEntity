@@ -3,6 +3,14 @@ namespace ShiftSoftware.ShiftEntity.Model;
 
 public class ShiftEntityResponse
 {
+    /// <summary>
+    /// The key in <see cref="Additional"/> that marks the answer for a record that was saved although a step that runs
+    /// after the commit failed. Its value is <see langword="true"/>. The status is the one of a successful save, the
+    /// record is in the response, and <see cref="Message"/> says what failed. A client that is not a person tests for
+    /// the key to tell "saved" from "saved, but" without reading text.
+    /// </summary>
+    public const string SavedWithFailure = "SavedWithFailure";
+
     public ShiftEntityResponse() { }
 
     public Message? Message { get; set; }

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -107,10 +106,9 @@ public sealed class ShopTreeHost : IAsyncDisposable
 {
     private static CancellationToken Ct => Xunit.TestContext.Current.CancellationToken;
 
-    // In memory, one connection that every context shares. On disk, a file each context opens a connection of its
-    // own to, for tests that run many syncs at once.
-    private readonly SqliteConnection connection = new("DataSource=:memory:");
-    private readonly string? file;
+    // A file that every context opens a connection of its own to: the tree syncs of one save run at once, each with a
+    // context of its own.
+    private readonly SqliteTestFile database = new();
 
     public RecordingCosmos Cosmos { get; } = new RecordingCosmos(ReplicationPinHost.Database)
         .Container("shops", "/id")
@@ -124,25 +122,19 @@ public sealed class ShopTreeHost : IAsyncDisposable
     /// <param name="services">More registrations.</param>
     /// <param name="context">More context options.</param>
     /// <param name="sqlite">More SQLite options, for example an execution strategy.</param>
-    /// <param name="onDisk">A database file instead of one shared in-memory connection.</param>
     public ShopTreeHost(bool replication = true, Action<IServiceCollection>? services = null,
-        Action<DbContextOptionsBuilder>? context = null, Action<SqliteDbContextOptionsBuilder>? sqlite = null, bool onDisk = false)
+        Action<DbContextOptionsBuilder>? context = null, Action<SqliteDbContextOptionsBuilder>? sqlite = null)
     {
-        if (onDisk)
-            file = Path.Combine(Path.GetTempPath(), "shop-tree-" + Guid.NewGuid().ToString("N") + ".db");
-        else
-            connection.Open();
-
         var collection = new ServiceCollection();
         collection.AddLogging(x => x.AddProvider(Log));
         collection.AddDbContext<Db>(o =>
         {
-            UseDatabase(o, sqlite).AddInterceptors(Sql);
+            database.Use(o, sqlite).AddInterceptors(Sql);
             context?.Invoke(o);
         });
 
         if (replication)
-            collection.AddShiftEntityCosmosDbReplicationTrigger<Db>(o =>
+            collection.AddShiftEntityCosmosDbReplicationOnSave<Db>(o =>
                 o.SetUpReplication<Db, Shop>(Cosmos.Client, ReplicationPinHost.Database)
                     .ReplicateTree<ShopDocument>("shops", x => x.id, x => Document(x.Entity)));
         collection.AddShiftEntityCosmosDbReplication<Db>();
@@ -152,15 +144,10 @@ public sealed class ShopTreeHost : IAsyncDisposable
 
         using var db = Bare();
         db.Database.EnsureCreated();
-        if (file is not null)
-            db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL");
     }
 
-    private DbContextOptionsBuilder UseDatabase(DbContextOptionsBuilder options, Action<SqliteDbContextOptionsBuilder>? sqlite = null) =>
-        file is null ? options.UseSqlite(connection, sqlite) : options.UseSqlite($"Data Source={file};Pooling=False", sqlite);
-
     /// <summary>A context of its own, outside every scope and without replication.</summary>
-    public Db Bare() => new((DbContextOptions<Db>)UseDatabase(new DbContextOptionsBuilder<Db>()).Options);
+    public Db Bare() => new(database.Use(new DbContextOptionsBuilder<Db>()).Options);
 
     /// <summary>
     /// Two lands, districts and towns, two owners and three products; shop 1 in town 1 of owner 1, shop 2 in town 2 of
@@ -184,6 +171,13 @@ public sealed class ShopTreeHost : IAsyncDisposable
             new Shop { Name = "Dock", Town = towns[1], Owner = owners[1] },
             new Shop { Name = "Mill", Town = towns[0], Owner = owners[1] });
         await db.SaveChangesAsync(Ct);
+        await db.Shops.ExecuteUpdateAsync(s => s.SetProperty(x => x.LastReplicationDate, x => (DateTimeOffset?)x.LastSaveDate), Ct);
+    }
+
+    /// <summary>Records every shop as replicated again, so that a test sees only the marks of its next save.</summary>
+    public async Task SeedMarksAsync()
+    {
+        await using var db = Bare();
         await db.Shops.ExecuteUpdateAsync(s => s.SetProperty(x => x.LastReplicationDate, x => (DateTimeOffset?)x.LastSaveDate), Ct);
     }
 
@@ -230,12 +224,9 @@ public sealed class ShopTreeHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await Log.AllFinishedAsync();   // no sync may still use the connection
+        await Log.AllFinishedAsync();   // no sync may still use the database
         await Provider.DisposeAsync();
         Cosmos.Dispose();
-        await connection.DisposeAsync();
-        if (file is not null)
-            foreach (var path in new[] { file, file + "-wal", file + "-shm" })
-                File.Delete(path);
+        await database.DisposeAsync();
     }
 }

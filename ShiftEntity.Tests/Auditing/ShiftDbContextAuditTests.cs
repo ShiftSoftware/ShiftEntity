@@ -353,4 +353,34 @@ public class ShiftDbContextAuditTests
             Assert.False(order.AuditFieldsAreSet);
         }
     }
+
+    [Fact]
+    public async Task SuppressAuditStamping_ScopesEndedOutOfOrder_LeaveStampingOn()
+    {
+        // Each scope takes out its own entry. The outer scope ending first leaves the inner one on, and once both have
+        // ended, in whatever order, stamping is on again.
+        using var provider = AuditingHost.Build(Actor);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var outer = db.SuppressAuditStamping();
+        var inner = db.SuppressAuditStamping();
+
+        outer.Dispose();
+
+        var silent = new OrderEntity { Number = "inner-still-on" };
+        db.Orders.Add(silent);
+        await db.SaveChangesAsync();
+
+        Assert.False(silent.AuditFieldsAreSet);
+
+        inner.Dispose();
+
+        var stamped = new OrderEntity { Number = "both-ended" };
+        db.Orders.Add(stamped);
+        await db.SaveChangesAsync();
+
+        Assert.True(stamped.AuditFieldsAreSet);
+        Assert.Equal(ActorUser, stamped.CreatedByUserID);
+    }
 }

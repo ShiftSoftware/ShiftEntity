@@ -9,7 +9,7 @@ namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 /// <summary>
 /// Unit tests for <see cref="LastReplicationStamp"/> — the model persisted on each replicated row that records the
 /// Cosmos document id + partition-key levels it was last synced under. Drives the "delete the stale document under
-/// its OLD id + key when either changes" behaviour used by both replication paths (trigger and catch-up function).
+/// its OLD id + key when either changes" behaviour used by both replication paths (on save and the catch-up function).
 /// </summary>
 public class LastReplicationStampTests
 {

@@ -1,24 +1,24 @@
-using EntityFrameworkCore.Triggered;
-using EntityFrameworkCore.Triggered.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication;
 using ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
+using ShiftSoftware.ShiftEntity.EFCore;
 using Xunit;
 using static ShiftSoftware.ShiftEntity.Tests.Replication.PinModel;
 
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins how replication sits in the save: when a sync starts relative to an explicit transaction, which save methods
-/// replicate, host triggers that keep firing around it and that save again from inside their own after-save step, what
-/// a refused write leaves on the row, and that replication never changes an audit column.
+/// Pins how replication sits in the save: when a sync starts relative to an explicit transaction, which saves
+/// replicate, what a host's save handlers do to the document (a before-save handler's change reaches it, and a row an
+/// after-save handler saves again is written once), what a refused write leaves on the row, and that replication never
+/// changes an audit column.
 /// </summary>
 /// <remarks>
-/// Two pins were corrected when replication moved off the trigger library, each named in its comment: C1 (a sync
-/// started before the commit of an explicit transaction, so a rolled-back save still reached Cosmos DB; now it starts
-/// after the commit) and C2 (<c>SaveChangesWithoutTriggersAsync</c> skipped replication; now it replicates, and
-/// <c>SuppressReplication()</c> is the way to skip it).
+/// Two pins were corrected when replication moved off the trigger library, each named in its comment: "the sync waits
+/// for the commit" (a sync started before the commit of an explicit transaction, so a rolled-back save still reached
+/// Cosmos DB; now it starts after the commit) and "every save replicates" (a save that went around the triggers skipped
+/// replication; every save replicates now, and <c>SuppressReplication()</c> is the way to skip it).
 /// </remarks>
 public class ReplicationSavePipelinePinTests
 {
@@ -33,8 +33,8 @@ public class ReplicationSavePipelinePinTests
             .Replicate<ItemDocument>("items", x => x.id, x => Document(x.Entity)),
         services, context, ("items", ["/id"]));
 
-    // C1. Before the correction the sync started during SaveChanges, before the commit, and a rollback did not stop it:
-    // the document of a row that did not exist was written.
+    // The sync waits for the commit. Before the correction the sync started during SaveChanges, before the commit, and a
+    // rollback did not stop it: the document of a row that did not exist was written.
     [Fact]
     public async Task Inside_an_explicit_transaction_nothing_starts_before_the_commit_and_a_rolled_back_save_writes_nothing()
     {
@@ -59,7 +59,7 @@ public class ReplicationSavePipelinePinTests
         Assert.Empty(host.Cosmos.Writes);
     }
 
-    // C1. Before the correction the sync started during SaveChanges, before the commit.
+    // The sync waits for the commit. Before the correction the sync started during SaveChanges, before the commit.
     [Fact]
     public async Task Inside_an_explicit_transaction_that_commits_the_sync_starts_after_the_commit()
     {
@@ -86,16 +86,19 @@ public class ReplicationSavePipelinePinTests
         Assert.Equal((DateTimeOffset?)(await host.StoredAsync<Item>(1)).LastSaveDate, (await host.StoredAsync<Item>(1)).LastReplicationDate);
     }
 
-    // C2. Before the correction SaveChangesWithoutTriggersAsync started no sync and left the row dirty.
+    // Every save replicates. A save with every handler switched off still replicates: replication is a part of the
+    // framework, not a handler. Before the correction a save that went around the triggers started no sync and left the
+    // row dirty.
     [Fact]
-    public async Task SaveChangesWithoutTriggersAsync_replicates_like_any_save()
+    public async Task A_save_with_every_handler_switched_off_replicates_like_any_save()
     {
         await using var host = ItemHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
 
         db.Items.Add(new Item { Code = "a", Region = "north" });
-        await db.SaveChangesWithoutTriggersAsync(Ct);
+        using (db.SuppressAllSaveHandlers())
+            await db.SaveChangesAsync(Ct);
         await host.Log.AllFinishedAsync();
 
         Assert.Equal(["Item 1"], host.Log.Started);
@@ -104,7 +107,7 @@ public class ReplicationSavePipelinePinTests
         Assert.Equal((DateTimeOffset?)stored.LastSaveDate, stored.LastReplicationDate);
     }
 
-    // C2: what a save that must not replicate uses now.
+    // Every save replicates: what a save that must not replicate uses now.
     [Fact]
     public async Task A_save_under_SuppressReplication_replicates_nothing_and_leaves_the_row_dirty()
     {
@@ -153,24 +156,27 @@ public class ReplicationSavePipelinePinTests
         Assert.Equal(((DateTimeOffset?)null, (string?)null), (stored.LastReplicationDate, stored.LastReplicationStamp));
     }
 
-    // A host trigger that numbers new items after the insert, with a second save on the same context. It mirrors a
-    // platform module's after-save trigger that numbers new claims, which hosts register through DI like this.
-    public sealed class NumberingTrigger(Db db) : IAfterSaveTrigger<Item>
+    // A host's handler that numbers new items after the insert, with a second save on the same context, inside the
+    // save's transaction.
+    /// <summary>When item "a" is added, adds a second item to the same save.</summary>
+    public sealed class TwinHandler : IBeforeSaveHandler<Item>
     {
-        public async Task AfterSave(ITriggerContext<Item> context, CancellationToken cancellationToken)
+        public ValueTask BeforeSaveAsync(PendingRows<Item> rows, CancellationToken cancellationToken)
         {
-            if (context.ChangeType != ChangeType.Added)
-                return;
+            foreach (var row in rows)
+                if (row.Change == RowChange.Added && row.Entity.Code == "a")
+                    rows.Db.Add(new Item { Code = "twin of a", Region = row.Entity.Region });
 
-            context.Entity.Rank = await db.Items.Where(x => x.ID != context.Entity.ID).CountAsync(cancellationToken) + 1;
-            await db.SaveChangesAsync(cancellationToken);
+            return ValueTask.CompletedTask;
         }
     }
 
+    // A row that a before-save handler adds is written by the save, so it is stamped and replicated as any other row
+    // of the save. A row that a trigger added was written unstamped.
     [Fact]
-    public async Task A_row_that_a_host_trigger_saves_again_from_inside_its_after_save_step_is_replicated_with_that_change()
+    public async Task A_row_that_a_before_save_handler_adds_is_stamped_and_replicated()
     {
-        await using var host = ItemHost(services => services.AddTransient<IAfterSaveTrigger<Item>, NumberingTrigger>());
+        await using var host = ItemHost(services => services.AddSaveHandler<TwinHandler>());
         await using var scope = host.Provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
 
@@ -178,62 +184,79 @@ public class ReplicationSavePipelinePinTests
         await db.SaveChangesAsync(Ct);
         await host.Log.AllFinishedAsync();
 
+        host.Log.AssertNoneFailed();
+        Assert.Equal(["Item 1", "Item 2"], host.Log.Started.Order());
+        Assert.Equal(2, host.Cosmos.WriteLines.Count);
+        Assert.Contains(host.Cosmos.WriteLines, line => line.Contains("\"Code\":\"twin of a\""));
+
+        await using var bare = host.Bare();
+        var twin = await bare.Items.AsNoTracking().SingleAsync(x => x.Code == "twin of a", Ct);
+
+        Assert.NotEqual(default, twin.CreateDate);
+        Assert.Equal((DateTimeOffset?)twin.LastSaveDate, twin.LastReplicationDate);
+    }
+
+    public sealed class NumberingHandler : IAfterSaveHandler<Item>
+    {
+        public async ValueTask AfterSaveAsync(SavedRows<Item> rows, CancellationToken cancellationToken)
+        {
+            var db = (Db)rows.Db;
+            var numbered = false;
+
+            foreach (var row in rows)
+            {
+                if (row.Change != RowChange.Added)
+                    continue;
+
+                row.Entity.Rank = await db.Items.Where(x => x.ID != row.Entity.ID).CountAsync(cancellationToken) + 1;
+                numbered = true;
+            }
+
+            if (numbered)
+                await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task A_row_that_an_after_save_handler_saves_again_is_replicated_once_with_that_change()
+    {
+        await using var host = ItemHost(services => services.AddSaveHandler<NumberingHandler>());
+        await using var scope = host.Provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Db>();
+
+        db.Items.Add(new Item { Code = "a", Region = "north" });
+        await db.SaveChangesAsync(Ct);
+        await host.Log.AllFinishedAsync();
+
+        // Both saves ran in the one transaction the context opened for the first, so their syncs of the row started
+        // together at its commit, as one: the insert of the row as it was committed.
         var stored = await host.StoredAsync<Item>(1);
         Assert.Equal(1, stored.Rank);
         Assert.Equal(
         [
             """upsert items/1 {"id":"1","Region":"north","ItemType":"Item","Rank":1,"Code":"a","CategoryID":null,"CategoryName":null,"Category":null}""",
-            """upsert items/1 {"id":"1","Region":"north","ItemType":"Item","Rank":1,"Code":"a","CategoryID":null,"CategoryName":null,"Category":null}""",
         ], host.Cosmos.WriteLines);
-        Assert.Equal(["Item 1", "Item 1"], host.Log.Started);
-        Assert.Empty(host.Log.Failed);
+        Assert.Equal(["Item 1"], host.Log.Started);
+        host.Log.AssertNoneFailed();
     }
 
-    // Host triggers in the three ways hosts register them, recording what they see.
-    public sealed class HostTriggerCalls
+    // A host's handler that tidies an item before it is written.
+    public sealed class TrimmingHandler : IBeforeSaveHandler<Item>
     {
-        public List<string> Calls { get; } = new();
-        public void Add(string call) { lock (Calls) Calls.Add(call); }
-    }
-
-    public sealed class OptionsBeforeSave(HostTriggerCalls calls) : IBeforeSaveTrigger<Item>
-    {
-        public Task BeforeSave(ITriggerContext<Item> context, CancellationToken cancellationToken)
+        public ValueTask BeforeSaveAsync(PendingRows<Item> rows, CancellationToken cancellationToken)
         {
-            calls.Add($"options before {context.ChangeType} {context.Entity.Code}");
-            context.Entity.Code = context.Entity.Code.Trim();
-            return Task.CompletedTask;
-        }
-    }
+            foreach (var row in rows)
+                if (row.Change != RowChange.Deleted)
+                    row.Entity.Code = row.Entity.Code.Trim();
 
-    public sealed class ServiceAfterSave(HostTriggerCalls calls) : IAfterSaveTrigger<Item>
-    {
-        public Task AfterSave(ITriggerContext<Item> context, CancellationToken cancellationToken)
-        {
-            calls.Add($"service after {context.ChangeType} {context.Entity.Code}");
-            return Task.CompletedTask;
-        }
-    }
-
-    public sealed class OpenBeforeSave<T>(HostTriggerCalls calls) : IBeforeSaveTrigger<T> where T : class
-    {
-        public Task BeforeSave(ITriggerContext<T> context, CancellationToken cancellationToken)
-        {
-            calls.Add($"open before {context.ChangeType} {typeof(T).Name}");
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 
     [Fact]
-    public async Task Host_triggers_keep_firing_whichever_way_the_host_registers_them()
+    public async Task What_a_before_save_handler_changes_reaches_the_document()
     {
-        var calls = new HostTriggerCalls();
-        await using var host = ItemHost(
-            services => services
-                .AddSingleton(calls)
-                .AddTransient<IAfterSaveTrigger<Item>, ServiceAfterSave>()
-                .AddTransient(typeof(IBeforeSaveTrigger<>), typeof(OpenBeforeSave<>)),
-            context => context.UseTriggers(x => x.AddTrigger<OptionsBeforeSave>()));
+        await using var host = ItemHost(services => services.AddSaveHandler<TrimmingHandler>());
         await using var scope = host.Provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
 
@@ -247,58 +270,11 @@ public class ReplicationSavePipelinePinTests
         await db.SaveChangesAsync(Ct);
         await host.Log.AllFinishedAsync();
 
-        // The library raises an open generic trigger once for each type the entity is: its class, every base class and
-        // every interface. A trigger that should run for one type has to constrain itself to it.
-        string[] ItemTypes(string change) =>
-        [
-            $"open before {change} Object",
-            $"open before {change} ShiftEntityBase",
-            $"open before {change} ShiftEntityBase`1",
-            $"open before {change} IShiftEntityAudit",
-            $"open before {change} ShiftEntity`1",
-            $"open before {change} IShiftEntityReplication",
-            $"open before {change} Item",
-        ];
-
-        Assert.Equal(
-        [
-            .. ItemTypes("Added"),
-            "options before Added  a ",
-            "open before Added Object",
-            "open before Added ShiftEntityBase",
-            "open before Added ShiftEntityBase`1",
-            "open before Added IShiftEntityAudit",
-            "open before Added ShiftEntity`1",
-            "open before Added Note",
-            "service after Added a",
-            .. ItemTypes("Modified"),
-            "options before Modified  b ",
-            "service after Modified b",
-        ], calls.Calls, StringComparer.Ordinal);
-
-        // The before-save trigger's change reached the document.
         Assert.Equal(
         [
             NorthA,
             """upsert items/1 {"id":"1","Region":"north","ItemType":"Item","Rank":0,"Code":"b","CategoryID":null,"CategoryName":null,"Category":null}""",
         ], host.Cosmos.WriteLines);
-    }
-
-    [Fact]
-    public async Task Host_triggers_registered_through_DI_fire_even_when_only_the_replication_registration_switches_the_triggers_on()
-    {
-        var calls = new HostTriggerCalls();
-        await using var host = ItemHost(services => services
-            .AddSingleton(calls)
-            .AddTransient<IAfterSaveTrigger<Item>, ServiceAfterSave>());
-        await using var scope = host.Provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<Db>();
-
-        db.Items.Add(new Item { Code = "a", Region = "north" });
-        await db.SaveChangesAsync(Ct);
-        await host.Log.AllFinishedAsync();
-
-        Assert.Equal(["service after Added a"], calls.Calls);
     }
 
     [Fact]
@@ -311,7 +287,7 @@ public class ReplicationSavePipelinePinTests
         await using var scope = host.Provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
 
-        // The trigger path. The values are set by hand, so the context's insert backfill keeps them.
+        // The save path. The values are set by hand, so the context's insert backfill keeps them.
         db.Items.Add(new Item
         {
             Code = "a", Region = "north", CreateDate = created, CreatedByUserID = 5, LastSaveDate = saved, LastSavedByUserID = 6,
@@ -319,7 +295,7 @@ public class ReplicationSavePipelinePinTests
         await db.SaveChangesAsync(Ct);
         await host.Log.AllFinishedAsync();
 
-        // The catch-up path, on a dirty row written without triggers.
+        // The catch-up path, on a dirty row written through a context that replicates nothing.
         await using (var setup = host.Bare())
         {
             setup.Items.Add(new Item

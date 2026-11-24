@@ -45,7 +45,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
 		<PackageReference Include="Microsoft.Azure.Cosmos" Version="3.64.0" />

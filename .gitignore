@@ -37,3 +37,6 @@
 # the per-project entries above are kept but are now redundant).
 [Bb]in/
 [Oo]bj/
+
+# What BenchmarkDotNet writes where ShiftEntity.Benchmarks is run.
+BenchmarkDotNet.Artifacts/

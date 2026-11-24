@@ -9,7 +9,7 @@ using Xunit;
 namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
-/// Pins the after-save trigger's bookkeeping write. The trigger records a successful sync from a background task, in
+/// Pins the bookkeeping write of replication on save. The sync records its own success from a background task, in
 /// a context of its own, while the entity it holds is still the caller's instance: tracked by the caller's context and
 /// free to gain related rows before the task gets there (a unit of work with several saves, such as a seeder). The
 /// write must change the two replication columns of that one row and nothing else, whatever the caller has linked to
@@ -66,7 +66,7 @@ public class ReplicationBookkeepingTests : IDisposable
         using var caller = NewContext();
         var branch = new BookkeepingBranch { Name = "Branch" };
         caller.Branches.Add(branch);
-        await caller.SaveChangesAsync(ct);                 // the save whose trigger starts the sync
+        await caller.SaveChangesAsync(ct);                 // the save that starts the sync
 
         branch.Links.Add(new BookkeepingLink { Name = "Link" }); // the caller's next step, before the sync records
 

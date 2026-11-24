@@ -1,8 +1,5 @@
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Transactions;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ShiftSoftware.ShiftEntity.Core;
@@ -29,19 +26,19 @@ namespace ShiftSoftware.ShiftEntity.CosmosDbReplication.Services;
 /// The saves one context makes in one transaction start their syncs together at its commit, so one row's syncs are
 /// combined there and the document matches the row as committed: a row added and deleted again in the transaction
 /// starts nothing, a row deleted and added again with the same key is deleted and then written, in that order, and
-/// otherwise one sync writes the row's last state. That holds for an explicit transaction and for an ambient
-/// (<c>TransactionScope</c>) or enlisted one. Without a transaction each save's syncs start when it ends, as before.
+/// otherwise one sync writes the row's last state. A save that is undone, by its own failure or by a rollback to a
+/// savepoint, takes its syncs with it. Without a transaction each save's syncs start when it ends, as before.
 /// </para>
 /// <para>
-/// In a transaction the context does not follow, such as one it joined with <c>UseTransaction</c>, the syncs start at
-/// once, before the commit, as they did before replication waited for commits. A sync that loads a replication tree is
-/// not started there: it would read the tree from its own connection before the commit, and under snapshot reads that
-/// is the tree before the change, while its watermark would clear the mark the save made. The save leaves those roots
-/// due for the catch-up (marked, new, or saved after their watermark), which replicates them once the transaction has
+/// In a transaction the context does not follow (a <c>TransactionScope</c>, or one it joined with
+/// <c>UseTransaction</c>) the syncs could only start before the commit: a tree sync would then read the tree from its
+/// own connection as it was before the change, and its watermark would clear the mark the save made. So the context
+/// refuses such a save before it writes, when it has rows this observer replicates (see <see cref="WaitsFor"/>). Under
+/// <c>SuppressReplication</c> the save goes through, and the catch-up replicates its rows once the transaction has
 /// committed.
 /// </para>
 /// </remarks>
-internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services) : IShiftDbContextSaveObserver
+internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services) : IShiftDbContextSaveObserver, IWaitsForCommitSaveObserver
 {
     /// <summary>
     /// At most this many syncs that load a replication tree run at once for one save, or for one transaction's commit.
@@ -56,12 +53,30 @@ internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services)
 
     private delegate Sync? PrepareRoot(long id, IServiceProvider registrations);
 
-    // One starter of each kind per entity type, or null for a type that cannot be registered for replication.
-    private static readonly ConcurrentDictionary<Type, (PrepareRow Row, PrepareRoot Root)?> starters = new();
+    private delegate bool IsRegistered(IServiceProvider registrations, bool withTreeDocument);
 
-    // The syncs the saves of a transaction queued, by context, until that transaction commits. A later save of the same
-    // transaction adds to them.
-    private static readonly ConditionalWeakTable<ShiftDbContext, Batch> waiting = new();
+    // One starter of each kind per entity type, or null for a type that cannot be registered for replication.
+    private static readonly ConcurrentDictionary<Type, (PrepareRow Row, PrepareRoot Root, IsRegistered Registered)?> starters = new();
+
+    public string Work => "replication";
+
+    public string Switch => "SuppressReplication()";
+
+    // Only the rows of the types that can be replicated. Whether a type has a registration is asked when a row of it
+    // was saved.
+    public bool Wants(ShiftDbContext context, Type entityType) =>
+        typeof(IShiftEntityReplication).IsAssignableFrom(entityType) && StartersFor(entityType) is not null;
+
+    public bool WaitsFor(ShiftDbContext context, Type entityType, bool asChangedRoot)
+    {
+        if (StartersFor(entityType) is not { } start || services.GetService<ShiftEntityCosmosDbOptions>() is not { } options)
+            return false;
+
+        using var registrations = options.internalServices.BuildServiceProvider();
+
+        // A root that changed through another row of its tree is replicated only as a tree document.
+        return start.Registered(registrations, asChangedRoot);
+    }
 
     public async ValueTask SavedAsync(ShiftDbContext context, SaveReport report, CancellationToken cancellationToken)
     {
@@ -108,43 +123,16 @@ internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services)
         if (syncs is null)
             return;
 
-        var transaction = TransactionOf(context);
-        if (transaction is not null && waiting.TryGetValue(context, out var open) && Equals(open.Transaction, transaction) && !open.Started)
-        {
-            open.Add(syncs);
-            return;
-        }
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
+        var logger = services.GetRequiredService<ILogger<CosmosDbReplicationSaveObserver>>();
 
-        // Taken now: an ambient transaction can complete after the caller's scope has ended.
-        var batch = new Batch(services.GetRequiredService<IServiceScopeFactory>(),
-            services.GetRequiredService<ILogger<CosmosDbReplicationSaveObserver>>(), syncs);
-
-        // AfterCommit runs the batch at once while a transaction is open only when the context does not follow that
-        // transaction: one it joined with UseTransaction, or any when its options lack UseShiftEntityAfterCommit.
-        batch.BeforeCommit = transaction is not null;
-        context.AfterCommit(batch.Start);
-        batch.BeforeCommit = false;
-
-        if (!batch.Started && transaction is not null)
-        {
-            batch.Transaction = transaction;
-            waiting.AddOrUpdate(context, batch);
-        }
+        // The syncs of this save wait for the commit in the save's unit. The saves that commit together start theirs
+        // as one batch, where the first of them queued it, and a save that is undone drops out of it.
+        context.AfterCommitTogether(typeof(CosmosDbReplicationSaveObserver), syncs,
+            saves => new Batch(scopes, logger, saves.SelectMany(save => (List<Sync>)save).ToList()).Start());
     }
 
-    // The transaction a save ran in, as AfterCommit follows it: the context's explicit transaction, or else the ambient
-    // or enlisted one, by its local identifier. Null when there is none.
-    private static object? TransactionOf(ShiftDbContext context)
-    {
-        if (context.Database.CurrentTransaction is { } current)
-            return current.TransactionId;
-
-        var ambient = Transaction.Current ??
-            (context.Database.IsRelational() ? context.Database.GetEnlistedTransaction() : null);
-        return ambient?.TransactionInformation.LocalIdentifier;
-    }
-
-    private static (PrepareRow Row, PrepareRoot Root)? StartersFor(Type entityType) => starters.GetOrAdd(entityType, type =>
+    private static (PrepareRow Row, PrepareRoot Root, IsRegistered Registered)? StartersFor(Type entityType) => starters.GetOrAdd(entityType, type =>
     {
         // The registrations are generic over ShiftEntity<T> of the replicated type itself, as the trigger was. A row of
         // a type derived from it (mapped to its table) replicates through the base type's registration, as the
@@ -158,17 +146,22 @@ internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services)
             MethodInfo Method(string name) =>
                 typeof(CosmosDbReplicationSaveObserver).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static)!.MakeGenericMethod(registered);
 
-            return (Method(nameof(PrepareRowAsync)).CreateDelegate<PrepareRow>(), Method(nameof(PrepareTreeSync)).CreateDelegate<PrepareRoot>());
+            return (Method(nameof(PrepareRowAsync)).CreateDelegate<PrepareRow>(), Method(nameof(PrepareTreeSync)).CreateDelegate<PrepareRoot>(),
+                Method(nameof(HasRegistration)).CreateDelegate<IsRegistered>());
         }
 
         return null;
     });
 
+    private static bool HasRegistration<EntityType>(IServiceProvider registrations, bool withTreeDocument)
+        where EntityType : ShiftEntity<EntityType>, IShiftEntityReplication =>
+        registrations.GetService<CosmosDbOnSaveReferenceOperations<EntityType>>() is { } operations && (!withTreeDocument || operations.HasTreeDocument);
+
     private static async ValueTask<Sync?> PrepareRowAsync<EntityType>(object row, SavedRowChange change,
         IServiceProvider callerServices, IServiceProvider registrations)
         where EntityType : ShiftEntity<EntityType>, IShiftEntityReplication
     {
-        var operations = registrations.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();
+        var operations = registrations.GetService<CosmosDbOnSaveReferenceOperations<EntityType>>();
         if (operations is null)
             return null;
 
@@ -190,7 +183,7 @@ internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services)
     private static Sync? PrepareTreeSync<EntityType>(long id, IServiceProvider registrations)
         where EntityType : ShiftEntity<EntityType>, IShiftEntityReplication
     {
-        var operations = registrations.GetService<CosmosDbTriggerReferenceOperations<EntityType>>();
+        var operations = registrations.GetService<CosmosDbOnSaveReferenceOperations<EntityType>>();
         if (operations is null || !operations.HasTreeDocument)
             return null;
 
@@ -214,34 +207,12 @@ internal sealed class CosmosDbReplicationSaveObserver(IServiceProvider services)
     // The syncs that start together: one save's, or one transaction's at its commit.
     private sealed class Batch(IServiceScopeFactory scopes, ILogger logger, List<Sync> syncs)
     {
-        // The transaction whose commit starts the batch: an explicit transaction's ID, or an ambient one's local
-        // identifier.
-        public object? Transaction { get; set; }
-        public bool Started { get; private set; }
-
-        // Whether a Start now runs before the save's transaction has committed (see SavedAsync).
-        public bool BeforeCommit { get; set; }
-
-        public void Add(List<Sync> more) => syncs.AddRange(more);
-
         public void Start()
         {
-            Started = true;
-
             var plans = new Dictionary<(Type, long), List<Sync>>();
             var order = new List<List<Sync>>();
             foreach (var sync in syncs)
             {
-                // Before the commit, a sync that loads a tree is left to the catch-up (see the class remarks). A
-                // delete loads nothing and runs, as a plain row's sync does: the catch-up never sees a deleted row.
-                if (BeforeCommit && sync.LoadsTree && sync.Kind != SyncKind.Deleted)
-                {
-                    logger.LogInformation("CosmosDB Syncing of {entityType} - With ID: {entityID} is left to the catch-up: the save " +
-                        "ran in a transaction this context does not follow, and the tree can only be read once it has committed.",
-                        sync.LoggedType, sync.Id);
-                    continue;
-                }
-
                 if (!plans.TryGetValue((sync.Registration, sync.Id), out var plan))
                 {
                     plans[(sync.Registration, sync.Id)] = plan = new();

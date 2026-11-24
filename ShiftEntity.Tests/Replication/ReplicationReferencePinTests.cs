@@ -8,10 +8,10 @@ namespace ShiftSoftware.ShiftEntity.Tests.Replication;
 
 /// <summary>
 /// Pins reference updates: <c>UpdateReference</c>, which merges the saved row onto every document that refers to it,
-/// and <c>UpdatePropertyReference</c>, which patches one member of those documents. The after-save trigger runs them
+/// and <c>UpdatePropertyReference</c>, which patches one member of those documents. Replication on save runs them
 /// for an edit only, never for an insert or a delete, after the row's own document and in the order they were
 /// registered. The pins fix the queries that find the documents (the SQL text the finders produce) and the bodies of
-/// the writes, on the trigger path and on the catch-up path, and what a refused reference write leaves on the row.
+/// the writes, on the save path and on the catch-up path, and what a refused reference write leaves on the row.
 /// </summary>
 public class ReplicationReferencePinTests
 {
@@ -29,7 +29,7 @@ public class ReplicationReferencePinTests
         Category = new CategoryReference { id = "1", Name = "Tools" },
     };
 
-    private static ReplicationPinHost TriggerHost() => new(
+    private static ReplicationPinHost OnSaveHost() => new(
         (o, client) => o.SetUpReplication<Db, Category>(client, ReplicationPinHost.Database)
             .Replicate<CategoryDocument>("categories", x => x.id,
                 x => new CategoryDocument { id = x.Entity.ID.ToString(), Name = x.Entity.Name })
@@ -44,7 +44,7 @@ public class ReplicationReferencePinTests
     [Fact]
     public async Task An_edit_updates_the_references_after_the_rows_own_document_and_an_insert_or_delete_does_not()
     {
-        await using var host = TriggerHost();
+        await using var host = OnSaveHost();
         host.Cosmos.Seed("items", Referring());
 
         await using var scope = host.Provider.CreateAsyncScope();
@@ -93,7 +93,7 @@ public class ReplicationReferencePinTests
     [Fact]
     public async Task An_edit_that_finds_no_referring_document_writes_only_the_rows_own_document()
     {
-        await using var host = TriggerHost();
+        await using var host = OnSaveHost();
 
         await using var scope = host.Provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<Db>();
@@ -122,7 +122,7 @@ public class ReplicationReferencePinTests
     [Fact]
     public async Task A_refused_reference_write_leaves_the_row_dirty_and_the_sync_logs_its_failure()
     {
-        await using var host = TriggerHost();
+        await using var host = OnSaveHost();
         host.Cosmos.Seed("items", Referring());
 
         await using var scope = host.Provider.CreateAsyncScope();

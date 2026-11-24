@@ -89,7 +89,7 @@ public class AttentionSavePipelineTests
         public RecordingDispatcher Dispatcher => Provider.GetRequiredService<RecordingDispatcher>();
         public Commands Commands => Provider.GetRequiredService<Commands>();
 
-        public static Host Start(Action<IServiceCollection>? configure = null, bool afterCommit = true)
+        public static Host Start(Action<IServiceCollection>? configure = null)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             connection.Open();
@@ -98,12 +98,7 @@ public class AttentionSavePipelineTests
             services.AddLogging();
             services.AddSingleton<Commands>();
             services.AddDbContext<AttentionTestDbContext>((provider, options) =>
-            {
-                options.UseSqlite(connection).AddInterceptors(provider.GetRequiredService<Commands>());
-
-                if (afterCommit)
-                    options.UseShiftEntityAfterCommit();
-            });
+                options.UseSqlite(connection).AddInterceptors(provider.GetRequiredService<Commands>()));
 
             // What the framework's own registrations contribute, minimally, for a repository to be built.
             services.AddScoped<ICurrentUserProvider>(_ => FakeCurrentUserProvider.Anonymous());
@@ -545,49 +540,241 @@ public class AttentionSavePipelineTests
         Assert.Equal(1, await host.InScopeAsync(db => db.Set<AttentionSignalEntry>().CountAsync(Ct)));
     }
 
-    public sealed class HookedGadgetRepository(AttentionTestDbContext db, List<string> log)
-        : ShiftRepository<AttentionTestDbContext, GadgetEntity, GadgetDTO, GadgetDTO>(db, o => o.UseMapper(new ThrowingGadgetMapper())),
-          IShiftEntityHasAfterSaveHook<GadgetEntity>
+    // What a test tells the gadgets' after-save handler to do.
+    public sealed class GadgetAfterSaveSwitch
     {
         public bool Fail { get; set; }
+    }
 
-        public ValueTask AfterSaveAsync(GadgetEntity entity, ActionTypes action)
+    public sealed class GadgetAfterSave(List<string> log, GadgetAfterSaveSwitch what) : IAfterSaveHandler<GadgetEntity>
+    {
+        public ValueTask AfterSaveAsync(SavedRows<GadgetEntity> rows, CancellationToken cancellationToken)
         {
-            log.Add("after-save hook");
+            log.Add("after-save handler");
 
-            if (Fail)
-                throw new InvalidOperationException("The hook failed.");
+            if (what.Fail)
+                throw new InvalidOperationException("The handler failed.");
 
             return ValueTask.CompletedTask;
         }
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Events_of_a_repository_save_wait_for_the_repositorys_own_transaction(bool afterCommitOnTheOptions)
+    [Fact]
+    public async Task Events_of_a_save_with_an_after_save_handler_wait_for_the_transaction_the_context_opens_for_it()
     {
-        // A repository with an after-save hook saves in a transaction of its own, and the hook runs inside it. The
-        // context follows that transaction with or without UseShiftEntityAfterCommit on its options.
-        await using var host = Host.Start(afterCommit: afterCommitOnTheOptions);
+        // An after-save handler makes the save run in a transaction of the context's own, and the handler runs inside
+        // it. The events of the new signals wait for that transaction's commit, and a failed save publishes nothing.
+        var what = new GadgetAfterSaveSwitch();
+        await using var host = Host.Start(services => services.AddSingleton(what).AddSaveHandler<GadgetAfterSave>());
 
         await host.InScopeAsync(async db =>
         {
             db.Gadgets.Add(new GadgetEntity { Name = "Kept", StockLevel = 2 });
-            await new HookedGadgetRepository(db, host.Log).SaveChangesAsync();
+            await GadgetRepository(db).SaveChangesAsync();
         });
 
-        Assert.Equal(["after-save hook", "published LowStock of GadgetEntity 1"], host.Log);
+        Assert.Equal(["after-save handler", "published LowStock of GadgetEntity 1"], host.Log);
 
         host.Log.Clear();
+        what.Fail = true;
 
         await host.InScopeAsync(async db =>
         {
             db.Gadgets.Add(new GadgetEntity { Name = "Dropped", StockLevel = 2 });
-            await Assert.ThrowsAsync<InvalidOperationException>(() => new HookedGadgetRepository(db, host.Log) { Fail = true }.SaveChangesAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => GadgetRepository(db).SaveChangesAsync());
         });
 
-        Assert.Equal(["after-save hook"], host.Log);
+        Assert.Equal(["after-save handler"], host.Log);
         Assert.Equal(1, await host.InScopeAsync(db => db.Gadgets.CountAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task A_save_that_raises_a_signal_is_refused_inside_a_transaction_the_context_cannot_follow()
+    {
+        // The event of a new signal waits for the commit, and the context is never told when a transaction it joined
+        // with UseTransaction commits. The save is refused while nothing is written.
+        await using var host = Host.Start();
+
+        await host.InScopeAsync(async db =>
+        {
+            await db.Database.OpenConnectionAsync(Ct);
+            await using var owner = await db.Database.GetDbConnection().BeginTransactionAsync(Ct);
+            await db.Database.UseTransactionAsync(owner, Ct);
+
+            db.Gadgets.Add(new GadgetEntity { Name = "Flagged", StockLevel = 2 });
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(Ct));
+            Assert.Contains("cannot save rows that raise an attention signal", refused.Message);
+            Assert.Contains("UseTransaction", refused.Message);
+
+            // A record that raises nothing has nothing that waits, and is saved in that transaction.
+            db.ChangeTracker.Clear();
+            db.Gadgets.Add(new GadgetEntity { Name = "Fine", StockLevel = 50 });
+            await db.SaveChangesAsync(Ct);
+
+            await owner.CommitAsync(Ct);
+            await db.Database.UseTransactionAsync(null, Ct);
+        });
+
+        Assert.Empty(host.Dispatcher.Published);
+        Assert.Equal(["Fine"], await host.InScopeAsync(db => db.Gadgets.Select(x => x.Name).ToListAsync(Ct)));
+    }
+
+    // ── After the before-save handlers ──────────────────────────────────────────
+
+    /// <summary>When a gadget is added, adds a flagged widget for it. The widgets' own handler runs in the next round.</summary>
+    public sealed class WidgetForAGadget : IBeforeSaveHandler<GadgetEntity>
+    {
+        public ValueTask BeforeSaveAsync(PendingRows<GadgetEntity> rows, CancellationToken cancellationToken)
+        {
+            foreach (var row in rows)
+                if (row.Change == RowChange.Added)
+                    rows.Db.Add(new WidgetEntity { Name = "For " + row.Entity.Name, Flagged = true });
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>In the round after: takes the stock of every gadget of the save down, a row an earlier round offered.</summary>
+    public sealed class WidgetsUseStock : IBeforeSaveHandler<WidgetEntity>
+    {
+        public ValueTask BeforeSaveAsync(PendingRows<WidgetEntity> rows, CancellationToken cancellationToken)
+        {
+            foreach (var gadget in rows.Db.ChangeTracker.Entries<GadgetEntity>())
+                gadget.Entity.StockLevel = 1;
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task The_evaluators_run_once_after_the_handlers_and_see_what_every_round_left()
+    {
+        await using var host = Host.Start(services => services.AddSaveHandler<WidgetForAGadget>().AddSaveHandler<WidgetsUseStock>());
+
+        await host.InScopeAsync(async db =>
+        {
+            // Saved with enough stock: on its own it raises nothing.
+            var gadget = new GadgetEntity { Name = "Anvil", StockLevel = 10 };
+            db.Gadgets.Add(gadget);
+            await db.SaveChangesAsync(Ct);
+
+            // The second round took the stock down, and the signal is about what was written.
+            Assert.Equal(1, gadget.StockLevel);
+            Assert.True(gadget.HasActiveAttention);
+
+            // The widget a handler added is stamped and evaluated like a row the caller added.
+            var widget = db.Widgets.Local.Single();
+            Assert.NotEqual(default, widget.CreateDate);
+            Assert.True(widget.HasActiveAttention);
+        });
+
+        Assert.Equal(
+            ["Flagged of WidgetEntity: Widget was flagged", "LowStock of GadgetEntity: Stock is down to 1"],
+            host.Dispatcher.Published.Select(x => $"{x.Signal.Category} of {x.EntityType}: {x.Signal.Reason}").Order());
+    }
+
+    /// <summary>Notes the rows it is offered before the save and once they are committed, for every type of the model.</summary>
+    public sealed class EveryRow<TEntity>(List<string> log) : IBeforeSaveHandler<TEntity>, IAfterCommitHandler<TEntity> where TEntity : class
+    {
+        public ValueTask BeforeSaveAsync(PendingRows<TEntity> rows, CancellationToken cancellationToken)
+        {
+            log.Add($"before save: {rows.Count} {typeof(TEntity).Name}");
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask AfterCommitAsync(SavedRows<TEntity> rows, CancellationToken cancellationToken)
+        {
+            log.Add($"after commit: {rows.Count} {typeof(TEntity).Name}");
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task The_signal_rows_the_evaluators_add_reach_no_before_save_handler_and_are_rows_like_any_other_once_written()
+    {
+        // A handler for every type of the model, the signals table among them.
+        await using var host = Host.Start(services => services.AddSaveHandler(typeof(EveryRow<>)));
+
+        await host.InScopeAsync(async db =>
+        {
+            db.Widgets.Add(new WidgetEntity { Name = "Sprocket" });
+            await db.SaveChangesAsync(Ct);
+        });
+
+        host.Log.Clear();
+
+        // A widget keeps its signals as rows of a table. Flagging it makes the evaluators add one to this save.
+        await host.InScopeAsync(async db =>
+        {
+            (await db.Widgets.SingleAsync(Ct)).Flagged = true;
+            await db.SaveChangesAsync(Ct);
+
+            Assert.Equal(1, await db.Set<AttentionSignalEntry>().CountAsync(Ct));
+        });
+
+        // The signal row is the framework's bookkeeping: it is added after the rounds, so no before-save handler is
+        // offered it. Once written it is a row like any other.
+        Assert.Contains("before save: 1 WidgetEntity", host.Log);
+        Assert.DoesNotContain(host.Log, line => line.StartsWith("before save") && line.Contains(nameof(AttentionSignalEntry)));
+        Assert.Contains("after commit: 1 WidgetEntity", host.Log);
+        Assert.Contains($"after commit: 1 {nameof(AttentionSignalEntry)}", host.Log);
+    }
+
+    [Fact]
+    public async Task Under_SuppressAfterCommit_a_record_is_still_flagged_and_nobody_is_told()
+    {
+        // Evaluating keeps the data right. The event of a new signal is what waits for the commit and tells others.
+        await using var host = Host.Start();
+
+        await host.InScopeAsync(async db =>
+        {
+            var gadget = new GadgetEntity { Name = "Anvil", StockLevel = 2 };
+            db.Gadgets.Add(gadget);
+
+            using (db.SuppressAfterCommit())
+                await db.SaveChangesAsync(Ct);
+
+            Assert.True(gadget.HasActiveAttention);
+        });
+
+        Assert.Empty(host.Dispatcher.Published);
+        Assert.True(await host.InScopeAsync(db => db.Gadgets.Select(x => x.HasActiveAttention).SingleAsync(Ct)));
+    }
+
+    // ── A save made from inside a repository's save ─────────────────────────────
+
+    /// <summary>After a gadget is saved, saves a flagged widget in a save of its own, inside the save it follows.</summary>
+    public sealed class WidgetAfterAGadget : IAfterSaveHandler<GadgetEntity>
+    {
+        public async ValueTask AfterSaveAsync(SavedRows<GadgetEntity> rows, CancellationToken cancellationToken)
+        {
+            rows.Db.Add(new WidgetEntity { Name = "After " + rows[0].Entity.Name, Flagged = true });
+            await rows.Db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task For_a_host_that_keeps_the_evaluators_to_repository_saves_a_save_made_from_inside_a_repository_save_is_one()
+    {
+        await using var host = Host.Start(services => services
+            .Configure<AttentionOptions>(options => options.EvaluateOn = AttentionSaves.Repository)
+            .AddSaveHandler<WidgetAfterAGadget>());
+
+        await host.InScopeAsync(async db =>
+        {
+            // On the plain context nothing is evaluated: not the gadget, and not the widget the handler saves after it.
+            db.Gadgets.Add(new GadgetEntity { Name = "Anvil", StockLevel = 50 });
+            await db.SaveChangesAsync(Ct);
+
+            // Through a repository, the save the handler makes from inside it is evaluated as the repository's is.
+            db.Gadgets.Add(new GadgetEntity { Name = "Hammer", StockLevel = 50 });
+            await GadgetRepository(db).SaveChangesAsync();
+        });
+
+        var widgets = await host.InScopeAsync(db => db.Widgets.AsNoTracking().OrderBy(x => x.ID).ToListAsync(Ct));
+
+        Assert.Equal(["After Anvil: False", "After Hammer: True"], widgets.Select(x => $"{x.Name}: {x.HasActiveAttention}"));
+
+        Assert.Equal("WidgetEntity", Assert.Single(host.Dispatcher.Published).EntityType);
     }
 }

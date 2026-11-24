@@ -42,6 +42,9 @@ internal sealed class AttentionSave
     /// </summary>
     public bool HasPendingRows => pending is { Count: > 0 };
 
+    /// <summary>Whether a row raised a new signal, which becomes an event once the save has committed.</summary>
+    public bool HasNewSignals => outcomes.Exists(outcome => outcome.NewSignals.Count > 0);
+
     private static readonly HashSet<string> BookkeepingColumns =
     [
         nameof(IHasAttention.HasActiveAttention),

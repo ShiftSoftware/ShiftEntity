@@ -145,7 +145,7 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
 
     //Keyed by entity ID, holds the serialized LastReplicationStamp (document id + partition-key levels) computed
     //during this sync. Written back to each entity's LastReplicationStamp column after a successful upsert so
-    //the NEXT sync — trigger or catch-up — can detect an id or partition-key change and delete the stale Cosmos
+    //the NEXT sync — on save or catch-up — can detect an id or partition-key change and delete the stale Cosmos
     //document under the OLD id + key before upserting the new one.
     Dictionary<long, string> pendingStamps = new();
 
@@ -675,10 +675,9 @@ public class CosmosDbReferenceOperation<DB, Entity> : IDisposable
     }
 
     //Writes the two replication columns of the rows ApplyReplicationBookkeeping changed, by key and set-based, many
-    //rows a statement, in one transaction, and nothing else. It is not a save, so host triggers, the audit
-    //backfill, replication and the marking of replication trees do not run for it, as they did not run for the save
-    //without triggers that this replaced. Rows loaded with tracking stay loaded in this scope's context with the new
-    //values accepted, as that save left them.
+    //rows a statement, in one transaction, and nothing else. It is not a save, so the host's save handlers, the audit
+    //backfill, replication and the marking of replication trees do not run for it. Rows loaded with tracking stay
+    //loaded in this scope's context with the new values accepted, as a save would leave them.
     private async Task WriteReplicationBookkeepingAsync(List<Entity> changed)
     {
         await this.db.SaveReplicationBookkeepingAsync(changed);
