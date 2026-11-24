@@ -21,17 +21,17 @@
 		<!-- Only for SaveLifecycle/TriggerLibraryCheckTests.cs: the check that stops a host that still has triggers. The
 		     framework itself no longer references this library, and nothing else here may use it. -->
 		<PackageReference Include="EntityFrameworkCore.Triggered" Version="3.2.2" />
-		<PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.14" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.14" />
+		<PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.15" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.15" />
 		<!-- Replication tests: the bookkeeping write is an ExecuteUpdate, which the in-memory provider cannot run, and the
 		     catch-up's dirty-only selection must work on SQLite hosts. -->
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<!-- CatchUpReportTests: stands in for Cosmos DB (abstract Container and Database) so one document can be refused. -->
 		<PackageReference Include="NSubstitute" Version="6.2.0" />
-		<PackageReference Include="xunit.v3.mtp-off" Version="4.0.2" />
+		<PackageReference Include="xunit.v3.mtp-off" Version="4.0.3" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 			<PrivateAssets>all</PrivateAssets>
