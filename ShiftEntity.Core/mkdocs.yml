@@ -5,7 +5,7 @@ site_author: Shift Software
 edit_uri: edit/master/ShiftEntity/docs/
 site_description: >-
   Data Grid adapter for Entity Framework and Entity Framework Core with support for Pagination, Sorting, Filtering, and Data Exporting.
-copyright: Copyright &copy; 2022 Shift Software
+copyright: Copyright &copy; 2022-2026 Shift Software Company for General Trading and Information Technology Ltd
 default: getting-started
 theme:
   name: material

@@ -1,0 +1,7 @@
+<Project>
+	<!-- Licence metadata of every package in this repository. -->
+	<PropertyGroup>
+		<Copyright>Copyright 2022-2026 Shift Software Company for General Trading and Information Technology Ltd</Copyright>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+	</PropertyGroup>
+</Project>

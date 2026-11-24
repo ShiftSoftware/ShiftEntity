@@ -16,7 +16,6 @@
 		<PackageId>ShiftSoftware.ShiftEntity.Print</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
 		<Description></Description>
-		<Copyright>Copyright (c) Shift Software 2024</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
@@ -26,7 +25,6 @@
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>
-		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
 
 	<ItemGroup>

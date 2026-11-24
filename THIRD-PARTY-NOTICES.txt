@@ -1,0 +1,11 @@
+THIRD-PARTY NOTICES
+
+Packages that are only referenced, not included, keep their own licences.
+
+------------------------------------------------------------------------------
+MimeTypes (Apache-2.0), compiled into the assembly
+https://github.com/khellang/MimeTypes
+------------------------------------------------------------------------------
+
+Copyright (c) Kristian Hellang 2024. Licensed under the Apache License, Version 2.0.
+The licence text is the same as in the LICENSE file of this product.

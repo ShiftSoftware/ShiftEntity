@@ -16,7 +16,6 @@
 		<AssemblyName>ShiftSoftware.ShiftEntity.CosmosDbReplication</AssemblyName>
 		<PackageId>ShiftSoftware.ShiftEntity.CosmosDbReplication</PackageId>
 		<Authors>aza.asim,ShiftSoftware,nahro</Authors>
-		<Copyright>Copyright (c) Shift Software 2022</Copyright>
 		<PackageProjectUrl>https://shiftsoftware.github.io/ShiftEntity/</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryUrl>https://github.com/ShiftSoftware/ShiftEntity</RepositoryUrl>
@@ -26,7 +25,6 @@
 		<PackageReleaseNotes>
 
 		</PackageReleaseNotes>
-		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 	</PropertyGroup>
 
 	<ItemGroup>
