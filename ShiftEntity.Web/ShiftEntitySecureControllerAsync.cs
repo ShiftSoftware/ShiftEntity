@@ -593,6 +593,27 @@ public class ShiftEntitySecureControllerAsync<Repository, Entity, ListDTO, ViewA
         return await base.GetSelectedEntitiesAsyncBase(ids, disableDefaultDataLevelAccess, disableGlobalFilters);
     }
 
+    /// <summary>
+    /// Loads the selected rows for an endpoint that changes them, and refuses a selection that has more rows than the
+    /// user can write in one action (<see cref="GeneralActionTree.DataGridBulkWriteMaxTop"/>). Like
+    /// <see cref="GetSelectedEntitiesAsync(SelectStateDTO{ListDTO}, bool, bool, bool)"/> it checks only read access, so
+    /// the endpoint still checks the access its own change needs.
+    /// </summary>
+    /// <exception cref="ShiftEntityException">400, when the selection is over the limit. No row is loaded.</exception>
+    [NonAction]
+    public async Task<List<Entity>> GetSelectedEntitiesForBulkWriteAsync(SelectStateDTO<ListDTO> ids, bool skipAuthentication = false, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
+    {
+        if (!skipAuthentication)
+        {
+            var typeAuthService = this.HttpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+            if (action is not null && !typeAuthService.CanRead(action))
+                return new List<Entity> { };
+        }
+
+        return await base.GetSelectedEntitiesForBulkWriteAsyncBase(ids, disableDefaultDataLevelAccess, disableGlobalFilters);
+    }
+
     [NonAction]
     public async Task<List<ListDTO>> GetSelectedListDTOsAsync(SelectStateDTO<ListDTO> ids, bool skipAuthentication = false, bool disableDefaultDataLevelAccess = false, bool disableGlobalFilters = false)
     {

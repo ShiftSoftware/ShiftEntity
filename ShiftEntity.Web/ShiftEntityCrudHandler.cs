@@ -628,11 +628,28 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         return new List<ListDTO>();
     }
 
-    public async Task<List<ListDTO>> GetSelectedListDTOsAsync(
+    // Counts the rows before any is loaded. The count comes from the database and never from
+    // SelectStateDTO.Count, which is the client's own number when all rows are selected.
+    private static async Task EnsureBulkWriteMaxTopAsync<TRow>(HttpContext httpContext, IQueryable<TRow> rows)
+    {
+        var typeAuth = httpContext.RequestServices.GetRequiredService<ITypeAuthService>();
+
+        typeAuth.EnsureDataGridBulkWriteMaxTop(await rows.CountAsync());
+    }
+
+    public Task<List<ListDTO>> GetSelectedListDTOsAsync(
         HttpContext httpContext,
         ODataQueryOptions<ListDTO> oDataQueryOptions,
         bool disableDefaultDataLevelAccess = false,
         bool disableGlobalFilters = false)
+        => GetSelectedListDTOsAsync(httpContext, oDataQueryOptions, disableDefaultDataLevelAccess, disableGlobalFilters, forBulkWrite: false);
+
+    private async Task<List<ListDTO>> GetSelectedListDTOsAsync(
+        HttpContext httpContext,
+        ODataQueryOptions<ListDTO> oDataQueryOptions,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters,
+        bool forBulkWrite)
     {
         var policyFilter = oDataQueryOptions.ApplyPolicies(httpContext.RequestServices);
         if (oDataQueryOptions?.Filter is not null)
@@ -674,6 +691,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
 
                 odataList = rebuiltOptions.Filter.ApplyTo(odataList, new ODataQuerySettings()) as IQueryable<ListDTO>;
 
+                if (forBulkWrite)
+                    await EnsureBulkWriteMaxTopAsync(httpContext, odataList!);
+
                 var selected = await odataList!.ToListAsync();
                 if (PiiDtoProtector.HasProtectedMembers(typeof(ListDTO)))
                 {
@@ -714,25 +734,39 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             disableGlobalFilters);
     }
 
-    public async Task<List<Entity>> GetSelectedEntitiesAsync(
+    public Task<List<Entity>> GetSelectedEntitiesAsync(
         HttpContext httpContext,
         ODataQueryOptions<ListDTO> oDataQueryOptions,
         bool disableDefaultDataLevelAccess = false,
         bool disableGlobalFilters = false)
+        => GetSelectedEntitiesAsync(httpContext, oDataQueryOptions, disableDefaultDataLevelAccess, disableGlobalFilters, forBulkWrite: false);
+
+    private async Task<List<Entity>> GetSelectedEntitiesAsync(
+        HttpContext httpContext,
+        ODataQueryOptions<ListDTO> oDataQueryOptions,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters,
+        bool forBulkWrite)
     {
         var query = await GetQueryForSelectionAsync(httpContext, disableDefaultDataLevelAccess, disableGlobalFilters);
 
         if (oDataQueryOptions.Filter is not null)
         {
+            // A bulk write's rows are counted in here, before the list rows are loaded.
             var listDTOData = await GetSelectedListDTOsAsync(
                 httpContext,
                 oDataQueryOptions,
                 disableDefaultDataLevelAccess,
-                disableGlobalFilters);
+                disableGlobalFilters,
+                forBulkWrite);
 
             var filteredIds = listDTOData.Select(x => x.ID!.ToLong()).ToList();
 
             query = query.Where(x => filteredIds.Contains(x.ID));
+        }
+        else if (forBulkWrite)
+        {
+            await EnsureBulkWriteMaxTopAsync(httpContext, query);
         }
 
         if (query != null)
@@ -741,11 +775,32 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
         return new List<Entity>();
     }
 
-    public async Task<List<Entity>> GetSelectedEntitiesAsync(
+    public Task<List<Entity>> GetSelectedEntitiesAsync(
         HttpContext httpContext,
         SelectStateDTO<ListDTO> ids,
         bool disableDefaultDataLevelAccess = false,
         bool disableGlobalFilters = false)
+        => GetSelectedEntitiesAsync(httpContext, ids, disableDefaultDataLevelAccess, disableGlobalFilters, forBulkWrite: false);
+
+    /// <summary>
+    /// Loads the selected rows for an endpoint that changes them, and refuses a selection that has more rows than the
+    /// user can write in one action (<see cref="GeneralActionTree.DataGridBulkWriteMaxTop"/>). Only rows that would be
+    /// loaded count, so deleted rows and rows the user has no access to don't.
+    /// </summary>
+    /// <exception cref="ShiftEntityException">400, when the selection is over the limit. No row is loaded.</exception>
+    public Task<List<Entity>> GetSelectedEntitiesForBulkWriteAsync(
+        HttpContext httpContext,
+        SelectStateDTO<ListDTO> ids,
+        bool disableDefaultDataLevelAccess = false,
+        bool disableGlobalFilters = false)
+        => GetSelectedEntitiesAsync(httpContext, ids, disableDefaultDataLevelAccess, disableGlobalFilters, forBulkWrite: true);
+
+    private async Task<List<Entity>> GetSelectedEntitiesAsync(
+        HttpContext httpContext,
+        SelectStateDTO<ListDTO> ids,
+        bool disableDefaultDataLevelAccess,
+        bool disableGlobalFilters,
+        bool forBulkWrite)
     {
         if (ids.All && !string.IsNullOrWhiteSpace(ids.Filter))
         {
@@ -753,7 +808,8 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
                 httpContext,
                 BuildODataQueryOptionsFromFilter(httpContext, ids.Filter!),
                 disableDefaultDataLevelAccess,
-                disableGlobalFilters);
+                disableGlobalFilters,
+                forBulkWrite);
         }
 
         var query = await GetQueryForSelectionAsync(httpContext, disableDefaultDataLevelAccess, disableGlobalFilters);
@@ -763,6 +819,9 @@ public class ShiftEntityCrudHandler<Repository, Entity, ListDTO, ViewAndUpsertDT
             var longIds = ids.Items.Select(x => x.ID!.ToLong());
             query = query.Where(x => longIds.Contains(x.ID));
         }
+
+        if (forBulkWrite)
+            await EnsureBulkWriteMaxTopAsync(httpContext, query);
 
         return await query.ToListAsync();
     }
