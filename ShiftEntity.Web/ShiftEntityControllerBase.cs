@@ -119,12 +119,6 @@ public class ShiftEntityControllerBase<Repository, Entity, ListDTO, ViewAndUpser
         bool disableGlobalFilters = false)
         => _handler.GetSelectedEntitiesAsync(HttpContext, ids, disableDefaultDataLevelAccess, disableGlobalFilters);
 
-    internal Task<List<Entity>> GetSelectedEntitiesForBulkWriteAsyncBase(
-        SelectStateDTO<ListDTO> ids,
-        bool disableDefaultDataLevelAccess = false,
-        bool disableGlobalFilters = false)
-        => _handler.GetSelectedEntitiesForBulkWriteAsync(HttpContext, ids, disableDefaultDataLevelAccess, disableGlobalFilters);
-
     // ---- Adapter helpers ----
 
     private IReadOnlyDictionary<string, string[]>? BuildValidationErrorsFromModelState()
